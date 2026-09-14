@@ -1,0 +1,29 @@
+{
+  "name": "estela-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Código del CLI de Estela: lee el rastro que tu trabajo ya dejó y reconstruye tus horas.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jdleonruiz/estela-cli.git"
+  },
+  "homepage": "https://getestela.dev",
+  "workspaces": [
+    "packages/shared",
+    "packages/daemon"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "tsc --build --clean",
+    "test": "npm run build && node --test \"packages/daemon/dist/**/*.test.js\"",
+    "estela": "node packages/daemon/dist/bin.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  }
+}

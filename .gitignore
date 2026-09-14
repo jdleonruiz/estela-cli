@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.tsbuildinfo
+*.tgz
+
+# La base de datos y los paneles generados son de quien ejecuta el programa,
+# no del repositorio: los paneles llevan el token del cliente en la ruta y sus
+# horas dentro, y el enlace es lo único que protege la página.
+.estela/
+publicar/
+
+# Copias que crea `prepack` dentro del paquete y retira `postpack`. Si se
+# quedan, el desarrollo usa una copia congelada de shared en vez del código.
+packages/daemon/web/
+packages/daemon/README.md
+packages/daemon/node_modules/@estela/

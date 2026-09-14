@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estela</title>
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <img class="brand-logo" src="/logo.png" alt="getestela.dev">
+  </div>
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab is-on" data-view="summary" role="tab">Resumen</button>
+    <button type="button" class="tab" data-view="day" role="tab">Mi día</button>
+    <button type="button" class="tab" data-view="team" role="tab">Equipo</button>
+    <button type="button" class="tab" data-view="reports" role="tab">Informes</button>
+    <button type="button" class="tab" data-view="projects" role="tab">Proyectos</button>
+  </nav>
+  <div class="top-right" id="top-right">
+    <button type="button" class="chip" id="sync-now" hidden
+            title="Sube tus horas a la nube y baja lo de tus otras máquinas">Sincronizar</button>
+    <div class="upgrade-wrap" id="upgrade-wrap" hidden>
+      <button type="button" class="btn-main btn-upgrade" id="upgrade-btn">Actualizar a Pro o Teams</button>
+      <div class="upgrade-menu" id="upgrade-menu" hidden>
+        <div class="upgrade-ciclo" role="group" aria-label="Ciclo de facturación">
+          <button type="button" data-ciclo="monthly" class="is-on">Mensual</button>
+          <button type="button" data-ciclo="yearly">Anual</button>
+        </div>
+        <div class="upgrade-ahorro">Anual: 2 meses gratis</div>
+        <button type="button" class="upgrade-option" data-plan="pro"
+                data-monthly="9€/mes · paneles y sync ilimitados"
+                data-yearly="90€/año · paneles y sync ilimitados">
+          <b>Pro</b><span>9€/mes · paneles y sync ilimitados</span>
+        </button>
+        <button type="button" class="upgrade-option" data-plan="teams"
+                data-monthly="15€/proyecto/mes · horas de equipo medidas"
+                data-yearly="150€/proyecto/año · horas de equipo medidas">
+          <b>Teams</b><span>15€/proyecto/mes · horas de equipo medidas</span>
+        </button>
+      </div>
+    </div>
+    <span class="sync-warn" id="sync-warn" hidden></span>
+    <button type="button" class="sync" id="sync" title="Buscar trabajo nuevo (R)">
+      <span class="sync-dot" aria-hidden="true"></span>
+      <span id="sync-label">Actualizar</span>
+    </button>
+  </div>
+</header>
+
+<div class="banner-promo" id="banner-promo" hidden>
+  <span id="banner-text"></span>
+  <a id="banner-link" href="#" target="_blank" rel="noopener" hidden>Ver más →</a>
+  <button type="button" id="banner-close" aria-label="Cerrar">×</button>
+</div>
+
+<main>
+  <!-- ══════════════ EQUIPO — quién trabaja en qué ══════════════ -->
+  <section class="view" id="view-team">
+    <div class="section-head">
+      <div>
+        <h1>Equipo</h1>
+        <p class="sub" id="team-sub">…</p>
+      </div>
+      <div class="periods">
+        <select class="filter" id="team-project"><option value="">Todos los proyectos</option></select>
+        <button type="button" class="period" data-tperiod="month">Este mes</button>
+        <button type="button" class="period is-on" data-tperiod="quarter">3 meses</button>
+      </div>
+    </div>
+
+    <div id="team-alerts"></div>
+    <div class="kpis kpis-4" id="team-kpis"></div>
+    <div id="team-body"></div>
+  </section>
+
+  <!-- ══════════════ RESUMEN — todos los proyectos ══════════════ -->
+  <section class="view is-on" id="view-summary">
+    <div class="section-head">
+      <div>
+        <h1>Resumen</h1>
+        <p class="sub" id="summary-range">…</p>
+      </div>
+      <div class="periods" id="periods">
+        <button type="button" class="period" data-period="week">Esta semana</button>
+        <button type="button" class="period is-on" data-period="month">Este mes</button>
+        <button type="button" class="period" data-period="quarter">3 meses</button>
+      </div>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+    <div id="summary-body"></div>
+  </section>
+
+  <!-- ══════════════ MI DÍA ══════════════ -->
+  <section class="view" id="view-day">
+    <div class="daynav">
+      <button type="button" class="arrow" id="prev-day" aria-label="Día anterior">←</button>
+      <div class="daynav-label">
+        <h1 id="day-title">…</h1>
+        <button type="button" class="today-link" id="go-today" hidden>Volver a hoy</button>
+      </div>
+      <button type="button" class="arrow" id="next-day" aria-label="Día siguiente">→</button>
+    </div>
+
+    <div class="hero" id="hero" hidden>
+      <div class="hero-main">
+        <div class="hero-value" id="day-hours">—</div>
+        <div class="hero-label" id="day-blocks">trabajadas</div>
+      </div>
+      <div class="hero-main hero-money">
+        <div class="hero-value" id="day-amount">—</div>
+        <div class="hero-label" id="day-amount-label">registradas</div>
+      </div>
+    </div>
+
+    <div id="day-body"></div>
+
+    <div class="approve" id="approve-bar" hidden>
+      <button type="button" class="approve-jump" id="approve-text"></button>
+      <button type="button" class="btn-main" id="approve-btn">Aprobar el día</button>
+    </div>
+  </section>
+
+  <!-- ══════════════ PROYECTOS ══════════════ -->
+  <section class="view" id="view-projects">
+    <div class="section-head">
+      <div>
+        <h1>Proyectos</h1>
+        <p class="sub">Qué repositorios pertenecen a quién y a qué tarifa. Subir un precio
+          no reescribe lo ya trabajado: la tarifa nueva empieza el día que digas.</p>
+      </div>
+    </div>
+    <div id="projects-body"></div>
+  </section>
+
+  <!-- ══════════════ INFORMES ══════════════ -->
+  <section class="view" id="view-reports">
+    <div class="section-head">
+      <div>
+        <h1>Informes</h1>
+        <p class="sub">Respaldo del trabajo hecho: horas y commits, para adjuntar a tu factura
+          o compartir con quien dirige el proyecto.</p>
+      </div>
+    </div>
+    <div id="reports-body"></div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="/lib.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

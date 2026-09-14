@@ -1,0 +1,44 @@
+{
+  "name": "estela",
+  "version": "0.1.19",
+  "description": "Registro de horas de desarrollo que no hay que rellenar: lee lo que tus agentes de IA y tu Git ya escribieron en disco.",
+  "keywords": [
+    "time-tracking",
+    "git",
+    "claude-code",
+    "ai-cost",
+    "freelance"
+  ],
+  "license": "MIT",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "bin": {
+    "estela": "dist/bin.js"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jdleonruiz/estela-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jdleonruiz/estela-cli/issues"
+  },
+  "homepage": "https://getestela.dev",
+  "files": [
+    "dist",
+    "web",
+    "README.md"
+  ],
+  "dependencies": {
+    "@estela/shared": "0.1.0"
+  },
+  "bundleDependencies": [
+    "@estela/shared"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/prepack.js",
+    "postpack": "node ../../scripts/postpack.js"
+  }
+}
