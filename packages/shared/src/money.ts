@@ -136,7 +136,16 @@ const SYMBOLS: Partial<Record<Currency, string>> = {
   EUR: "€", USD: "$", GBP: "£", MXN: "$", BRL: "R$",
 };
 
-export function formatMoney(m: Money, locale = "es-EC"): string {
+/**
+ * Locale por defecto de los importes. Español mientras nadie diga otra cosa;
+ * la terminal lo cambia al arrancar según su idioma, para que "€1.254,79" no
+ * salga así en una sesión en inglés.
+ */
+let defaultMoneyLocale = "es-EC";
+
+export function setMoneyLocale(locale: string): void { defaultMoneyLocale = locale; }
+
+export function formatMoney(m: Money, locale = defaultMoneyLocale): string {
   const digits = MINOR_UNIT_DIGITS[m.currency];
   const value = (m.amount / 10 ** digits).toLocaleString(locale, {
     minimumFractionDigits: digits,

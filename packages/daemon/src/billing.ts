@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { cloudPost, CloudError } from "./cloud/client.js";
 import * as store from "./db/store.js";
 import { NoAccountError } from "./publish.js";
+import { tr } from "./i18n/index.js";
 
 /**
  * Cobro. La CLI nunca habla con Stripe directamente — solo con nuestra API,
@@ -17,8 +18,8 @@ function requireAccount(db: DatabaseSync) {
   const account = store.getCloudAccount(db);
   if (!account) {
     throw new NoAccountError(
-      `Necesitas una cuenta para esto. Vincúlala con:\n\n` +
-      `  estela login --email tu@correo.com\n`);
+      tr`Necesitas una cuenta para esto. Vincúlala con:\n\n` +
+      tr`  estela login --email tu@correo.com\n`);
   }
   return account;
 }
@@ -29,8 +30,8 @@ async function unwrap<T>(call: Promise<T>): Promise<T> {
   } catch (error) {
     if (error instanceof CloudError && error.status === 401) {
       throw new NoAccountError(
-        `Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
-        `  estela login --email tu@correo.com\n`);
+        tr`Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
+        tr`  estela login --email tu@correo.com\n`);
     }
     throw error;
   }

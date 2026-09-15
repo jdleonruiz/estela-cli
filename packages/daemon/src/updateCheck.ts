@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { tr } from "./i18n/index.js";
 
 /**
  * Avisa cuando hay una versión más nueva en npm.
@@ -88,8 +89,8 @@ export function checkForUpdate(currentVersion: string): void {
   const cache = readCache();
 
   if (cache && isNewer(cache.latest, currentVersion)) {
-    console.log(`\n  ↑ Hay una versión nueva de Estela (${cache.latest}, tienes ${currentVersion}).`);
-    console.log(`    Actualiza con: npm install -g estela@latest\n`);
+    console.log(tr`\n  ↑ Hay una versión nueva de Estela (${cache.latest}, tienes ${currentVersion}).`);
+    console.log(tr`    Actualiza con: npm install -g estela@latest\n`);
   }
 
   const stale = !cache || Date.now() - Date.parse(cache.checkedAt) > CHECK_INTERVAL_MS;

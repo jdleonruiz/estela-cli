@@ -5,6 +5,7 @@ import * as store from "../db/store.js";
 import { NoAccountError } from "../publish.js";
 import { NotSyncedError } from "../sync.js";
 import { rootCommitFingerprint } from "../watchers/git.js";
+import { tr } from "../i18n/index.js";
 
 /**
  * `estela sync` para un proyecto de alcance 'team'.
@@ -45,15 +46,15 @@ export async function syncTeamProject(db: DatabaseSync, projectId: string): Prom
   const account = store.getCloudAccount(db);
   if (!account) {
     throw new NoAccountError(
-      `Necesitas una cuenta para sincronizar. Vincúlala con:\n\n` +
-      `  estela login --email tu@correo.com\n`);
+      tr`Necesitas una cuenta para sincronizar. Vincúlala con:\n\n` +
+      tr`  estela login --email tu@correo.com\n`);
   }
 
   const sync = store.getProjectSync(db, projectId);
   if (!sync || sync.scope !== "team" || !sync.inviteToken) {
     throw new NotSyncedError(
-      `Este proyecto no es de equipo, o le falta la invitación. Actívalo con:\n\n` +
-      `  estela team accept --token <token> --as-id ${projectId}\n`);
+      tr`Este proyecto no es de equipo, o le falta la invitación. Actívalo con:\n\n` +
+      tr`  estela team accept --token <token> --as-id ${projectId}\n`);
   }
 
   const seconds = store.sumEntrySeconds(db, projectId);
@@ -86,8 +87,8 @@ export async function syncTeamProject(db: DatabaseSync, projectId: string): Prom
   } catch (error) {
     if (error instanceof CloudError && error.status === 401) {
       throw new NoAccountError(
-        `Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
-        `  estela login --email tu@correo.com\n`);
+        tr`Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
+        tr`  estela login --email tu@correo.com\n`);
     }
     throw error;
   }

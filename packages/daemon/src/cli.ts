@@ -10,7 +10,7 @@ process.on("warning", (w) => {
 
 import type { Currency, TimeEntry, WorkKind } from "@estela/shared";
 import {
-  formatAiCost, formatDuration, formatMoney, localDate, parseMoney,
+  formatAiCost, formatDuration, formatMoney, localDate, parseMoney, setMoneyLocale,
   WORK_KIND_LABELS,
 } from "@estela/shared";
 
@@ -40,8 +40,9 @@ import { breakdownOfTurn } from "./pricing/cost.js";
 import { resolveScratchpads, scanClaudeCode } from "./watchers/claude.js";
 import { gitUserEmail, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
+import { detectLang, getLang, setLang, tr } from "./i18n/index.js";
 
-const HELP = `
+const HELP_ES = `
 estela — registro de horas para desarrollo asistido por IA
 
   estela setup
@@ -156,8 +157,134 @@ estela — registro de horas para desarrollo asistido por IA
         --from-tax-id y --from-email se ignoran.
 
 Opciones globales:  --db <ruta>   (por defecto ${DEFAULT_DB_PATH})
+                    --lang es|en  Idioma. Sin ella se usa el del sistema;
+                                  ESTELA_LANG=en lo fija para siempre.
                     --version     Solo imprime la versión instalada.
 `;
+
+const HELP_EN = `
+estela — time tracking for AI-assisted development
+
+  estela setup
+        First run: detects your agents and repositories, and rebuilds your
+        history. Two minutes, no questions, no account.
+
+  estela import [--since YYYY-MM-DD] [--repo <path>]
+        Rebuilds your history from agent transcripts and git.
+
+  estela client add --id <id> --name <name> --currency <EUR|USD|...>
+                    [--tax-id <tax ID>] [--email <a@b.com>]
+        --tax-id and --email are the client details printed on the report
+        from "estela report". Running the command again with the same --id
+        rewrites the whole record: pass everything you want to keep again,
+        anything you leave out is cleared.
+  estela project add --id <id> --client <id> --name <name> --repo <path>
+                     [--rounding <min>] [--ai-cost absorbed|passthrough]
+  estela rate set --project <id> --rate <amount> [--from YYYY-MM-DD]
+  estela budget --project <id> [--amount <dollars>|none]
+        Monthly AI budget. Without --amount, shows the current one. Feeds the
+        warning on the Team tab.
+
+  estela subscription add --id <id> --name <name> --fee <fee> [--currency USD]
+        Records a flat subscription (Claude Max, Cursor...). With one, your
+        real spend is the fee split by usage, not the per-token total.
+
+  estela log --project <id> --hours <n> --what "<what you did>"
+             [--kind development|meeting|research|review|travel|support|other]
+             [--date YYYY-MM-DD] [--minutes <n>]
+        Hours no import will ever infer: meetings, travel, research, and
+        development without an agent that didn't leave commits either.
+
+  estela author --project <id> [--email <a@b.com>[,other@c.com]]
+        Which email you commit with on that project. Without --email, lists
+        the repository's authors so you can pick yours.
+
+  estela web [--port 4319]            Opens the dashboard in your browser.
+  estela doctor                       Checks your data and flags anything that
+                                      would ruin a demo. Run it before publishing.
+  estela status                       What's been captured and not yet assigned.
+  estela entries --project <id>       Blocks assigned to a project.
+  estela ai-cost                      How your subscription splits across projects.
+  estela share --project <id> [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+               [--author <your name>] [--with-amounts] [--out <file.html>]
+        Shareable report in a single HTML file. Hours and commits; no AI
+        usage, which is yours as long as you're the one paying for it.
+
+  estela publish --project <id> [--author <your name>] [--with-amounts]
+                 [--token <existing>] [--no-team] [--client <email>[,other]]
+        Read-only dashboard so your client can USE the product, not just
+        receive a document. Hosted on getestela.dev — Free allows one at a
+        time, Pro and Teams have no limit. Requires "estela login" first.
+        With --client they get an email and it shows up in their account
+        when they sign in to getestela.dev/app. Without --client that list
+        isn't touched: republishing never unlinks anyone who already had it.
+
+  estela team ai-cost --project <id> --allow | --deny
+        If whoever invited you asks to see the project's AI cost, this is
+        your answer. Without --allow it never leaves your machine, and
+        silence isn't a yes. It's shared summed for the project, never per person.
+
+  estela login --email <you@domain.com> [--api <url>]
+        Links this machine to your account. Without it, Estela stays 100%
+        local: nothing below changes what you already do without an account.
+  estela logout
+        Unlinks this machine. Your local data isn't touched.
+
+  estela sync enable --project <id>
+        Turns on sync for a project across your machines. A Pro feature;
+        without it, that project never leaves this machine.
+  estela sync [--project <id>]
+        Uploads and downloads what changed since the last sync. Without
+        --project, syncs every enabled project (personal and team).
+
+  estela team invite --project <id> --email <a@b.com>[,other@c.com] [--kind employee|freelancer]
+        Invites someone so their hours on that project are actually measured
+        on the dashboard, instead of estimated from commits. A Teams feature.
+        Use the emails they commit with, not the ones they sign in with.
+  estela team accept --token <token> [--as-id <local-id>]
+        Accepts an invitation and gets the project ready to sync. Without
+        --as-id it keeps the name it has on the team that invited you; you
+        only need it if you already have a project of your own with that name.
+  estela team repo --project <id> --add <path>
+        Links your local clone to a team project you've already accepted.
+  estela team list --project <id>
+        Who has accepted, their measured hours, and when they last synced.
+  estela team revoke --token <token>
+        Removes someone from the team. If you pay for Teams, the charge goes down.
+
+  estela upgrade --plan pro|teams [--annual]
+        Starts the plan. Prints a Stripe Checkout link — payment happens
+        there, never in the terminal. --annual bills the whole year at once,
+        with two months off compared to monthly.
+  estela billing portal
+        Change your card or cancel. Stripe handles it, not us.
+  estela account
+        Your email, your plan, and which machines you've signed in from.
+
+  estela export --project <id> [--out <file.csv>]
+
+  estela report --project <id> --cutoff YYYY-MM-DD [--dry-run]
+                [--pdf <file.pdf>] [--csv <file.csv>] [--fx <rate>]
+                [--number <no.>]
+                [--from-name <your name>] [--from-email <email>]
+                [--from-tax-id <your tax ID>]
+        Report of hours and commits to back up your work. It isn't an
+        invoice: Estela doesn't issue tax documents.
+        --number sets the report number; without it, reports are numbered
+        automatically and sequentially per year (INF-${new Date().getFullYear()}-001, -002...).
+        The --from-* flags are your details as the issuer, in the PDF header.
+        They need --from-name: without a name that block isn't printed, and
+        --from-tax-id and --from-email are ignored.
+
+Global options:  --db <path>   (default ${DEFAULT_DB_PATH})
+                 --lang es|en  Language. Without it, your system's is used;
+                               ESTELA_LANG=en sets it for good.
+                 --version     Only prints the installed version.
+`;
+
+function helpText(): string {
+  return getLang() === "en" ? HELP_EN : HELP_ES;
+}
 
 interface Args {
   readonly _: string[];
@@ -186,11 +313,27 @@ function str(args: Args, key: string): string | undefined {
 
 function required(args: Args, key: string): string {
   const value = str(args, key);
-  if (!value) throw new UserError(`Falta --${key}`);
+  if (!value) throw new UserError(tr`Falta --${key}`);
   return value;
 }
 
 class UserError extends Error {}
+
+/**
+ * Nombre de un tipo de trabajo en el idioma de la terminal. WORK_KIND_LABELS
+ * vive en `shared` y está en español; aquí se traduce sin tocar ese paquete.
+ */
+function kindLabel(kind: WorkKind): string {
+  switch (kind) {
+    case "development": return tr`Desarrollo`;
+    case "meeting":     return tr`Reunión`;
+    case "research":    return tr`Investigación`;
+    case "review":      return tr`Revisión`;
+    case "travel":      return tr`Desplazamiento`;
+    case "support":     return tr`Soporte`;
+    case "other":       return tr`Otro`;
+  }
+}
 
 // ---------------------------------------------------------------------------
 
@@ -203,9 +346,9 @@ class UserError extends Error {}
 async function cmdWeb(args: Args, dbPath: string): Promise<void> {
   const port = Number(str(args, "port") ?? 4319);
   const url = await startServer({ port, dbPath });
-  console.log(`\n  Estela  ${url}`);
-  console.log(`  Datos:  ${dbPath}`);
-  console.log(`\n  Ctrl+C para parar.\n`);
+  console.log(tr`\n  Estela  ${url}`);
+  console.log(tr`  Datos:  ${dbPath}`);
+  console.log(tr`\n  Ctrl+C para parar.\n`);
   // No devuelve: el servidor se queda escuchando.
   await new Promise(() => {});
 }
@@ -238,8 +381,8 @@ async function cmdLogout(dbPath: string): Promise<void> {
 async function cmdSetup(args: Args, dbPath: string): Promise<void> {
   const db = openDatabase(dbPath);
   try {
-    console.log("\nEstela\n");
-    console.log("Leyendo lo que tus agentes ya guardaron en disco…");
+    console.log(tr`\nEstela\n`);
+    console.log(tr`Leyendo lo que tus agentes ya guardaron en disco…`);
 
     const scan = await scanClaudeCode({});
     const turns = resolveScratchpads(scan.turns);
@@ -257,61 +400,61 @@ async function cmdSetup(args: Args, dbPath: string): Promise<void> {
     if (cwdRoot) repos.add(cwdRoot);
 
     if (turns.length === 0 && repos.size === 0) {
-      console.log("\n  No se han encontrado sesiones de Claude Code en ~/.claude, ni");
-      console.log("  un repositorio de Git en esta carpeta. Corre esto de nuevo desde");
-      console.log("  dentro de tu proyecto, o trabaja un rato con tu agente y vuelve.\n");
+      console.log(tr`\n  No se han encontrado sesiones de Claude Code en ~/.claude, ni`);
+      console.log(tr`  un repositorio de Git en esta carpeta. Corre esto de nuevo desde`);
+      console.log(tr`  dentro de tu proyecto, o trabaja un rato con tu agente y vuelve.\n`);
       return;
     }
 
     if (turns.length > 0) {
       store.saveTurns(db, turns);
       store.logScan(db, "claude-code", scan.report);
-      console.log(`  ${scan.report.turnsAccepted} turnos · ` +
-        `${scan.report.producerVersions.length} versiones de Claude Code`);
+      console.log(tr`  ${scan.report.turnsAccepted} turnos · ` +
+        tr`${scan.report.producerVersions.length} versiones de Claude Code`);
     } else {
-      console.log("  No se han encontrado sesiones de Claude Code en ~/.claude —");
-      console.log("  sin problema, se reconstruye igual desde tus commits de Git.");
+      console.log(tr`  No se han encontrado sesiones de Claude Code en ~/.claude —`);
+      console.log(tr`  sin problema, se reconstruye igual desde tus commits de Git.`);
     }
 
-    console.log(`\nBuscando repositorios… (${repos.size})`);
+    console.log(tr`\nBuscando repositorios… (${repos.size})`);
     const plans = await planSetup(db, [...repos], await gitUserEmail(process.cwd()));
     const nuevos = applySetup(db, plans);
 
     for (const plan of plans.filter((x) => !x.existing)) {
       console.log(`  + ${plan.name}` +
-        (plan.emails.length ? `  (commiteas como ${plan.emails[0]})` : "  ⚠ sin autor claro"));
+        (plan.emails.length ? tr`  (commiteas como ${plan.emails[0]})` : tr`  ⚠ sin autor claro`));
     }
     const yaEstaban = plans.filter((x) => x.existing).length;
-    if (yaEstaban) console.log(`  ${yaEstaban} ya estaban configurados y no se tocan`);
+    if (yaEstaban) console.log(tr`  ${yaEstaban} ya estaban configurados y no se tocan`);
 
-    console.log("\nReconstruyendo tu historial…");
+    console.log(tr`\nReconstruyendo tu historial…`);
     await cmdImport({ _: [], flags: { ...(args.flags["db"] ? { db: args.flags["db"] } : {}) } }, dbPath);
 
     const s = summarize(db);
     console.log(`\n${"─".repeat(66)}`);
     console.log(`  ${summaryLine(s)}`);
-    if (s.from) console.log(`  del ${s.from} al ${s.to}`);
+    if (s.from) console.log(tr`  del ${s.from} al ${s.to}`);
     if (s.people > 1) {
-      console.log(`  ${s.people} personas han commiteado en esos repositorios`);
+      console.log(tr`  ${s.people} personas han commiteado en esos repositorios`);
     }
     console.log(`${"─".repeat(66)}\n`);
 
     const sinAutor = plans.filter((p) => !p.existing && p.emails.length === 0);
     if (sinAutor.length) {
-      console.log(`  ⚠ En ${sinAutor.length} repositorio(s) no se ha podido saber con qué`);
-      console.log(`    correo commiteas, así que ahí no se ha capturado nada tuyo:`);
+      console.log(tr`  ⚠ En ${sinAutor.length} repositorio(s) no se ha podido saber con qué`);
+      console.log(tr`    correo commiteas, así que ahí no se ha capturado nada tuyo:`);
       for (const p of sinAutor.slice(0, 3)) {
-        console.log(`      estela author --project ${p.projectId}`);
+        console.log(tr`      estela author --project ${p.projectId}`);
       }
       console.log("");
     }
 
-    console.log("  Ábrelo:        estela web");
-    console.log("  Revísalo:      estela doctor");
+    console.log(tr`  Ábrelo:        estela web`);
+    console.log(tr`  Revísalo:      estela doctor`);
     if (nuevos > 0) {
-      console.log("\n  Los proyectos se han creado como internos y sin tarifa. Si alguno");
-      console.log("  es de un cliente al que facturas, ponle la suya y podrás emitir");
-      console.log("  informes:  estela rate set --project <id> --rate 50\n");
+      console.log(tr`\n  Los proyectos se han creado como internos y sin tarifa. Si alguno`);
+      console.log(tr`  es de un cliente al que facturas, ponle la suya y podrás emitir`);
+      console.log(tr`  informes:  estela rate set --project <id> --rate 50\n`);
     }
   } finally { db.close(); }
 }
@@ -321,12 +464,12 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
   try {
     const sinceRaw = str(args, "since");
     const since = sinceRaw ? new Date(`${sinceRaw}T00:00:00Z`) : undefined;
-    if (since && Number.isNaN(since.getTime())) throw new UserError(`Fecha inválida: ${sinceRaw}`);
+    if (since && Number.isNaN(since.getTime())) throw new UserError(tr`Fecha inválida: ${sinceRaw}`);
 
     const repoFilter = str(args, "repo");
     const repoPaths = repoFilter ? [resolve(repoFilter)] : undefined;
 
-    console.log("Leyendo transcripts de agentes…");
+    console.log(tr`Leyendo transcripts de agentes…`);
     const scan = await scanClaudeCode({
       ...(since ? { since } : {}),
       ...(repoPaths ? { repoPaths } : {}),
@@ -340,15 +483,15 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
     const savedTurns = store.saveTurns(db, turns);
     store.logScan(db, "claude-code", report);
 
-    console.log(`  ${report.filesRead} archivos · ${report.recordsSeen} registros`);
-    console.log(`  ${report.turnsAccepted} turnos aceptados · ${savedTurns} nuevos`);
-    console.log(`  ${report.duplicatesDropped} duplicados descartados` +
+    console.log(tr`  ${report.filesRead} archivos · ${report.recordsSeen} registros`);
+    console.log(tr`  ${report.turnsAccepted} turnos aceptados · ${savedTurns} nuevos`);
+    console.log(tr`  ${report.duplicatesDropped} duplicados descartados` +
       (report.turnsAccepted > 0
-        ? ` (${(report.duplicatesDropped / (report.turnsAccepted + report.duplicatesDropped) * 100).toFixed(0)}% de las filas)`
+        ? tr` (${(report.duplicatesDropped / (report.turnsAccepted + report.duplicatesDropped) * 100).toFixed(0)}% de las filas)`
         : ""));
-    console.log(`  ${report.unknownRecords} registros internos ignorados · ${report.malformedRecords} malformados`);
+    console.log(tr`  ${report.unknownRecords} registros internos ignorados · ${report.malformedRecords} malformados`);
     if (report.producerVersions.length) {
-      console.log(`  versiones de Claude Code: ${report.producerVersions.join(", ")}`);
+      console.log(tr`  versiones de Claude Code: ${report.producerVersions.join(", ")}`);
     }
     for (const warning of report.warnings) console.warn(`  ⚠ ${warning}`);
 
@@ -379,9 +522,13 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
     }
     const mine = await myEmailsByRepo(db, repos);
     if (rescued > 0) {
-      console.log(`  ${rescued} turnos de scratchpad devueltos a su repositorio`);
+      console.log(tr`  ${rescued} turnos de scratchpad devueltos a su repositorio`);
     }
-    console.log(`Git: ${repos.size} repositorios · ${savedCommits} commits nuevos`);
+    // En la primera ejecución lo normal es un solo repositorio: "1 repositorios"
+    // es lo primero que lee quien acaba de instalar.
+    console.log(repos.size === 1
+      ? tr`Git: 1 repositorio · ${savedCommits} commits nuevos`
+      : tr`Git: ${repos.size} repositorios · ${savedCommits} commits nuevos`);
 
     // Agrupar en bloques, fusionar por rama y día, e imputar a los proyectos.
     // Trabajo deducido de los agentes, y además el de los commits que no
@@ -400,7 +547,7 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
 
     const blocks = groupByBranchAndDay(raw, porProyecto);
     if (fromCommits.length) {
-      console.log(`  ${fromCommits.length} bloques deducidos solo de commits (sin agente)`);
+      console.log(tr`  ${fromCommits.length} bloques deducidos solo de commits (sin agente)`);
     }
     let entries = 0;
     let unassigned = 0;
@@ -439,11 +586,11 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
     }
 
     console.log(
-      `Bloques: ${raw.length} detectados → ${blocks.length} tras agrupar por rama y día · ` +
-      `${entries} imputados · ${unassigned} sin proyecto`);
+      tr`Bloques: ${raw.length} detectados → ${blocks.length} tras agrupar por rama y día · ` +
+      tr`${entries} imputados · ${unassigned} sin proyecto`);
     if (unassigned > 0) {
-      console.log(`\nHay ${unassigned} bloques sin proyecto asignado. Regístralos con:`);
-      console.log(`  estela project add --id <id> --client <id> --name <nombre> --repo <ruta>`);
+      console.log(tr`\nHay ${unassigned} bloques sin proyecto asignado. Regístralos con:`);
+      console.log(tr`  estela project add --id <id> --client <id> --name <nombre> --repo <ruta>`);
     }
   } finally {
     db.close();
@@ -477,7 +624,7 @@ function cmdClientAdd(args: Args, dbPath: string): void {
       ...(str(args, "tax-id") ? { taxId: str(args, "tax-id")! } : {}),
       ...(str(args, "email") ? { email: str(args, "email")! } : {}),
     });
-    console.log(`Cliente "${required(args, "name")}" guardado. Factura en ${currency}.`);
+    console.log(tr`Cliente "${required(args, "name")}" guardado. Factura en ${currency}.`);
   } finally { db.close(); }
 }
 
@@ -486,7 +633,7 @@ function cmdProjectAdd(args: Args, dbPath: string): void {
   try {
     const clientId = required(args, "client");
     if (!store.getClient(db, clientId)) {
-      throw new UserError(`No existe el cliente "${clientId}". Créalo primero con: estela client add`);
+      throw new UserError(tr`No existe el cliente "${clientId}". Créalo primero con: estela client add`);
     }
     const repo = str(args, "repo");
     store.upsertProject(db, {
@@ -499,8 +646,8 @@ function cmdProjectAdd(args: Args, dbPath: string): void {
       aiCostPolicy: (str(args, "ai-cost") ?? "absorbed") as "absorbed" | "passthrough",
       kind: (str(args, "kind") ?? "client") as "client" | "employment" | "internal",
     });
-    console.log(`Proyecto "${required(args, "name")}" guardado.`);
-    if (repo) console.log(`  repositorio: ${resolve(repo)}`);
+    console.log(tr`Proyecto "${required(args, "name")}" guardado.`);
+    if (repo) console.log(tr`  repositorio: ${resolve(repo)}`);
   } finally { db.close(); }
 }
 
@@ -519,7 +666,7 @@ function cmdBudget(args: Args, dbPath: string): void {
   try {
     const projectId = required(args, "project");
     const project = store.getProject(db, projectId);
-    if (!project) throw new UserError(`No existe el proyecto "${projectId}".`);
+    if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
 
     const raw = str(args, "amount");
     if (raw === undefined) {
@@ -527,24 +674,24 @@ function cmdBudget(args: Args, dbPath: string): void {
         "SELECT ai_budget_micro_usd AS b FROM projects WHERE id = ?"
       ).get(projectId) as { b: number | null };
       console.log(current.b === null
-        ? `"${project.name}" no tiene presupuesto de IA.`
-        : `"${project.name}": $${(current.b / 1e6).toFixed(2)} al mes.`);
+        ? tr`"${project.name}" no tiene presupuesto de IA.`
+        : tr`"${project.name}": $${(current.b / 1e6).toFixed(2)} al mes.`);
       return;
     }
 
     if (raw === "none") {
       db.prepare("UPDATE projects SET ai_budget_micro_usd = NULL WHERE id = ?").run(projectId);
-      console.log(`Presupuesto de "${project.name}" retirado.`);
+      console.log(tr`Presupuesto de "${project.name}" retirado.`);
       return;
     }
 
     const dollars = Number(raw.replace(",", "."));
     if (!Number.isFinite(dollars) || dollars < 0) {
-      throw new UserError(`Importe inválido: ${raw}`);
+      throw new UserError(tr`Importe inválido: ${raw}`);
     }
     db.prepare("UPDATE projects SET ai_budget_micro_usd = ? WHERE id = ?")
       .run(Math.round(dollars * 1e6), projectId);
-    console.log(`Presupuesto de IA de "${project.name}": $${dollars.toFixed(2)} al mes.`);
+    console.log(tr`Presupuesto de IA de "${project.name}": $${dollars.toFixed(2)} al mes.`);
   } finally { db.close(); }
 }
 
@@ -553,7 +700,7 @@ function cmdRateSet(args: Args, dbPath: string): void {
   try {
     const projectId = required(args, "project");
     const project = store.getProject(db, projectId);
-    if (!project) throw new UserError(`No existe el proyecto "${projectId}".`);
+    if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
 
     const client = store.getClient(db, project.clientId)!;
     const currency = (str(args, "currency")?.toUpperCase() as Currency) ?? client.currency;
@@ -563,8 +710,8 @@ function cmdRateSet(args: Args, dbPath: string): void {
     const effectiveFrom = fromRaw ? new Date(`${fromRaw}T00:00:00Z`) : new Date(0);
 
     store.addRatePeriod(db, { projectId, hourlyRate: rate, effectiveFrom, effectiveTo: null });
-    console.log(`Tarifa de "${project.name}": ${formatMoney(rate)}/hora` +
-      (fromRaw ? ` desde ${fromRaw}.` : " (aplica a todo el histórico)."));
+    console.log(tr`Tarifa de "${project.name}": ${formatMoney(rate)}/hora` +
+      (fromRaw ? tr` desde ${fromRaw}.` : tr` (aplica a todo el histórico).`));
   } finally { db.close(); }
 }
 
@@ -575,15 +722,15 @@ function cmdStatus(dbPath: string): void {
       "SELECT COUNT(*) n, SUM(cost_micro_usd) c, MIN(at) a, MAX(at) b FROM agent_turns"
     ).get() as { n: number; c: number | null; a: string | null; b: string | null };
 
-    console.log(`Base de datos: ${dbPath}\n`);
-    console.log(`Turnos de agente:  ${turns.n}`);
-    if (turns.a) console.log(`Periodo:           ${turns.a.slice(0, 10)} → ${turns.b!.slice(0, 10)}`);
-    console.log(`Coste de IA total: ${formatAiCost({ microUsd: turns.c ?? 0 })}\n`);
+    console.log(tr`Base de datos: ${dbPath}\n`);
+    console.log(tr`Turnos de agente:  ${turns.n}`);
+    if (turns.a) console.log(tr`Periodo:           ${turns.a.slice(0, 10)} → ${turns.b!.slice(0, 10)}`);
+    console.log(tr`Coste de IA total: ${formatAiCost({ microUsd: turns.c ?? 0 })}\n`);
 
     const clients = store.listClients(db);
     if (clients.length === 0) {
-      console.log("Sin clientes configurados. Empieza con:");
-      console.log("  estela client add --id <id> --name <nombre> --currency EUR");
+      console.log(tr`Sin clientes configurados. Empieza con:`);
+      console.log(tr`  estela client add --id <id> --name <nombre> --currency EUR`);
       return;
     }
 
@@ -597,13 +744,13 @@ function cmdStatus(dbPath: string): void {
         const rate = rateAt(store.getRates(db, project.id), project.id, new Date());
 
         console.log(`  ${project.name}`);
-        console.log(`    tarifa:          ${rate ? `${formatMoney(rate)}/h` : "— sin definir —"}`);
-        console.log(`    sin facturar:    ${formatDuration(seconds)} en ${pending.length} bloques`);
+        console.log(tr`    tarifa:          ${rate ? `${formatMoney(rate)}/h` : tr`— sin definir —`}`);
+        console.log(tr`    sin facturar:    ${formatDuration(seconds)} en ${pending.length} bloques`);
         if (rate && seconds > 0) {
           const amount = { amount: Math.round((rate.amount * seconds) / 3600), currency: rate.currency };
-          console.log(`    importe:         ${formatMoney(amount)}`);
+          console.log(tr`    importe:         ${formatMoney(amount)}`);
         }
-        console.log(`    coste de IA:     ${formatAiCost({ microUsd: ai })}`);
+        console.log(tr`    coste de IA:     ${formatAiCost({ microUsd: ai })}`);
       }
       console.log("");
     }
@@ -621,14 +768,14 @@ function cmdEntries(args: Args, dbPath: string): void {
   try {
     const projectId = required(args, "project");
     const project = store.getProject(db, projectId);
-    if (!project) throw new UserError(`No existe el proyecto "${projectId}".`);
+    if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
 
     const entries = store.getTimeEntries(db, projectId);
-    if (entries.length === 0) { console.log("Sin bloques imputados. Ejecuta: estela import"); return; }
+    if (entries.length === 0) { console.log(tr`Sin bloques imputados. Ejecuta: estela import`); return; }
 
     console.log(`${project.name}\n`);
     for (const e of entries) {
-      const flag = e.invoiceId ? "facturado" : e.billable ? "pendiente" : "no facturable";
+      const flag = e.invoiceId ? tr`facturado` : e.billable ? tr`pendiente` : tr`no facturable`;
       console.log(
         `${e.startedAt.toISOString().slice(0, 16).replace("T", " ")}  ` +
         `${formatDuration(e.seconds).padStart(8)}  ` +
@@ -649,7 +796,7 @@ function cmdShare(args: Args, dbPath: string): void {
   try {
     const projectId = required(args, "project");
     const project = store.getProject(db, projectId);
-    if (!project) throw new UserError(`No existe el proyecto "${projectId}".`);
+    if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
     const client = store.getClient(db, project.clientId)!;
 
     const to = str(args, "to") ?? localDate(new Date());
@@ -676,12 +823,12 @@ function cmdShare(args: Args, dbPath: string): void {
     const out = str(args, "out") ?? `informe-${projectId}-${to}.html`;
     writeFileSync(out, html, "utf8");
 
-    console.log(`\nInforme: ${out}`);
-    console.log(`  ${project.name} · ${client.name} · ${from} al ${to}`);
-    console.log(`  Un solo fichero. Se abre sin instalar nada y sin depender de tu máquina.`);
+    console.log(tr`\nInforme: ${out}`);
+    console.log(tr`  ${project.name} · ${client.name} · ${from} al ${to}`);
+    console.log(tr`  Un solo fichero. Se abre sin instalar nada y sin depender de tu máquina.`);
     if (args.flags["with-amounts"] !== true) {
-      console.log(`\n  Incluye horas y commits. Sin importes (añade --with-amounts) y sin`);
-      console.log(`  consumo de IA, que es tuyo mientras la pagues tú.`);
+      console.log(tr`\n  Incluye horas y commits. Sin importes (añade --with-amounts) y sin`);
+      console.log(tr`  consumo de IA, que es tuyo mientras la pagues tú.`);
     }
   } finally { db.close(); }
 }
@@ -700,33 +847,33 @@ function cmdLog(args: Args, dbPath: string): void {
     const projectId = required(args, "project");
     const project = store.getProject(db, projectId);
     if (!project) {
-      const known = store.listProjects(db).map((p) => p.id).join(", ") || "(ninguno)";
-      throw new UserError(`No existe el proyecto "${projectId}". Los que hay: ${known}`);
+      const known = store.listProjects(db).map((p) => p.id).join(", ") || tr`(ninguno)`;
+      throw new UserError(tr`No existe el proyecto "${projectId}". Los que hay: ${known}`);
     }
 
     const kind = (str(args, "kind") ?? "meeting") as WorkKind;
     if (!(kind in WORK_KIND_LABELS)) {
       throw new UserError(
-        `Tipo "${kind}" no reconocido. Usa uno de: ${Object.keys(WORK_KIND_LABELS).join(", ")}`);
+        tr`Tipo "${kind}" no reconocido. Usa uno de: ${Object.keys(WORK_KIND_LABELS).join(", ")}`);
     }
 
     const hoursRaw = str(args, "hours");
     const minutesRaw = str(args, "minutes");
-    if (!hoursRaw && !minutesRaw) throw new UserError("Indica --hours o --minutes");
+    if (!hoursRaw && !minutesRaw) throw new UserError(tr`Indica --hours o --minutes`);
 
     const seconds = Math.round(
       (hoursRaw ? Number(hoursRaw.replace(",", ".")) * 3600 : 0) +
       (minutesRaw ? Number(minutesRaw) * 60 : 0));
     if (!Number.isFinite(seconds) || seconds <= 0) {
-      throw new UserError(`Duración inválida: ${hoursRaw ?? minutesRaw}`);
+      throw new UserError(tr`Duración inválida: ${hoursRaw ?? minutesRaw}`);
     }
 
     const day = str(args, "date") ?? localDate(new Date());
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new UserError(`Fecha inválida: ${day}`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new UserError(tr`Fecha inválida: ${day}`);
 
     // A media mañana: no sabemos la hora real y fingir precisión sería peor.
     const startedAt = new Date(`${day}T10:00:00`);
-    const what = str(args, "what") ?? WORK_KIND_LABELS[kind];
+    const what = str(args, "what") ?? kindLabel(kind);
 
     const id = store.saveTimeEntry(db, {
       projectId,
@@ -750,10 +897,10 @@ function cmdLog(args: Args, dbPath: string): void {
       ? ` · ${formatMoney({ amount: Math.round((rate.amount * seconds) / 3600), currency: rate.currency })}`
       : "";
 
-    console.log(`\n${WORK_KIND_LABELS[kind]} · ${formatDuration(seconds)}${amount}`);
+    console.log(`\n${kindLabel(kind)} · ${formatDuration(seconds)}${amount}`);
     console.log(`  ${what}`);
     console.log(`  ${project.name} · ${day}`);
-    console.log(`\n  Registro manual: un import no lo va a tocar.  (${id})`);
+    console.log(tr`\n  Registro manual: un import no lo va a tocar.  (${id})`);
   } finally { db.close(); }
 }
 
@@ -801,18 +948,18 @@ async function cmdPublish(args: Args, dbPath: string): Promise<void> {
       throw error;
     }
 
-    console.log(`\nPanel publicado.\n`);
-    console.log(`  Enlace: ${result.url}\n`);
+    console.log(tr`\nPanel publicado.\n`);
+    console.log(tr`  Enlace: ${result.url}\n`);
     if (result.adopted) {
-      console.log(`  Este panel ya existía y queda vinculado a tu cuenta desde ahora.\n`);
+      console.log(tr`  Este panel ya existía y queda vinculado a tu cuenta desde ahora.\n`);
     }
     if (clientes?.length) {
-      console.log(`  Compartido con: ${clientes.join(", ")}`);
-      console.log(`  Al entrar en getestela.dev/app con ese correo, lo verán ahí.\n`);
+      console.log(tr`  Compartido con: ${clientes.join(", ")}`);
+      console.log(tr`  Al entrar en getestela.dev/app con ese correo, lo verán ahí.\n`);
     }
-    console.log(`  El token es lo único que protege la página: quien tenga el enlace, entra.`);
-    console.log(`  Al volver a publicar desde esta máquina, este enlace se reusa solo.`);
-    console.log(`  Desde otra máquina, pasa --token ${result.token} o el cliente perderá su enlace.`);
+    console.log(tr`  El token es lo único que protege la página: quien tenga el enlace, entra.`);
+    console.log(tr`  Al volver a publicar desde esta máquina, este enlace se reusa solo.`);
+    console.log(tr`  Desde otra máquina, pasa --token ${result.token} o el cliente perderá su enlace.`);
   } finally { db.close(); }
 }
 
@@ -826,16 +973,16 @@ function cmdSyncEnable(args: Args, dbPath: string): void {
   try {
     const projectId = required(args, "project");
     if (!store.getProject(db, projectId)) {
-      throw new UserError(`No existe el proyecto "${projectId}".`);
+      throw new UserError(tr`No existe el proyecto "${projectId}".`);
     }
     if (!store.listPersonalSyncCandidates(db).includes(projectId)) {
-      throw new UserError(`"${projectId}" ya está enlazado a un equipo y no puede sincronizarse también como personal.`);
+      throw new UserError(tr`"${projectId}" ya está enlazado a un equipo y no puede sincronizarse también como personal.`);
     }
     store.setProjectSync(db, {
       projectId, scope: "personal", remoteProjectId: projectId,
       remoteOrgId: null, inviteToken: null,
     });
-    console.log(`Sync activado para "${projectId}". Ejecuta "estela sync" para subir y bajar.`);
+    console.log(tr`Sync activado para "${projectId}". Ejecuta "estela sync" para subir y bajar.`);
   } finally { db.close(); }
 }
 
@@ -846,7 +993,7 @@ async function cmdSync(args: Args, dbPath: string): Promise<void> {
     const only = str(args, "project");
     const projectIds = only ? [only] : store.listProjectSyncs(db).map((s) => s.projectId);
     if (projectIds.length === 0) {
-      console.log(`Ningún proyecto sincroniza todavía. Actívalo con: estela sync enable --project <id>`);
+      console.log(tr`Ningún proyecto sincroniza todavía. Actívalo con: estela sync enable --project <id>`);
       return;
     }
     for (const projectId of projectIds) {
@@ -856,10 +1003,10 @@ async function cmdSync(args: Args, dbPath: string): Promise<void> {
       try {
         if (scope === "team") {
           const outcome = await syncTeamProject(db, projectId);
-          console.log(`${label}: ${formatDuration(outcome.seconds)} totales enviadas`);
+          console.log(tr`${label}: ${formatDuration(outcome.seconds)} totales enviadas`);
         } else {
           const outcome = await syncProject(db, projectId);
-          console.log(`${label}: ${outcome.pushed} subidas, ${outcome.pulled} bajadas`);
+          console.log(tr`${label}: ${outcome.pushed} subidas, ${outcome.pulled} bajadas`);
         }
       } catch (error) {
         if (error instanceof NoAccountError || error instanceof NotSyncedError) throw new UserError(error.message);
@@ -883,7 +1030,7 @@ async function cmdTeamInvite(args: Args, dbPath: string): Promise<void> {
     const emails = required(args, "email").split(",").map((e) => e.trim()).filter(Boolean);
     const kind = (str(args, "kind") ?? "employee") as "employee" | "freelancer";
     if (kind !== "employee" && kind !== "freelancer") {
-      throw new UserError(`--kind debe ser "employee" o "freelancer".`);
+      throw new UserError(tr`--kind debe ser "employee" o "freelancer".`);
     }
 
     let result: { token: string };
@@ -894,10 +1041,10 @@ async function cmdTeamInvite(args: Args, dbPath: string): Promise<void> {
       throw error;
     }
 
-    console.log(`\nInvitación creada para: ${emails.join(", ")}\n`);
-    console.log(`  Pásale esto (por el canal que uses con él, no hace falta correo):\n`);
-    console.log(`    estela login --email <su-correo>`);
-    console.log(`    estela team accept --token ${result.token} --as-id <id-que-elija>\n`);
+    console.log(tr`\nInvitación creada para: ${emails.join(", ")}\n`);
+    console.log(tr`  Pásale esto (por el canal que uses con él, no hace falta correo):\n`);
+    console.log(tr`    estela login --email <su-correo>`);
+    console.log(tr`    estela team accept --token ${result.token} --as-id <id-que-elija>\n`);
   } finally { db.close(); }
 }
 
@@ -923,15 +1070,15 @@ async function cmdTeamAiCost(args: Args, dbPath: string): Promise<void> {
     const allow = args.flags["allow"] === true;
     const deny = args.flags["deny"] === true;
     if (allow === deny) {
-      throw new UserError("Elige una: --allow para compartirlo, --deny para no hacerlo.");
+      throw new UserError(tr`Elige una: --allow para compartirlo, --deny para no hacerlo.`);
     }
 
     const sync = store.getProjectSync(db, projectId);
     if (!sync || sync.scope !== "team" || !sync.inviteToken) {
-      throw new UserError(`"${projectId}" no es un proyecto de equipo.`);
+      throw new UserError(tr`"${projectId}" no es un proyecto de equipo.`);
     }
     const account = store.getCloudAccount(db);
-    if (!account) throw new UserError("Vincula la máquina con \"estela login\" antes.");
+    if (!account) throw new UserError(tr`Vincula la máquina con "estela login" antes.`);
 
     const decision = allow ? "granted" : "declined";
     await cloudPost(account.apiBaseUrl, "/team/ai-cost/decision",
@@ -939,10 +1086,10 @@ async function cmdTeamAiCost(args: Args, dbPath: string): Promise<void> {
     store.setAiConsent(db, projectId, false, decision);
 
     console.log(allow
-      ? `\nHecho. El coste de IA de "${projectId}" se sumará al del proyecto en el ` +
-        `siguiente "estela sync".\n\n  Nunca se enseña por persona, solo el total del proyecto.\n`
-      : `\nHecho. El coste de IA de "${projectId}" NO se comparte, y se avisa a quien lo pidió.\n\n` +
-        `  Tus horas se siguen midiendo igual: esto solo afecta al gasto de IA.\n`);
+      ? tr`\nHecho. El coste de IA de "${projectId}" se sumará al del proyecto en el ` +
+        tr`siguiente "estela sync".\n\n  Nunca se enseña por persona, solo el total del proyecto.\n`
+      : tr`\nHecho. El coste de IA de "${projectId}" NO se comparte, y se avisa a quien lo pidió.\n\n` +
+        tr`  Tus horas se siguen midiendo igual: esto solo afecta al gasto de IA.\n`);
   } finally { db.close(); }
 }
 
@@ -964,14 +1111,14 @@ async function cmdTeamAccept(args: Args, dbPath: string): Promise<void> {
       throw error;
     }
 
-    console.log(`\nInvitación aceptada: "${result.projectName}"`);
-    console.log(`  Declarada para: ${result.emails.join(", ")} (${result.inviteeKind})`);
-    console.log(`  Si no eres tú, avisa a quien te invitó.\n`);
-    console.log(`En esta máquina se llama "${result.localProjectId}".\n`);
-    console.log(`Ahora vincula tu repositorio local y sincroniza:\n`);
-    console.log(`  estela team repo --project ${result.localProjectId} --add <ruta-de-tu-clon>`);
-    console.log(`  estela import`);
-    console.log(`  estela sync\n`);
+    console.log(tr`\nInvitación aceptada: "${result.projectName}"`);
+    console.log(tr`  Declarada para: ${result.emails.join(", ")} (${result.inviteeKind})`);
+    console.log(tr`  Si no eres tú, avisa a quien te invitó.\n`);
+    console.log(tr`En esta máquina se llama "${result.localProjectId}".\n`);
+    console.log(tr`Ahora vincula tu repositorio local y sincroniza:\n`);
+    console.log(tr`  estela team repo --project ${result.localProjectId} --add <ruta-de-tu-clon>`);
+    console.log(tr`  estela import`);
+    console.log(tr`  estela sync\n`);
   } finally { db.close(); }
 }
 
@@ -981,9 +1128,9 @@ function cmdTeamRepo(args: Args, dbPath: string): void {
   try {
     const projectId = required(args, "project");
     const repo = required(args, "add");
-    if (!store.getProject(db, projectId)) throw new UserError(`No existe el proyecto "${projectId}".`);
+    if (!store.getProject(db, projectId)) throw new UserError(tr`No existe el proyecto "${projectId}".`);
     store.addProjectRepo(db, projectId, resolve(repo));
-    console.log(`Repositorio vinculado a "${projectId}": ${resolve(repo)}`);
+    console.log(tr`Repositorio vinculado a "${projectId}": ${resolve(repo)}`);
   } finally { db.close(); }
 }
 
@@ -1001,11 +1148,11 @@ async function cmdTeamList(args: Args, dbPath: string): Promise<void> {
     }
 
     if (members.length === 0) {
-      console.log(`Nadie ha aceptado todavía en "${projectId}".`);
+      console.log(tr`Nadie ha aceptado todavía en "${projectId}".`);
       return;
     }
     for (const m of members) {
-      const synced = m.syncedAt ? `sincronizado ${m.syncedAt.slice(0, 10)}` : "sin sincronizar aún";
+      const synced = m.syncedAt ? tr`sincronizado ${m.syncedAt.slice(0, 10)}` : tr`sin sincronizar aún`;
       console.log(`  ${m.emails.join(", ")} (${m.inviteeKind}) · ${formatDuration(m.seconds)} · ${synced}`);
     }
   } finally { db.close(); }
@@ -1022,7 +1169,7 @@ async function cmdTeamRevoke(args: Args, dbPath: string): Promise<void> {
       if (error instanceof NoAccountError) throw new UserError(error.message);
       throw error;
     }
-    console.log(`Invitación revocada.`);
+    console.log(tr`Invitación revocada.`);
   } finally { db.close(); }
 }
 
@@ -1031,7 +1178,7 @@ async function cmdUpgrade(args: Args, dbPath: string): Promise<void> {
   const db = openDatabase(dbPath);
   try {
     const plan = required(args, "plan");
-    if (plan !== "pro" && plan !== "teams") throw new UserError(`--plan debe ser "pro" o "teams".`);
+    if (plan !== "pro" && plan !== "teams") throw new UserError(tr`--plan debe ser "pro" o "teams".`);
     const interval = args.flags["annual"] ? "yearly" : "monthly";
 
     let result: { url: string };
@@ -1041,7 +1188,7 @@ async function cmdUpgrade(args: Args, dbPath: string): Promise<void> {
       if (error instanceof NoAccountError) throw new UserError(error.message);
       throw error;
     }
-    console.log(`\nAbre esto para completar el alta a ${plan === "pro" ? "Pro" : "Teams"}` +
+    console.log(tr`\nAbre esto para completar el alta a ${plan === "pro" ? "Pro" : "Teams"}` +
       `${interval === "yearly" ? " (anual)" : ""}:\n`);
     console.log(`  ${result.url}\n`);
   } finally { db.close(); }
@@ -1058,7 +1205,7 @@ async function cmdBillingPortal(dbPath: string): Promise<void> {
       if (error instanceof NoAccountError) throw new UserError(error.message);
       throw error;
     }
-    console.log(`\nGestiona tu pago aquí:\n\n  ${result.url}\n`);
+    console.log(tr`\nGestiona tu pago aquí:\n\n  ${result.url}\n`);
   } finally { db.close(); }
 }
 
@@ -1069,21 +1216,21 @@ async function cmdAccount(dbPath: string): Promise<void> {
     const account = store.getCloudAccount(db);
     if (!account) {
       throw new UserError(
-        `Esta máquina no está vinculada a ninguna cuenta. Vincúlala con:\n\n` +
-        `  estela login --email tu@correo.com\n`);
+        tr`Esta máquina no está vinculada a ninguna cuenta. Vincúlala con:\n\n` +
+        tr`  estela login --email tu@correo.com\n`);
     }
     let info: { email: string; plan: string; devices: readonly { label: string | null; clientVersion: string | null; lastSeenAt: string | null }[] };
     try {
       info = await cloudGet(account.apiBaseUrl, "/account", { deviceToken: account.deviceToken });
     } catch (error) {
       if (error instanceof CloudError && error.status === 401) {
-        throw new UserError(`Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n  estela login --email tu@correo.com\n`);
+        throw new UserError(tr`Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n  estela login --email tu@correo.com\n`);
       }
       throw error;
     }
-    console.log(`\n${info.email} · plan ${info.plan}\n`);
+    console.log(tr`\n${info.email} · plan ${info.plan}\n`);
     for (const d of info.devices) {
-      console.log(`  ${d.label ?? "(sin nombre)"} · v${d.clientVersion ?? "?"} · visto ${d.lastSeenAt?.slice(0, 10) ?? "nunca"}`);
+      console.log(tr`  ${d.label ?? tr`(sin nombre)`} · v${d.clientVersion ?? "?"} · visto ${d.lastSeenAt?.slice(0, 10) ?? tr`nunca`}`);
     }
   } finally { db.close(); }
 }
@@ -1100,28 +1247,28 @@ async function cmdAuthor(args: Args, dbPath: string): Promise<void> {
   try {
     const projectId = required(args, "project");
     const project = store.getProject(db, projectId);
-    if (!project) throw new UserError(`No existe el proyecto "${projectId}".`);
+    if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
 
     const emails = (str(args, "email") ?? "").split(",").map((e) => e.trim()).filter(Boolean);
 
     if (emails.length === 0) {
       const repo = project.repoPaths[0];
-      if (!repo) throw new UserError("El proyecto no tiene repositorio asignado.");
+      if (!repo) throw new UserError(tr`El proyecto no tiene repositorio asignado.`);
 
-      console.log(`\nAutores en ${project.name}:\n`);
+      console.log(tr`\nAutores en ${project.name}:\n`);
       for (const a of await repoAuthors(repo)) {
-        console.log(`  ${a.email.padEnd(38)} ${String(a.commits).padStart(5)} commits, hasta ${a.lastAt}`);
+        console.log(tr`  ${a.email.padEnd(38)} ${String(a.commits).padStart(5)} commits, hasta ${a.lastAt}`);
       }
       const current = store.getProjectAuthors(db, projectId);
-      console.log(`\nConfigurado ahora: ${current.length ? current.join(", ") : "— nada —"}`);
-      console.log(`\nElige el tuyo con:`);
-      console.log(`  estela author --project ${projectId} --email tu@correo.com`);
+      console.log(tr`\nConfigurado ahora: ${current.length ? current.join(", ") : tr`— nada —`}`);
+      console.log(tr`\nElige el tuyo con:`);
+      console.log(tr`  estela author --project ${projectId} --email tu@correo.com`);
       return;
     }
 
     store.setProjectAuthors(db, projectId, emails);
-    console.log(`\n${project.name}: commits filtrados por ${emails.join(", ")}`);
-    console.log(`Ejecuta "estela import" para recoger los que faltaban.`);
+    console.log(tr`\n${project.name}: commits filtrados por ${emails.join(", ")}`);
+    console.log(tr`Ejecuta "estela import" para recoger los que faltaban.`);
   } finally { db.close(); }
 }
 
@@ -1141,7 +1288,7 @@ function cmdExport(args: Args, dbPath: string): void {
   try {
     const projectId = required(args, "project");
     const project = store.getProject(db, projectId);
-    if (!project) throw new UserError(`No existe el proyecto "${projectId}".`);
+    if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
     const client = store.getClient(db, project.clientId)!;
     const rates = store.getRates(db, projectId);
 
@@ -1152,7 +1299,7 @@ function cmdExport(args: Args, dbPath: string): void {
     const out = str(args, "out");
     if (out) {
       writeFileSync(out, csv, "utf8");
-      console.log(`CSV: ${out}`);
+      console.log(tr`CSV: ${out}`);
     } else {
       process.stdout.write(csv);
     }
@@ -1173,8 +1320,8 @@ function cmdSubscriptionAdd(args: Args, dbPath: string): void {
       effectiveFrom: fromRaw ? new Date(`${fromRaw}T00:00:00Z`) : new Date(0),
       effectiveTo: null,
     });
-    console.log(`Suscripción "${str(args, "name") ?? required(args, "id")}": ${formatMoney(fee)}/mes.`);
-    console.log("Se repartirá entre proyectos según lo que consumió cada uno.");
+    console.log(tr`Suscripción "${str(args, "name") ?? required(args, "id")}": ${formatMoney(fee)}/mes.`);
+    console.log(tr`Se repartirá entre proyectos según lo que consumió cada uno.`);
   } finally { db.close(); }
 }
 
@@ -1185,12 +1332,12 @@ function cmdAiCost(dbPath: string): void {
     const subs = store.listSubscriptions(db);
     const rows = store.consumptionByProjectMonth(db);
 
-    if (rows.length === 0) { console.log("Sin consumo registrado. Ejecuta: estela import"); return; }
+    if (rows.length === 0) { console.log(tr`Sin consumo registrado. Ejecuta: estela import`); return; }
 
     if (subs.length === 0) {
-      console.log("Sin suscripciones registradas: el coste se muestra a tarifa API.\n");
-      console.log("Si pagas cuota fija, regístrala para ver el gasto real:");
-      console.log('  estela subscription add --id claude-max --name "Claude Max" --fee 200\n');
+      console.log(tr`Sin suscripciones registradas: el coste se muestra a tarifa API.\n`);
+      console.log(tr`Si pagas cuota fija, regístrala para ver el gasto real:`);
+      console.log(tr`  estela subscription add --id claude-max --name "Claude Max" --fee 200\n`);
     }
 
     const shares = amortize(rows, subs, store.totalConsumptionByMonth(db));
@@ -1200,7 +1347,7 @@ function cmdAiCost(dbPath: string): void {
     for (const s of shares) {
       if (s.month !== month) {
         month = s.month;
-        console.log(`\n${month}   (consumo total: ${formatAiCost(s.monthTotal)} equiv. API)`);
+        console.log(tr`\n${month}   (consumo total: ${formatAiCost(s.monthTotal)} equiv. API)`);
       }
       const label = (names.get(s.projectId) ?? s.projectId).slice(0, 34).padEnd(36);
       const pct = `${(s.share * 100).toFixed(1)}%`.padStart(7);
@@ -1209,8 +1356,8 @@ function cmdAiCost(dbPath: string): void {
     }
 
     if (subs.length > 0) {
-      console.log(`\nLa última columna es dinero real: tu cuota repartida por consumo.`);
-      console.log(`La primera es la tarifa API equivalente, útil solo como medida de uso.`);
+      console.log(tr`\nLa última columna es dinero real: tu cuota repartida por consumo.`);
+      console.log(tr`La primera es la tarifa API equivalente, útil solo como medida de uso.`);
     }
   } finally { db.close(); }
 }
@@ -1220,12 +1367,12 @@ function cmdInvoice(args: Args, dbPath: string): void {
   try {
     const projectId = required(args, "project");
     const project = store.getProject(db, projectId);
-    if (!project) throw new UserError(`No existe el proyecto "${projectId}".`);
+    if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
     const client = store.getClient(db, project.clientId)!;
 
     const cutoffRaw = required(args, "cutoff");
     const cutoffAt = new Date(`${cutoffRaw}T23:59:59Z`);
-    if (Number.isNaN(cutoffAt.getTime())) throw new UserError(`Fecha inválida: ${cutoffRaw}`);
+    if (Number.isNaN(cutoffAt.getTime())) throw new UserError(tr`Fecha inválida: ${cutoffRaw}`);
 
     const dryRun = args.flags["dry-run"] === true;
     const number = str(args, "number") ?? store.nextInvoiceNumber(db, "INF");
@@ -1260,18 +1407,18 @@ function cmdInvoice(args: Args, dbPath: string): void {
     // Coste real de IA del periodo: la cuota de tus suscripciones repartida
     // por consumo. Es lo que de verdad te costó, frente a la tarifa API.
     if (invoice.aiAmortized) {
-      console.log(`Coste real de IA imputado desde tu suscripción: ${formatMoney(invoice.aiAmortized)}`);
+      console.log(tr`Coste real de IA imputado desde tu suscripción: ${formatMoney(invoice.aiAmortized)}`);
     }
 
     if (subs.length === 0) {
-      console.log("\nSin suscripciones registradas. Si pagas cuota fija, el importe de arriba");
-      console.log("es tarifa API equivalente, no lo que gastaste. Regístrala con:");
-      console.log('  estela subscription add --id claude-max --name "Claude Max" --fee 200');
+      console.log(tr`\nSin suscripciones registradas. Si pagas cuota fija, el importe de arriba`);
+      console.log(tr`es tarifa API equivalente, no lo que gastaste. Regístrala con:`);
+      console.log(tr`  estela subscription add --id claude-max --name "Claude Max" --fee 200`);
     }
 
     if (fx) {
       const m = marginOf(invoice, Number(fx));
-      console.log(`\nMargen a tarifa API: ${formatMoney(m.margin)} de ${formatMoney(m.revenue)} ` +
+      console.log(tr`\nMargen a tarifa API: ${formatMoney(m.margin)} de ${formatMoney(m.revenue)} ` +
         `(${m.marginPct.toFixed(1)}%)`);
     }
 
@@ -1290,17 +1437,17 @@ function cmdInvoice(args: Args, dbPath: string): void {
         ...(invoice.aiAmortized ? { amortizedAiCost: invoice.aiAmortized } : {}),
       });
       writeFileSync(pdfPath, pdf);
-      console.log(`\nPDF: ${pdfPath}  (${(pdf.length / 1024).toFixed(1)} KB, ${invoice.lines.length} conceptos)`);
+      console.log(tr`\nPDF: ${pdfPath}  (${(pdf.length / 1024).toFixed(1)} KB, ${invoice.lines.length} conceptos)`);
     }
 
     const csvPath = str(args, "csv");
     if (csvPath) {
       writeFileSync(csvPath, invoiceToCsv(invoice, client, project), "utf8");
-      console.log(`CSV: ${csvPath}`);
+      console.log(tr`CSV: ${csvPath}`);
     }
 
     if (dryRun) {
-      console.log("\n[--dry-run] No se guardó nada. Repite sin --dry-run para emitirlo.");
+      console.log(tr`\n[--dry-run] No se guardó nada. Repite sin --dry-run para emitirlo.`);
       return;
     }
 
@@ -1308,7 +1455,7 @@ function cmdInvoice(args: Args, dbPath: string): void {
       .filter((e) => e.billable && e.invoiceId === null && e.endedAt <= cutoffAt)
       .map((e) => e.id);
     store.saveInvoice(db, invoice, billed);
-    console.log(`\nInforme ${invoice.number} emitido. ${billed.length} bloques marcados como informados.`);
+    console.log(tr`\nInforme ${invoice.number} emitido. ${billed.length} bloques marcados como informados.`);
   } finally { db.close(); }
 }
 
@@ -1325,6 +1472,10 @@ const VERSION = (require("../package.json") as { version: string }).version;
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const args = parseArgs(argv);
+
+  // Lo primero, antes de imprimir nada: hasta la ayuda sale ya en su idioma.
+  setLang(detectLang({ flag: str(args, "lang"), env: process.env, platform: process.platform }));
+  setMoneyLocale(getLang() === "en" ? "en-US" : "es-EC");
 
   // Global y antes que nada: "estela --version" no debe abrir ninguna base de
   // datos ni comprobar el resto de argumentos para responder algo tan simple.
@@ -1376,9 +1527,9 @@ async function main(): Promise<void> {
     case "billing portal":    await cmdBillingPortal(dbPath); break;
     case "account":           await cmdAccount(dbPath); break;
     case "":
-    case "help":         console.log(HELP); break;
+    case "help":         console.log(helpText()); break;
     default:
-      console.error(`Comando desconocido: "${command}"\n${HELP}`);
+      console.error(tr`Comando desconocido: "${command}"\n${helpText()}`);
       process.exitCode = 1;
   }
 }

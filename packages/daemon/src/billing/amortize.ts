@@ -1,5 +1,6 @@
 import type { AiCost, AmortizedShare, Money, Subscription } from "@estela/shared";
 import { money } from "@estela/shared";
+import { tr } from "../i18n/index.js";
 
 /**
  * Reparto de una cuota fija entre proyectos.
@@ -90,8 +91,8 @@ export function feeForMonth(subscriptions: readonly Subscription[], month: strin
   for (const s of active) {
     if (s.monthlyFee.currency !== currency) {
       throw new TypeError(
-        `Suscripciones en monedas distintas en ${month} (${currency} y ${s.monthlyFee.currency}). ` +
-        `Únifica la moneda de las suscripciones: no se convierten automáticamente.`);
+        tr`Suscripciones en monedas distintas en ${month} (${currency} y ${s.monthlyFee.currency}). ` +
+        tr`Unifica la moneda de las suscripciones: no se convierten automáticamente.`);
     }
     total += s.monthlyFee.amount;
   }

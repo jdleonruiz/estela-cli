@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { formatDuration } from "@estela/shared";
 
 import * as store from "./db/store.js";
+import { tr } from "./i18n/index.js";
 
 /**
  * Revisión de los datos antes de publicar.
@@ -34,9 +35,9 @@ export function diagnose(db: DatabaseSync): Finding[] {
   if (projects.length === 0) {
     findings.push({
       severity: "error",
-      title: "No hay ningún proyecto configurado",
-      detail: "Sin proyectos no se imputa nada, aunque se esté capturando trabajo.",
-      fix: "Abre la pestaña Proyectos y registra el primero.",
+      title: tr`No hay ningún proyecto configurado`,
+      detail: tr`Sin proyectos no se imputa nada, aunque se esté capturando trabajo.`,
+      fix: tr`Abre la pestaña Proyectos y registra el primero.`,
     });
     return findings;
   }
@@ -46,9 +47,9 @@ export function diagnose(db: DatabaseSync): Finding[] {
     if (project.repoPaths.length > 0 && store.getProjectAuthors(db, project.id).length === 0) {
       findings.push({
         severity: "error",
-        title: `"${project.name}" no sabe con qué correo commiteas`,
-        detail: "Se filtra por la configuración global de git, que en el repositorio de " +
-          "un cliente casi nunca es la que usas. Estarás perdiendo casi todos tus commits.",
+        title: tr`"${project.name}" no sabe con qué correo commiteas`,
+        detail: tr`Se filtra por la configuración global de git, que en el repositorio de ` +
+          tr`un cliente casi nunca es la que usas. Estarás perdiendo casi todos tus commits.`,
         fix: `estela author --project ${project.id}`,
       });
     }
@@ -57,9 +58,9 @@ export function diagnose(db: DatabaseSync): Finding[] {
     if (project.repoPaths.length === 0) {
       findings.push({
         severity: "warning",
-        title: `"${project.name}" no tiene repositorio asignado`,
-        detail: "Solo recibirá las horas que anotes a mano.",
-        fix: "Asígnale uno en la pestaña Proyectos.",
+        title: tr`"${project.name}" no tiene repositorio asignado`,
+        detail: tr`Solo recibirá las horas que anotes a mano.`,
+        fix: tr`Asígnale uno en la pestaña Proyectos.`,
       });
     }
 
@@ -69,9 +70,9 @@ export function diagnose(db: DatabaseSync): Finding[] {
         && store.getRates(db, project.id).length === 0) {
       findings.push({
         severity: "warning",
-        title: `"${project.name}" es facturable pero no tiene tarifa`,
-        detail: "Las horas se registran, pero no se puede calcular su valor.",
-        fix: `estela rate set --project ${project.id} --rate <importe>`,
+        title: tr`"${project.name}" es facturable pero no tiene tarifa`,
+        detail: tr`Las horas se registran, pero no se puede calcular su valor.`,
+        fix: tr`estela rate set --project ${project.id} --rate <importe>`,
       });
     }
 
@@ -89,12 +90,12 @@ export function diagnose(db: DatabaseSync): Finding[] {
       if (row.n > 0) {
         findings.push({
           severity: "warning",
-          title: `"${project.name}" tiene ${formatDuration(row.secs)} deducidas solo de commits`,
-          detail: (row.n === 1 ? "1 bloque sin sesión de agente que lo respalde."
-                               : `${row.n} bloques sin sesión de agente que los respalde.`) +
-            " El tiempo se estima a partir de la separación entre commits, así que es " +
-            "menos exacto que el resto del informe.",
-          fix: "Revísalos en Mi día y corrige los minutos antes de emitir el informe.",
+          title: tr`"${project.name}" tiene ${formatDuration(row.secs)} deducidas solo de commits`,
+          detail: (row.n === 1 ? tr`1 bloque sin sesión de agente que lo respalde.`
+                               : tr`${row.n} bloques sin sesión de agente que los respalde.`) +
+            tr` El tiempo se estima a partir de la separación entre commits, así que es ` +
+            tr`menos exacto que el resto del informe.`,
+          fix: tr`Revísalos en Mi día y corrige los minutos antes de emitir el informe.`,
         });
       }
     }
@@ -110,9 +111,9 @@ export function diagnose(db: DatabaseSync): Finding[] {
   if (mismatched.n > 0) {
     findings.push({
       severity: "error",
-      title: `${mismatched.n} imputaciones con la fecha descuadrada`,
-      detail: "Su identificador lleva una fecha distinta a la del día al que están " +
-        "asignadas. Suele significar que un día está contado dos veces.",
+      title: tr`${mismatched.n} imputaciones con la fecha descuadrada`,
+      detail: tr`Su identificador lleva una fecha distinta a la del día al que están ` +
+        tr`asignadas. Suele significar que un día está contado dos veces.`,
       fix: "Bórralas y reimporta: DELETE FROM time_entries WHERE source='agent' " +
         "AND invoice_id IS NULL AND id NOT LIKE '%_'||local_date||'_%';",
     });
@@ -129,13 +130,13 @@ export function diagnose(db: DatabaseSync): Finding[] {
     const internal = row.model.startsWith("<");
     findings.push({
       severity: internal ? "info" : "warning",
-      title: `${row.n} turnos con el modelo "${row.model}" sin precio`,
+      title: tr`${row.n} turnos con el modelo "${row.model}" sin precio`,
       detail: internal
-        ? "Es un valor interno de la herramienta, no un modelo real. Suman cero al coste."
-        : "No está en el catálogo de precios, así que su coste no se cuenta.",
+        ? tr`Es un valor interno de la herramienta, no un modelo real. Suman cero al coste.`
+        : tr`No está en el catálogo de precios, así que su coste no se cuenta.`,
       fix: internal
-        ? "No hace falta nada: no representa consumo facturable."
-        : "Añádelo a PRICE_CATALOG en packages/daemon/src/pricing/catalog.ts",
+        ? tr`No hace falta nada: no representa consumo facturable.`
+        : tr`Añádelo a PRICE_CATALOG en packages/daemon/src/pricing/catalog.ts`,
     });
   }
 
@@ -157,10 +158,10 @@ export function diagnose(db: DatabaseSync): Finding[] {
   if (unassigned.length > 0) {
     findings.push({
       severity: "warning",
-      title: `${unassigned.length} repositorios con trabajo sin proyecto`,
-      detail: `De ${orphans.repos} repositorios con actividad capturada, ${unassigned.length} ` +
-        "no pertenecen a ningún proyecto. Son horas que ya tienes y no puedes informar.",
-      fix: "Asígnalos en la pestaña Proyectos.",
+      title: tr`${unassigned.length} repositorios con trabajo sin proyecto`,
+      detail: tr`De ${orphans.repos} repositorios con actividad capturada, ${unassigned.length} ` +
+        tr`no pertenecen a ningún proyecto. Son horas que ya tienes y no puedes informar.`,
+      fix: tr`Asígnalos en la pestaña Proyectos.`,
     });
   }
 
@@ -174,10 +175,10 @@ export function diagnose(db: DatabaseSync): Finding[] {
   if (long.n > 0) {
     findings.push({
       severity: "warning",
-      title: `${long.n} bloques de más de 10 horas`,
-      detail: `El mayor es de ${formatDuration(long.max_seconds ?? 0)}. Puede ser real, ` +
-        "pero también una sesión que quedó abierta.",
-      fix: "Revísalos en Mi día y corrige los minutos si no cuadran.",
+      title: tr`${long.n} bloques de más de 10 horas`,
+      detail: tr`El mayor es de ${formatDuration(long.max_seconds ?? 0)}. Puede ser real, ` +
+        tr`pero también una sesión que quedó abierta.`,
+      fix: tr`Revísalos en Mi día y corrige los minutos si no cuadran.`,
     });
   }
 
@@ -190,12 +191,12 @@ export function diagnose(db: DatabaseSync): Finding[] {
     const project = projects.find((p) => p.id === pub.projectId);
     findings.push({
       severity: "warning",
-      title: `El panel de "${project?.name ?? pub.projectId}" se ha quedado atrás`,
+      title: tr`El panel de "${project?.name ?? pub.projectId}" se ha quedado atrás`,
       detail: pub.staleBlocks === 1
-        ? `Hay 1 bloque de trabajo posterior a la última publicación ` +
-          `(${pub.publishedAt.toISOString().slice(0, 10)}). Tu cliente está viendo datos viejos.`
-        : `Hay ${pub.staleBlocks} bloques de trabajo posteriores a la última publicación ` +
-          `(${pub.publishedAt.toISOString().slice(0, 10)}). Tu cliente está viendo datos viejos.`,
+        ? tr`Hay 1 bloque de trabajo posterior a la última publicación ` +
+          tr`(${pub.publishedAt.toISOString().slice(0, 10)}). Tu cliente está viendo datos viejos.`
+        : tr`Hay ${pub.staleBlocks} bloques de trabajo posteriores a la última publicación ` +
+          tr`(${pub.publishedAt.toISOString().slice(0, 10)}). Tu cliente está viendo datos viejos.`,
       fix: `estela publish --project ${pub.projectId} --token ${pub.token}`,
     });
   }
@@ -207,9 +208,9 @@ export function diagnose(db: DatabaseSync): Finding[] {
   if (scan?.warnings) {
     findings.push({
       severity: "error",
-      title: "El lector de transcripts avisó de algo",
+      title: tr`El lector de transcripts avisó de algo`,
       detail: scan.warnings,
-      fix: "Revisa los totales antes de publicar nada.",
+      fix: tr`Revisa los totales antes de publicar nada.`,
     });
   }
 
@@ -219,7 +220,7 @@ export function diagnose(db: DatabaseSync): Finding[] {
 
 export function renderFindings(findings: readonly Finding[]): string {
   if (findings.length === 0) {
-    return "\n  Todo en orden. Puedes publicar con tranquilidad.\n";
+    return tr`\n  Todo en orden. Puedes publicar con tranquilidad.\n`;
   }
 
   const icon: Record<Severity, string> = { error: "✗", warning: "!", info: "·" };
@@ -235,11 +236,15 @@ export function renderFindings(findings: readonly Finding[]): string {
   const errors = findings.filter((f) => f.severity === "error").length;
   const warnings = findings.filter((f) => f.severity === "warning").length;
 
+  // Frases enteras por plural: "problema/problemas" suelto dentro de la frase
+  // no se puede traducir bien, porque en inglés no siempre va en ese sitio.
   out.push(errors > 0
-    ? `  ${errors} ${errors === 1 ? "problema" : "problemas"} que conviene arreglar antes de enseñar esto.`
+    ? (errors === 1
+        ? tr`  1 problema que conviene arreglar antes de enseñar esto.`
+        : tr`  ${errors} problemas que conviene arreglar antes de enseñar esto.`)
     : warnings > 0
-      ? `  Nada grave: ${warnings} ${warnings === 1 ? "aviso" : "avisos"}.`
-      : "  Solo notas informativas.");
+      ? (warnings === 1 ? tr`  Nada grave: 1 aviso.` : tr`  Nada grave: ${warnings} avisos.`)
+      : tr`  Solo notas informativas.`);
 
   return out.join("\n") + "\n";
 }

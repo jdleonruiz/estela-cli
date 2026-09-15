@@ -5,6 +5,7 @@ import {
   aiCostToMoney, addMoney, billableAmount, formatAiCost, formatDuration,
   formatMoney, money, roundSeconds, sumAiCost, sumMoney,
 } from "@estela/shared";
+import { tr } from "../i18n/index.js";
 
 /**
  * Emisión de facturas.
@@ -58,7 +59,7 @@ export function issueInvoice(input: IssueInvoiceInput): Invoice {
 
   if (pending.length === 0) {
     throw new InvoiceError(
-      `No hay horas pendientes de facturar en "${project.name}" hasta ${cutoffAt.toISOString().slice(0, 10)}.`);
+      tr`No hay horas pendientes de facturar en "${project.name}" hasta ${cutoffAt.toISOString().slice(0, 10)}.`);
   }
 
   const lines: InvoiceLine[] = [];
@@ -68,13 +69,13 @@ export function issueInvoice(input: IssueInvoiceInput): Invoice {
     const rate = rateAt(rates, project.id, entry.startedAt);
     if (!rate) {
       throw new InvoiceError(
-        `Sin tarifa vigente para "${project.name}" el ${entry.startedAt.toISOString().slice(0, 10)}. ` +
-        `Define una con: estela rate set --project ${project.id} --rate <importe> --currency ${client.currency}`);
+        tr`Sin tarifa vigente para "${project.name}" el ${entry.startedAt.toISOString().slice(0, 10)}. ` +
+        tr`Define una con: estela rate set --project ${project.id} --rate <importe> --currency ${client.currency}`);
     }
     if (rate.currency !== client.currency) {
       throw new InvoiceError(
-        `La tarifa de "${project.name}" está en ${rate.currency} pero a ${client.name} se le factura en ` +
-        `${client.currency}. Corrige la tarifa o la moneda del cliente: no se convierte automáticamente.`);
+        tr`La tarifa de "${project.name}" está en ${rate.currency} pero a ${client.name} se le factura en ` +
+        tr`${client.currency}. Corrige la tarifa o la moneda del cliente: no se convierte automáticamente.`);
     }
 
     const seconds = roundSeconds(entry.seconds, project.roundingMinutes);
@@ -91,7 +92,7 @@ export function issueInvoice(input: IssueInvoiceInput): Invoice {
 
   if (lines.length === 0) {
     throw new InvoiceError(
-      `Todas las entradas quedaron en cero tras redondear a ${project.roundingMinutes} min.`);
+      tr`Todas las entradas quedaron en cero tras redondear a ${project.roundingMinutes} min.`);
   }
 
   const subtotal = sumMoney(lines.map((l) => l.amount), client.currency);
@@ -105,8 +106,8 @@ export function issueInvoice(input: IssueInvoiceInput): Invoice {
       usdFxRate = 1;
     } else if (input.usdFxRate === undefined) {
       throw new InvoiceError(
-        `"${project.name}" repercute el coste de IA (${formatAiCost(aiCost)} USD) y se factura en ` +
-        `${client.currency}. Indica el tipo de cambio del día con --fx <USD->${client.currency}>.`);
+        tr`"${project.name}" repercute el coste de IA (${formatAiCost(aiCost)} USD) y se factura en ` +
+        tr`${client.currency}. Indica el tipo de cambio del día con --fx <USD->${client.currency}>.`);
     } else {
       usdFxRate = input.usdFxRate;
     }
@@ -157,13 +158,13 @@ export function renderInvoice(invoice: Invoice, client: Client, project: Project
   const date = (d: Date) => d.toISOString().slice(0, 10);
 
   out.push(rule);
-  out.push(`INFORME DE HORAS ${invoice.number}`.padEnd(52) + `Emitido: ${date(invoice.issuedAt)}`);
+  out.push(tr`INFORME DE HORAS ${invoice.number}`.padEnd(52) + tr`Emitido: ${date(invoice.issuedAt)}`);
   out.push(rule);
-  out.push(`Cliente:   ${client.name}${client.taxId ? `  (${client.taxId})` : ""}`);
-  out.push(`Proyecto:  ${project.name}`);
-  out.push(`Periodo:   ${date(invoice.periodStart)}  ->  ${date(invoice.cutoffAt)}`);
+  out.push(tr`Cliente:   ${client.name}` + (client.taxId ? `  (${client.taxId})` : ""));
+  out.push(tr`Proyecto:  ${project.name}`);
+  out.push(tr`Periodo:   ${date(invoice.periodStart)}  ->  ${date(invoice.cutoffAt)}`);
   out.push("");
-  out.push("CONCEPTO".padEnd(46) + "TIEMPO".padStart(9) + "TARIFA".padStart(11) + "IMPORTE".padStart(12));
+  out.push(tr`CONCEPTO`.padEnd(46) + tr`TIEMPO`.padStart(9) + tr`TARIFA`.padStart(11) + tr`IMPORTE`.padStart(12));
   out.push(rule);
 
   for (const line of invoice.lines) {
@@ -177,24 +178,24 @@ export function renderInvoice(invoice: Invoice, client: Client, project: Project
 
   out.push(rule);
   out.push(
-    `${invoice.lines.length} conceptos`.padEnd(46) +
+    tr`${invoice.lines.length} conceptos`.padEnd(46) +
     formatDuration(invoice.totalSeconds).padStart(9) +
     "".padStart(11) +
     formatMoney(invoice.subtotal).padStart(12));
 
   if (invoice.aiCostBilled) {
     out.push(
-      `Coste de IA repercutido (1 USD = ${invoice.usdFxRate} ${invoice.currency})`.padEnd(66) +
+      tr`Coste de IA repercutido (1 USD = ${invoice.usdFxRate} ${invoice.currency})`.padEnd(66) +
       formatMoney(invoice.aiCostBilled).padStart(12));
   }
 
   out.push("");
-  out.push("VALOR DEL TRABAJO".padEnd(66) + formatMoney(invoice.total).padStart(12));
+  out.push(tr`VALOR DEL TRABAJO`.padEnd(66) + formatMoney(invoice.total).padStart(12));
   out.push(rule);
 
   if (project.aiCostPolicy === "absorbed" && invoice.aiCost.microUsd > 0) {
-    out.push(`Interno (no facturado): IA del periodo ${formatAiCost(invoice.aiCost)} USD ` +
-      `en tarifa API equivalente.`);
+    out.push(tr`Interno (no facturado): IA del periodo ${formatAiCost(invoice.aiCost)} USD ` +
+      tr`en tarifa API equivalente.`);
   }
   if (invoice.notes) out.push(invoice.notes);
 

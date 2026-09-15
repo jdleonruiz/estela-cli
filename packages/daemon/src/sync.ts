@@ -4,6 +4,7 @@ import { cloudPost, CloudError } from "./cloud/client.js";
 import * as store from "./db/store.js";
 import type { SyncableEntry } from "./db/store.js";
 import { NoAccountError } from "./publish.js";
+import { tr } from "./i18n/index.js";
 
 /**
  * Sync personal (Pro): las máquinas de una misma cuenta sincronizan las
@@ -33,15 +34,15 @@ export async function syncProject(db: DatabaseSync, projectId: string): Promise<
   const account = store.getCloudAccount(db);
   if (!account) {
     throw new NoAccountError(
-      `Necesitas una cuenta para sincronizar. Vincúlala con:\n\n` +
-      `  estela login --email tu@correo.com\n`);
+      tr`Necesitas una cuenta para sincronizar. Vincúlala con:\n\n` +
+      tr`  estela login --email tu@correo.com\n`);
   }
 
   const sync = store.getProjectSync(db, projectId);
   if (!sync) {
     throw new NotSyncedError(
-      `Este proyecto no sincroniza. Actívalo con:\n\n` +
-      `  estela sync enable --project ${projectId}\n`);
+      tr`Este proyecto no sincroniza. Actívalo con:\n\n` +
+      tr`  estela sync enable --project ${projectId}\n`);
   }
 
   const since = store.getSyncCursor(db, projectId);
@@ -60,8 +61,8 @@ export async function syncProject(db: DatabaseSync, projectId: string): Promise<
     // roto algo. El mensaje ya viene redactado del servidor.
     if (error instanceof CloudError && error.status === 401) {
       throw new NoAccountError(
-        `Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
-        `  estela login --email tu@correo.com\n`);
+        tr`Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
+        tr`  estela login --email tu@correo.com\n`);
     }
     throw error;
   }

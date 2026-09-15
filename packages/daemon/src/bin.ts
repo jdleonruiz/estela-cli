@@ -18,13 +18,17 @@
  */
 
 import { tooOld } from "./node-version.js";
+import { detectLang, setLang, tr } from "./i18n/index.js";
 
 const MIN_NODE = "22.5.0";
 
 if (tooOld(process.version, MIN_NODE)) {
+  // Aquí aún no se ha leído ningún argumento: `--lang` se busca a mano.
+  const i = process.argv.indexOf("--lang");
+  setLang(detectLang({ flag: i >= 0 ? process.argv[i + 1] : undefined, env: process.env, platform: process.platform }));
   console.error(
-    `\nEstela necesita Node ${MIN_NODE} o superior — tienes ${process.version} instalado.\n` +
-    `Actualiza con nvm (nvm install --lts) o desde https://nodejs.org, y vuelve a intentarlo.\n`);
+    tr`\nEstela necesita Node ${MIN_NODE} o superior — tienes ${process.version} instalado.\n` +
+    tr`Actualiza con nvm (nvm install --lts) o desde https://nodejs.org, y vuelve a intentarlo.\n`);
   process.exit(1);
 } else {
   // Este paquete compila a CommonJS (no admite `await` de nivel superior), así

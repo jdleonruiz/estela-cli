@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { tr } from "../i18n/index.js";
 
 /**
  * Esquema local. Todo vive en `~/.estela/estela.db`, en el disco del usuario.
@@ -405,8 +406,8 @@ export function openDatabase(path: string = DEFAULT_DB_PATH): DatabaseSync {
   if (row.version > CURRENT_VERSION) {
     db.close();
     throw new Error(
-      `La base de datos usa el esquema v${row.version} y esta versión de Estela entiende hasta ` +
-      `v${CURRENT_VERSION}. Actualiza Estela antes de continuar.`);
+      tr`La base de datos usa el esquema v${row.version} y esta versión de Estela entiende hasta ` +
+      tr`v${CURRENT_VERSION}. Actualiza Estela antes de continuar.`);
   }
 
   // Cada migración va en su transacción: si una falla, la base queda en la
@@ -422,7 +423,7 @@ export function openDatabase(path: string = DEFAULT_DB_PATH): DatabaseSync {
       db.exec("ROLLBACK");
       db.close();
       throw new Error(
-        `Falló la migración v${migration.version} (${migration.describe}): ` +
+        tr`Falló la migración v${migration.version} (${migration.describe}): ` +
         `${error instanceof Error ? error.message : String(error)}`);
     }
   }

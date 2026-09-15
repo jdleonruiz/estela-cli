@@ -23,6 +23,7 @@ import { teamView } from "./metrics/team.js";
 import { resolveScratchpads, scanClaudeCode } from "./watchers/claude.js";
 import { gitUserEmail, mergedBranches, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
+import { tr, withLang } from "./i18n/index.js";
 
 /**
  * Servidor local del dashboard.
@@ -186,11 +187,11 @@ async function runImport(dbPath: string): Promise<ImportStatus> {
   importing = true;
   try {
     const blocks = await importOnce(dbPath);
-    if (blocks > 0) console.log(`  · ${blocks} bloques actualizados`);
+    if (blocks > 0) console.log(tr`  · ${blocks} bloques actualizados`);
     lastImport = { at: new Date().toISOString(), ok: true, blocks, error: null };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn("  ⚠ no se pudo importar:", message);
+    console.warn(tr`  ⚠ no se pudo importar:`, message);
     lastImport = { at: new Date().toISOString(), ok: false, blocks: 0, error: message };
   } finally {
     importing = false;
@@ -236,15 +237,16 @@ export function startServer(options: ServerOptions = {}): Promise<string> {
 }
 
 /**
- * Los pocos mensajes que este servidor escribe él mismo, en el idioma de la
- * interfaz. La página manda `X-Estela-Lang` en cada petición; el resto de
- * textos (casi todos) los pone la propia página desde i18n.js.
+ * Cada petición corre en el idioma del navegador que la hace: la página manda
+ * `X-Estela-Lang`, y cualquier tr`` que se evalúe dentro —incluidos los errores
+ * lanzados por funciones que no ven la petición— sale en ese idioma. Sin la
+ * cabecera, español, que es lo que devolvía siempre.
  */
-function texto(req: IncomingMessage, es: string, en: string): string {
-  return req.headers["x-estela-lang"] === "en" ? en : es;
+function handle(req: IncomingMessage, res: ServerResponse, dbPath: string): Promise<void> {
+  return withLang(req.headers["x-estela-lang"] === "en" ? "en" : "es", () => handleRequest(req, res, dbPath));
 }
 
-async function handle(req: IncomingMessage, res: ServerResponse, dbPath: string): Promise<void> {
+async function handleRequest(req: IncomingMessage, res: ServerResponse, dbPath: string): Promise<void> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const path = url.pathname;
 
@@ -343,7 +345,7 @@ async function api(
       const cuenta = store.getCloudAccount(db);
       if (!cuenta) {
         return json(res, 401, {
-          error: texto(req, "Vincula una cuenta para compartir.", "Link an account to share."), needsLogin: true,
+          error: tr`Vincula una cuenta para compartir.`, needsLogin: true,
         });
       }
       const body = await readJson(req);
@@ -472,11 +474,11 @@ async function api(
       const repoPath = String(body["repoPath"] ?? "");
       if (!store.getProject(db, projectId)) {
         return json(res, 404, {
-          error: texto(req, `No existe el proyecto "${projectId}".`, `Project "${projectId}" doesn't exist.`),
+          error: tr`No existe el proyecto "${projectId}".`,
         });
       }
       if (!repoPath) {
-        return json(res, 400, { error: texto(req, "Falta la ruta del repositorio.", "The repository path is missing.") });
+        return json(res, 400, { error: tr`Falta la ruta del repositorio.` });
       }
       store.addProjectRepo(db, projectId, repoPath);
       // Importar en el acto: vincular sin imputar deja el proyecto igual de
@@ -493,7 +495,7 @@ async function api(
       const cuenta = store.getCloudAccount(db);
       if (!cuenta) {
         return json(res, 401, {
-          error: texto(req, "Vincula una cuenta para sincronizar.", "Link an account to sync."), needsLogin: true,
+          error: tr`Vincula una cuenta para sincronizar.`, needsLogin: true,
         });
       }
       const ids = store.listProjectSyncs(db).map((x) => x.projectId);
@@ -549,7 +551,7 @@ async function api(
       return json(res, 200, { approved: n });
     }
 
-    return json(res, 404, { error: texto(req, `Ruta desconocida: ${path}`, `Unknown route: ${path}`) });
+    return json(res, 404, { error: tr`Ruta desconocida: ${path}` });
   } finally {
     db.close();
   }
@@ -1069,8 +1071,8 @@ function applyEntryPatch(db: Db, id: string, patch: Record<string, unknown>): vo
   // salió, y cambiarla la dejaría descuadrada.
   const row = db.prepare("SELECT invoice_id FROM time_entries WHERE id = ?")
     .get(id) as { invoice_id: string | null } | undefined;
-  if (!row) throw new Error(`No existe la imputación ${id}`);
-  if (row.invoice_id) throw new Error("Esta imputación ya está facturada y no se puede editar.");
+  if (!row) throw new Error(tr`No existe la imputación ${id}`);
+  if (row.invoice_id) throw new Error(tr`Esta imputación ya está facturada y no se puede editar.`);
 
   values.push(id);
   db.prepare(`UPDATE time_entries SET ${sets.join(", ")} WHERE id = ?`).run(...values);
@@ -1083,16 +1085,16 @@ function applyEntryPatch(db: Db, id: string, patch: Record<string, unknown>): vo
  */
 function createManualEntry(db: Db, body: Record<string, unknown>): string {
   const projectId = String(body["projectId"] ?? "");
-  if (!store.getProject(db, projectId)) throw new Error(`No existe el proyecto "${projectId}"`);
+  if (!store.getProject(db, projectId)) throw new Error(tr`No existe el proyecto "${projectId}"`);
 
   const minutes = Number(body["minutes"]);
-  if (!Number.isFinite(minutes) || minutes <= 0) throw new Error("Indica cuántos minutos");
+  if (!Number.isFinite(minutes) || minutes <= 0) throw new Error(tr`Indica cuántos minutos`);
 
   const date = String(body["date"] ?? todayIso());
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`Fecha inválida: ${date}`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(tr`Fecha inválida: ${date}`);
 
   const kind = String(body["kind"] ?? "meeting") as WorkKind;
-  if (!(kind in WORK_KIND_LABELS)) throw new Error(`Tipo de trabajo desconocido: ${kind}`);
+  if (!(kind in WORK_KIND_LABELS)) throw new Error(tr`Tipo de trabajo desconocido: ${kind}`);
 
   const seconds = Math.round(minutes * 60);
   const startedAt = new Date(`${date}T10:00:00`);
@@ -1191,13 +1193,13 @@ function unassignedRepos(db: Db) {
 
 function createProject(db: Db, body: Record<string, unknown>): string {
   const name = String(body["name"] ?? "").trim();
-  if (!name) throw new Error("El proyecto necesita un nombre");
+  if (!name) throw new Error(tr`El proyecto necesita un nombre`);
 
   const clientName = String(body["clientName"] ?? "").trim();
   let clientId = String(body["clientId"] ?? "").trim();
 
   if (!clientId) {
-    if (!clientName) throw new Error("Elige un cliente o escribe uno nuevo");
+    if (!clientName) throw new Error(tr`Elige un cliente o escribe uno nuevo`);
     clientId = slug(clientName);
     store.upsertClient(db, {
       id: clientId, name: clientName,
@@ -1246,10 +1248,10 @@ function createProject(db: Db, body: Record<string, unknown>): string {
 function setRate(db: Db, body: Record<string, unknown>): void {
   const projectId = String(body["projectId"] ?? "");
   const project = store.getProject(db, projectId);
-  if (!project) throw new Error(`No existe el proyecto "${projectId}"`);
+  if (!project) throw new Error(tr`No existe el proyecto "${projectId}"`);
 
   const minor = Number(body["hourlyMinor"]);
-  if (!Number.isFinite(minor) || minor <= 0) throw new Error("Tarifa inválida");
+  if (!Number.isFinite(minor) || minor <= 0) throw new Error(tr`Tarifa inválida`);
 
   const fromRaw = String(body["from"] ?? "").trim();
   const client = store.getClient(db, project.clientId)!;
@@ -1297,7 +1299,7 @@ function sendReport(
   from: string, to: string, withAmounts: boolean, author: string,
 ): void {
   const project = store.getProject(db, projectId);
-  if (!project) throw new Error(`No existe el proyecto "${projectId}"`);
+  if (!project) throw new Error(tr`No existe el proyecto "${projectId}"`);
   const client = store.getClient(db, project.clientId)!;
   const rates = store.getRates(db, projectId);
 
@@ -1363,7 +1365,7 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > 1_000_000) throw new Error("Cuerpo de petición demasiado grande");
+    if (size > 1_000_000) throw new Error(tr`Cuerpo de petición demasiado grande`);
     chunks.push(chunk as Buffer);
   }
   if (chunks.length === 0) return {};
@@ -1408,9 +1410,9 @@ if (require.main === module) {
   const dbPath = process.env["ESTELA_DB"] ?? DEFAULT_DB_PATH;
 
   startServer({ port, dbPath }).then((address) => {
-    console.log(`\n  Estela  ${address}`);
-    console.log(`  Import automático cada 5 min.`);
-    console.log(`  Datos:  ${dbPath}\n`);
-    console.log("  Ctrl+C para parar.\n");
+    console.log(tr`\n  Estela  ${address}`);
+    console.log(tr`  Import automático cada 5 min.`);
+    console.log(tr`  Datos:  ${dbPath}\n`);
+    console.log(tr`  Ctrl+C para parar.\n`);
   });
 }

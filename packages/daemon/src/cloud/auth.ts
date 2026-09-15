@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import * as store from "../db/store.js";
 import { cloudPost, CloudError } from "./client.js";
+import { tr } from "../i18n/index.js";
 
 /**
  * `estela login` / `estela logout`.
@@ -30,9 +31,9 @@ interface DevicePoll {
 export async function login(db: DatabaseSync, email: string, apiBaseUrl: string): Promise<void> {
   const start = await cloudPost<DeviceStart>(apiBaseUrl, "/auth/device/start", { email });
 
-  console.log(`\nTe mandamos un enlace a ${email}. Confírmalo para vincular esta máquina.`);
-  console.log(`Código de verificación (debe coincidir con el del enlace): ${start.userCode}`);
-  console.log("Esperando confirmación...\n");
+  console.log(tr`\nTe mandamos un enlace a ${email}. Confírmalo para vincular esta máquina.`);
+  console.log(tr`Código de verificación (debe coincidir con el del enlace): ${start.userCode}`);
+  console.log(tr`Esperando confirmación...\n`);
 
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -40,7 +41,7 @@ export async function login(db: DatabaseSync, email: string, apiBaseUrl: string)
     const poll = await cloudPost<DevicePoll>(apiBaseUrl, "/auth/device/poll", { deviceCode: start.deviceCode });
 
     if (poll.status === "expired") {
-      throw new CloudError("El login caducó o el enlace ya se usó. Ejecuta \"estela login\" otra vez.");
+      throw new CloudError(tr`El login caducó o el enlace ya se usó. Ejecuta "estela login" otra vez.`);
     }
     if (poll.status === "authorized" && poll.accountId && poll.deviceToken) {
       store.setCloudAccount(db, {
@@ -51,19 +52,19 @@ export async function login(db: DatabaseSync, email: string, apiBaseUrl: string)
         apiBaseUrl,
         linkedAt: new Date(),
       });
-      console.log(`Vinculado como ${email}.`);
+      console.log(tr`Vinculado como ${email}.`);
       return;
     }
     // "pending": se sigue esperando.
   }
 
-  throw new CloudError("No se confirmó el login a tiempo. Ejecuta \"estela login\" otra vez.");
+  throw new CloudError(tr`No se confirmó el login a tiempo. Ejecuta "estela login" otra vez.`);
 }
 
 export async function logout(db: DatabaseSync): Promise<void> {
   const account = store.getCloudAccount(db);
   if (!account) {
-    console.log("Esta máquina ya era local.");
+    console.log(tr`Esta máquina ya era local.`);
     return;
   }
 
@@ -76,7 +77,7 @@ export async function logout(db: DatabaseSync): Promise<void> {
   }
 
   store.clearCloudAccount(db);
-  console.log("Desvinculado. Tus datos locales no se tocaron.");
+  console.log(tr`Desvinculado. Tus datos locales no se tocaron.`);
 }
 
 function sleep(ms: number): Promise<void> {

@@ -11,6 +11,7 @@ import { emailsOverlap, teamView } from "./metrics/team.js";
 import { listTeamMembers, type TeamMemberSummary } from "./team.js";
 import { mergedBranches } from "./watchers/git.js";
 import { myEmailsByRepo } from "./watchers/identity.js";
+import { tr } from "./i18n/index.js";
 
 /**
  * Publica un panel, alojado en la cuenta vinculada.
@@ -73,7 +74,7 @@ function commitsOfProject(db: DatabaseSync, repoPaths: readonly string[]): Commi
 
 export async function publishPanel(db: DatabaseSync, options: PublishOptions): Promise<PublishResult> {
   const project = store.getProject(db, options.projectId);
-  if (!project) throw new Error(`No existe el proyecto "${options.projectId}".`);
+  if (!project) throw new Error(tr`No existe el proyecto "${options.projectId}".`);
   const client = store.getClient(db, project.clientId)!;
   const rates = store.getRates(db, options.projectId);
 
@@ -108,8 +109,8 @@ export async function publishPanel(db: DatabaseSync, options: PublishOptions): P
   const account = store.getCloudAccount(db);
   if (!account) {
     throw new NoAccountError(
-      `Necesitas una cuenta para publicar. Vincúlala con:\n\n` +
-      `  estela login --email tu@correo.com\n`);
+      tr`Necesitas una cuenta para publicar. Vincúlala con:\n\n` +
+      tr`  estela login --email tu@correo.com\n`);
   }
 
   let result: { url: string; adopted: boolean };
@@ -125,8 +126,8 @@ export async function publishPanel(db: DatabaseSync, options: PublishOptions): P
     // limpio. Envolverlo lo convertía en un volcado de pila.
     if (error instanceof CloudError && error.status === 401) {
       throw new NoAccountError(
-        `Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
-        `  estela login --email tu@correo.com\n`);
+        tr`Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
+        tr`  estela login --email tu@correo.com\n`);
     }
     throw error;
   }

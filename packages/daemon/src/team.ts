@@ -5,6 +5,7 @@ import type { CloudAccount } from "@estela/shared";
 import { cloudGet, cloudPost, CloudError } from "./cloud/client.js";
 import * as store from "./db/store.js";
 import { NoAccountError } from "./publish.js";
+import { tr } from "./i18n/index.js";
 
 /**
  * Teams: invitar a un compañero a un proyecto, y que sus horas pasen de
@@ -21,8 +22,8 @@ function requireAccount(db: DatabaseSync): CloudAccount {
   const account = store.getCloudAccount(db);
   if (!account) {
     throw new NoAccountError(
-      `Necesitas una cuenta para esto. Vincúlala con:\n\n` +
-      `  estela login --email tu@correo.com\n`);
+      tr`Necesitas una cuenta para esto. Vincúlala con:\n\n` +
+      tr`  estela login --email tu@correo.com\n`);
   }
   return account;
 }
@@ -34,8 +35,8 @@ async function unwrap<T>(call: Promise<T>): Promise<T> {
     if (error instanceof CloudError && error.status === 402) throw new Error(error.message);
     if (error instanceof CloudError && error.status === 401) {
       throw new NoAccountError(
-        `Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
-        `  estela login --email tu@correo.com\n`);
+        tr`Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
+        tr`  estela login --email tu@correo.com\n`);
     }
     throw error;
   }
@@ -50,7 +51,7 @@ export interface InviteOptions {
 export async function inviteTeamMember(db: DatabaseSync, options: InviteOptions): Promise<{ token: string }> {
   const account = requireAccount(db);
   const project = store.getProject(db, options.projectId);
-  if (!project) throw new Error(`No existe el proyecto "${options.projectId}".`);
+  if (!project) throw new Error(tr`No existe el proyecto "${options.projectId}".`);
 
   return unwrap(cloudPost(account.apiBaseUrl, "/team/invite", {
     projectId: options.projectId, projectName: project.name,
@@ -102,8 +103,8 @@ export async function acceptTeamInvite(db: DatabaseSync, options: AcceptOptions)
     const existingSync = existing ? store.getProjectSync(db, options.localProjectId) : null;
     if (existing && existingSync?.inviteToken !== options.token) {
       throw new Error(
-        `Ya existe un proyecto local con el id "${options.localProjectId}". ` +
-        `Elige otro con --as-id.`);
+        tr`Ya existe un proyecto local con el id "${options.localProjectId}". ` +
+        tr`Elige otro con --as-id.`);
     }
   }
 
@@ -124,7 +125,7 @@ export async function acceptTeamInvite(db: DatabaseSync, options: AcceptOptions)
   }
 
   if (!store.getClient(db, "team")) {
-    store.upsertClient(db, { id: "team", name: "Proyectos de equipo", currency: "USD" });
+    store.upsertClient(db, { id: "team", name: tr`Proyectos de equipo`, currency: "USD" });
   }
   store.upsertProject(db, {
     id: localProjectId, clientId: "team", name: result.projectName,

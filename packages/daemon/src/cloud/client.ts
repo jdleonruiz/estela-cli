@@ -7,6 +7,8 @@
  * no vale lo que cuesta romper eso.
  */
 
+import { getLang, tr } from "../i18n/index.js";
+
 export class CloudError extends Error {
   constructor(message: string, readonly status?: number) { super(message); }
 }
@@ -34,14 +36,16 @@ export async function cloudPost<T>(
       headers: {
         "content-type": "application/json",
         "estela-version": clientVersion,
+        // Para que la API conteste en el idioma de la terminal.
+        "x-estela-lang": getLang(),
         ...(options.deviceToken ? { authorization: `Bearer ${options.deviceToken}` } : {}),
       },
       body: JSON.stringify(body),
     });
   } catch {
     throw new CloudError(
-      `Sin respuesta de ${baseUrl}. Puede ser tu conexión o que el servicio esté caído; ` +
-      `en ambos casos, nada de lo tuyo se ha perdido: vuelve a intentarlo.`);
+      tr`Sin respuesta de ${baseUrl}. Puede ser tu conexión o que el servicio esté caído; ` +
+      tr`en ambos casos, nada de lo tuyo se ha perdido: vuelve a intentarlo.`);
   }
 
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
@@ -50,7 +54,7 @@ export async function cloudPost<T>(
     // "no tienes sesión" (401, pide login) de "cuota agotada" (402, pide
     // upgrade) sin tener que analizar el texto en español.
     throw new CloudError(
-      typeof data["error"] === "string" ? data["error"] : `Error ${res.status}`, res.status);
+      typeof data["error"] === "string" ? data["error"] : tr`Error ${res.status}`, res.status);
   }
   return data as T;
 }
@@ -69,19 +73,21 @@ export async function cloudGet<T>(
       method: "GET",
       headers: {
         "estela-version": clientVersion,
+        // Para que la API conteste en el idioma de la terminal.
+        "x-estela-lang": getLang(),
         ...(options.deviceToken ? { authorization: `Bearer ${options.deviceToken}` } : {}),
       },
     });
   } catch {
     throw new CloudError(
-      `Sin respuesta de ${baseUrl}. Puede ser tu conexión o que el servicio esté caído; ` +
-      `en ambos casos, nada de lo tuyo se ha perdido: vuelve a intentarlo.`);
+      tr`Sin respuesta de ${baseUrl}. Puede ser tu conexión o que el servicio esté caído; ` +
+      tr`en ambos casos, nada de lo tuyo se ha perdido: vuelve a intentarlo.`);
   }
 
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {
     throw new CloudError(
-      typeof data["error"] === "string" ? data["error"] : `Error ${res.status}`, res.status);
+      typeof data["error"] === "string" ? data["error"] : tr`Error ${res.status}`, res.status);
   }
   return data as T;
 }

@@ -4,6 +4,7 @@ import { formatDuration } from "@estela/shared";
 
 import * as store from "./db/store.js";
 import { gitUserEmail, repoAuthors, repoRoot } from "./watchers/git.js";
+import { tr } from "./i18n/index.js";
 
 /**
  * Primera ejecución.
@@ -166,7 +167,7 @@ export function applySetup(db: DatabaseSync, plans: readonly SetupPlan[]): numbe
 
   if (!store.getClient(db, DEFAULT_CLIENT)) {
     store.upsertClient(db, {
-      id: DEFAULT_CLIENT, name: "Sin clasificar", currency: "EUR",
+      id: DEFAULT_CLIENT, name: tr`Sin clasificar`, currency: "EUR",
     });
   }
 
@@ -220,9 +221,11 @@ export function summarize(db: DatabaseSync): {
 /** Una línea para el resumen final. Se prueba aparte de la impresión. */
 export function summaryLine(s: ReturnType<typeof summarize>): string {
   if (s.seconds === 0) {
-    return "No se ha podido reconstruir ninguna hora todavía.";
+    return tr`No se ha podido reconstruir ninguna hora todavía.`;
   }
-  return `${formatDuration(s.seconds)} reconstruidas · ${s.days} ` +
-    `${s.days === 1 ? "día" : "días"} · ${s.projects} ` +
-    `${s.projects === 1 ? "proyecto" : "proyectos"}`;
+  // Frases enteras por plural, no una "s" pegada: en inglés "day/days" y
+  // "project/projects" no siempre concuerdan igual que en español.
+  const days = s.days === 1 ? tr`1 día` : tr`${s.days} días`;
+  const projects = s.projects === 1 ? tr`1 proyecto` : tr`${s.projects} proyectos`;
+  return tr`${formatDuration(s.seconds)} reconstruidas · ${days} · ${projects}`;
 }

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 import type { AgentTurn, ParseReport, TokenUsage } from "@estela/shared";
+import { tr } from "../i18n/index.js";
 
 /**
  * Adaptador de Claude Code.
@@ -110,9 +111,9 @@ export async function scanClaudeCode(options: ScanOptions = {}): Promise<ScanRes
   const classifiable = recordsSeen - unknownRecords;
   if (classifiable > 0 && malformedRecords / classifiable > 0.02) {
     warnings.push(
-      `${malformedRecords} de ${classifiable} registros de tipo conocido venían malformados ` +
+      tr`${malformedRecords} de ${classifiable} registros de tipo conocido venían malformados ` +
       `(${((malformedRecords / classifiable) * 100).toFixed(1)}%). ` +
-      `Claude Code puede haber cambiado su formato: revisa los totales antes de facturar.`);
+      tr`Claude Code puede haber cambiado su formato: revisa los totales antes de facturar.`);
   }
 
   turns.sort((a, b) => a.at.getTime() - b.at.getTime());

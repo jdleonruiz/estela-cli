@@ -1,6 +1,7 @@
 import type { AgentTurn, AiCost, CommitRecord } from "@estela/shared";
 import { localDate } from "@estela/shared";
 import { costOfTurn } from "../pricing/cost.js";
+import { tr } from "../i18n/index.js";
 
 /**
  * Agrupa turnos sueltos en bloques de trabajo continuo.
@@ -220,11 +221,11 @@ export function describeBlock(block: WorkBlock): string {
 
   if (subjects.length === 1) return subjects[0]!;
   if (subjects.length > 1) {
-    return `${subjects[0]} (+${subjects.length - 1} commits más)`;
+    return tr`${subjects[0]} (+${subjects.length - 1} commits más)`;
   }
 
   const branch = block.branch?.replace(/^(feature|feat|fix|chore)\//, "") ?? null;
-  return branch ? `Desarrollo en ${branch}` : "Desarrollo";
+  return branch ? tr`Desarrollo en ${branch}` : "Desarrollo";
 }
 
 /**
