@@ -1,168 +1,183 @@
 # Estela
 
-Registro de horas de desarrollo que **no hay que rellenar**. Lee lo que tus
-agentes de IA y tu Git ya escribieron en disco y reconstruye en qué se te fue el
-tiempo, con lo que costó de IA.
+**English** · [Español](https://github.com/jdleonruiz/estela-cli/blob/main/README.es.md)
+
+Development time tracking you **don't have to fill in**. Estela reads what your
+AI agents and your Git already wrote to disk and rebuilds where your time went,
+along with what the AI cost.
 
 ```sh
 npx estela setup
 ```
 
-Veinte segundos después tienes tu historial de los últimos meses. Sin cuenta,
-sin tarjeta y sin que nada salga de tu máquina.
+Twenty seconds later you have the last few months of your history. No account,
+no card, and nothing leaves your machine.
 
 ---
 
-## Por qué existe
+## Why it exists
 
-Un cronómetro que hay que acordarse de arrancar siempre falla. Y con un agente
-de IA el tiempo ya no se mide tecleando: se va en escribir el prompt, leer lo
-que devuelve y probarlo.
+A timer you have to remember to start always fails. And with an AI agent, time
+isn't measured in keystrokes anymore: it goes into writing the prompt, reading
+what comes back, and trying it out.
 
-Pero ese trabajo **deja rastro**. Claude Code guarda cada sesión en
-`~/.claude/projects/` con su modelo y sus tokens exactos. Git guarda cuándo
-commiteaste y qué. Estela lee ambas cosas y las cruza.
+But that work **leaves a trail**. Claude Code saves every session in
+`~/.claude/projects/` with its exact model and tokens. Git records when you
+committed and what. Estela reads both and lines them up.
 
-Lo que no hace:
+What it doesn't do:
 
-- **No instala hooks.** Tu `husky` y tu `lefthook` siguen intactos, y tus
-  mensajes de commit no se tocan. Un identificador metido en el historial es
-  irreversible una vez subido.
-- **No inspecciona procesos ni la terminal.** Lee ficheros que ya existen.
-- **No guarda el contenido de tus prompts.** Solo cuándo, cuánto y con qué
-  modelo.
-- **No manda nada a ningún sitio.** El plan gratuito es local entero.
+- **It doesn't install hooks.** Your `husky` and `lefthook` stay untouched, and
+  your commit messages aren't modified. An identifier written into history
+  can't be taken back once it's pushed.
+- **It doesn't inspect processes or your terminal.** It reads files that already
+  exist.
+- **It doesn't store the content of your prompts.** Only when, how much, and
+  with which model.
+- **It doesn't send anything anywhere.** The free plan is entirely local.
 
-## Empezar
+## Getting started
 
-Necesitas **Node 22.5 o superior** (por `node:sqlite`).
+You need **Node 22.5 or later** (for `node:sqlite`).
 
 ```sh
-npx estela setup     # detecta agentes y repositorios, reconstruye tu historial
-npx estela web       # abre el panel en http://localhost:4319
-npx estela doctor    # revisa los datos y avisa de lo que está mal
+npx estela setup     # detects agents and repositories, rebuilds your history
+npx estela web       # opens the dashboard at http://localhost:4319
+npx estela doctor    # checks your data and flags anything wrong
 npx estela --version
 ```
 
-`npm` no actualiza instalaciones globales por su cuenta. Si la instalaste con
-`npm install -g estela`, Estela avisa sola cuando hay una versión más nueva
-(consulta npm como mucho una vez al día, en segundo plano, sin bloquear nada);
-actualiza con `npm install -g estela@latest`.
+No Claude Code? It still works: without transcripts, Estela rebuilds your time
+from your commits alone, and marks it as estimated.
 
-`setup` no pregunta nada y no pisa lo que hayas configurado a mano: se puede
-volver a ejecutar.
+`npm` doesn't update global installs on its own. If you installed with
+`npm install -g estela`, Estela tells you when there's a newer version (it asks
+npm at most once a day, in the background, without blocking anything); update
+with `npm install -g estela@latest`.
 
-## Facturar a un cliente
+`setup` asks no questions and doesn't overwrite anything you've set up by hand:
+you can run it again.
 
-Los proyectos se crean como internos y sin tarifa, porque inventarla daría
-cifras falsas el primer minuto. Cuando uno sea de un cliente de verdad:
+Estela speaks English and Spanish, following your system's language. Force one
+with `--lang en` on any command, or `ESTELA_LANG=en` for good.
+
+## Reporting to a client
+
+Projects are created as internal and without a rate, because making one up
+would produce fake numbers from the first minute. When one belongs to a real
+client:
 
 ```sh
 estela client add --id acme --name "ACME" --currency EUR
-estela project add --id acme-web --client acme --name "Web de ACME" --repo ~/dev/acme-web
+estela project add --id acme-web --client acme --name "ACME website" --repo ~/dev/acme-web
 estela rate set --project acme-web --rate 50
 
-estela author --project acme-web      # con qué correo commiteas ahí
+estela author --project acme-web      # which email you commit with there
 estela report --project acme-web --cutoff 2026-08-31 --dry-run
 ```
 
-**`estela author` importa más de lo que parece.** En el repositorio de un
-cliente casi nunca commiteas con tu correo global, y sin decirlo se capturan
-tres commits de mil setecientos.
+**`estela author` matters more than it looks.** In a client's repository you
+almost never commit with your global email, and without telling Estela it
+captures three commits out of seventeen hundred.
 
-## Compartir el avance con tu cliente
+The report backs up your work with hours and commits. It isn't an invoice:
+Estela doesn't issue tax documents, so attach it to your own.
+
+## Sharing progress with your client
 
 ```sh
-estela login --email tu@correo.com    # una vez
+estela login --email you@example.com    # once
 estela publish --project acme-web
 ```
 
-Sube un panel de solo lectura, con un enlace no adivinable, alojado en
-getestela.dev — no hace falta servidor propio. Enseña horas y commits;
-**nunca tu tarifa ni tu consumo de IA**, porque mientras la pagues tú ese
-gasto es tuyo y un cliente que sabe qué parte generó una IA tiene un
-argumento nuevo para negociar tu tarifa.
+This uploads a read-only dashboard with an unguessable link, hosted on
+getestela.dev — no server of your own needed. It shows hours and commits;
+**never your rate or your AI usage**, because as long as you're the one paying
+for it that spend is yours, and a client who knows which part an AI generated
+has a new argument for negotiating your rate down.
 
-Al republicar, pasa el mismo `--token` o tu cliente se queda con un enlace
-muerto. El plan Free permite un panel publicado a la vez; Pro y Teams no
-tienen límite.
+Publishing again from the same machine reuses the link automatically. From a
+different machine, pass `--token` with the existing one, or your client ends up
+with a dead link. The Free plan allows one published dashboard at a time; Pro
+and Teams have no limit.
 
-## El coste de la IA
+## What the AI actually costs
 
-Con una cuota plana el gasto real no es la suma de los tokens: es la cuota
-repartida entre lo que consumiste.
+On a flat subscription, your real spend isn't the sum of the tokens: it's the
+fee split across what you used.
 
 ```sh
 estela subscription add --id max --name "Claude Max" --fee 100
 estela ai-cost
 ```
 
-La caché se cuenta aparte porque suele ser la mayor parte de la factura —
-ignorarla subestimaba el gasto cinco veces.
+Cache is counted separately because it's usually most of the bill — ignoring it
+underestimated spend fivefold.
 
-## Horas que ningún import va a deducir
+## Hours no import will infer
 
-Reuniones, desplazamientos, investigación, y desarrollo sin agente que tampoco
-dejó commits:
+Meetings, travel, research, and development without an agent that didn't leave
+commits either:
 
 ```sh
-estela log --project acme-web --hours 1.5 --kind meeting --what "Seguimiento semanal"
+estela log --project acme-web --hours 1.5 --kind meeting --what "Weekly check-in"
 ```
 
-Un import nunca las toca.
+An import never touches them.
 
-## Trabajo sin agente
+## Work without an agent
 
-Si programaste a mano, tus commits siguen siendo un rastro: Estela deduce el
-tiempo de ellos y lo marca como **estimado**, para que sepas qué parte de tu
-parte está medida y cuál supuesta. La estimación se queda corta a propósito:
-estas horas acaban en un informe que alguien paga.
+If you coded by hand, your commits are still a trail: Estela infers the time
+from them and marks it as **estimated**, so you know which part of your hours is
+measured and which is assumed. The estimate errs on the short side on purpose:
+these hours end up in a report someone pays for.
 
-## Planes
+## Plans
 
 | | Free | Pro | Teams |
 |---|---|---|---|
-| Todo lo de arriba, en local | ✓ | ✓ | ✓ |
-| Sincronizar varias máquinas | — | ✓ | ✓ |
-| Paneles alojados a la vez | 1 | ilimitados | ilimitados |
-| Horas del equipo **medidas** | — | — | ✓ |
-| Presupuesto de IA por proyecto | — | — | ✓ |
+| Everything above, locally | ✓ | ✓ | ✓ |
+| Sync across machines | — | ✓ | ✓ |
+| Hosted dashboards at once | 1 | unlimited | unlimited |
+| **Measured** team hours | — | — | ✓ |
+| AI budget per project | — | — | ✓ |
 
-Pro es una persona en varias máquinas; Teams son varias personas. El coste de
-IA se informa **por proyecto, nunca por persona**: lo que cada cual gasta de su
-bolsillo es suyo.
+Pro is one person on several machines; Teams is several people. AI cost is
+reported **per project, never per person**: what each person spends out of their
+own pocket is theirs.
 
-Más en [getestela.dev](https://getestela.dev).
+More at [getestela.dev](https://getestela.dev/en/).
 
-## Desarrollo
+## Development
 
 ```sh
 npm install
-npm run build
-node --test packages/daemon/dist/**/*.test.js
+npm test
 ```
 
-Node 22 y **cero dependencias de runtime**, a propósito: nadie instala un
-programa que lee sus transcripts si no puede auditarlo, y una lista de
-dependencias vacía se audita en una tarde.
+Node 22 and **zero runtime dependencies**, on purpose: nobody installs a program
+that reads their transcripts if they can't audit it, and an empty dependency
+list can be audited in an afternoon.
 
-## Código abierto, servicio cerrado
+## Open source, closed service
 
-Todo el programa que se instala en tu máquina es abierto y está bajo licencia
-MIT: el CLI, lo que lee tus transcripts y tu git, lo que calcula las horas y
-el coste, y el panel que abre `estela web`. Es exactamente lo que descarga
-`npm install estela`, y puedes leerlo en
+Everything that installs on your machine is open source under the MIT license:
+the CLI, what reads your transcripts and your git, what calculates hours and
+cost, and the dashboard that `estela web` opens. It's exactly what
+`npm install estela` downloads, and you can read it at
 [github.com/jdleonruiz/estela-cli](https://github.com/jdleonruiz/estela-cli).
+Each npm version has a matching tag there.
 
-Lo que **no** está aquí es el servicio de pago: el servidor que sincroniza
-entre tus máquinas y el que sostiene los proyectos de equipo. Eso es cerrado,
-y es de lo que vive el proyecto.
+What **isn't** here is the paid service: the server that syncs your machines and
+the one behind team projects. That part is closed, and it's what keeps the
+project going.
 
-La división no es casual. El plan gratuito funciona entero sin cuenta, sin
-tarjeta y sin red, y esa afirmación no vale nada si tienes que creértela: con
-el código delante puedes comprobar tú mismo que nada sale de tu máquina.
+The split isn't an accident. The free plan works entirely without an account,
+a card, or a network connection, and that claim is worth nothing if you have to
+take it on faith: with the code in front of you, you can check for yourself that
+nothing leaves your machine.
 
-Las fixtures de los tests son inventadas a propósito. Los casos vienen de
-repositorios reales —por eso cubren líos que a nadie se le ocurrirían— pero
-ni la plantilla de un cliente ni cuánto commitea cada persona de su equipo
-son cosas que deban viajar en un repositorio público.
+The test fixtures are made up on purpose. The cases come from real repositories
+— that's why they cover messes nobody would think of — but neither a client's
+team roster nor how much each of its people commits belongs in a public
+repository.
