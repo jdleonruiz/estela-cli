@@ -220,12 +220,14 @@ export function describeBlock(block: WorkBlock): string {
   const subjects = [...new Set(block.commits.map((c) => c.subject).filter(Boolean))];
 
   if (subjects.length === 1) return subjects[0]!;
-  if (subjects.length > 1) {
+  // "+1 commits más" salía en la descripción de cualquier bloque con dos asuntos.
+  if (subjects.length === 2) return tr`${subjects[0]} (+1 commit más)`;
+  if (subjects.length > 2) {
     return tr`${subjects[0]} (+${subjects.length - 1} commits más)`;
   }
 
   const branch = block.branch?.replace(/^(feature|feat|fix|chore)\//, "") ?? null;
-  return branch ? tr`Desarrollo en ${branch}` : "Desarrollo";
+  return branch ? tr`Desarrollo en ${branch}` : tr`Desarrollo`;
 }
 
 /**

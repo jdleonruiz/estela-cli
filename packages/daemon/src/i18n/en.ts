@@ -58,10 +58,14 @@ export const EN: Record<string, string> = {
   "en tarifa API equivalente.":
     "at equivalent API pricing.",
   // ── billing/sessionize.ts ──
+  "{0} (+1 commit más)":
+    "{0} (+1 more commit)",
   "{0} (+{1} commits más)":
     "{0} (+{1} more commits)",
   "Desarrollo en {0}":
     "Development on {0}",
+  "Desarrollo":
+    "Development",
   // ── billing.ts ──
   "Necesitas una cuenta para esto. Vincúlala con:\n\n":
     "You need an account for this. Link it with:\n\n",
@@ -77,8 +81,6 @@ export const EN: Record<string, string> = {
   // ── cli.ts ──
   "Falta --{0}":
     "Missing --{0}",
-  "Desarrollo":
-    "Development",
   "Reunión":
     "Meeting",
   "Investigación":

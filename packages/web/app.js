@@ -22,6 +22,11 @@ const state = {
 const KINDS = ["development", "meeting", "research", "review", "travel", "support", "other"]
   .map((kind) => [kind, tr(`kind.${kind}`)]);
 
+/** Dólares de IA con el formato del idioma: "$3,97" en español, "$3.97" en inglés. */
+function fmtUsd(microUsd) {
+  return fmtMoney(Math.round(microUsd / 1e4), "USD");
+}
+
 function fmtTime(iso) {
   return new Date(iso).toLocaleTimeString(localeTag(), { hour: "2-digit", minute: "2-digit" });
 }
@@ -182,7 +187,7 @@ function renderRowBody(entry) {
     : "";
 
   const ai = entry.aiMicroUsd > 0
-    ? `<p class="detail-line">${tr("row.ai", { amount: "$" + (entry.aiMicroUsd / 1e6).toFixed(2) })}</p>`
+    ? `<p class="detail-line">${tr("row.ai", { amount: fmtUsd(entry.aiMicroUsd) })}</p>`
     : "";
 
   if (entry.invoiced) {
@@ -373,7 +378,7 @@ function renderSummary() {
         ? kpi(fmtDuration(s.billableSeconds), tr("summary.kpiBillable"), "kpi-quiet") : ""}
     ${kpi(String(s.pendingApproval), tr("summary.kpiPending", { n: s.pendingApproval }),
           s.pendingApproval > 0 ? "kpi-attention" : "")}
-    ${kpi("$" + (s.aiMicroUsd / 1e6).toFixed(2), tr("summary.kpiAi"), "kpi-quiet")}`;
+    ${kpi(fmtUsd(s.aiMicroUsd), tr("summary.kpiAi"), "kpi-quiet")}`;
 
   const parts = [];
 
@@ -634,8 +639,8 @@ function renderAlerts(t) {
           ? tr("team.alert.budgetOver", { project: p.projectName })
           : tr("team.alert.budgetNear", { project: p.projectName, pct: p.budgetPct }),
         tr("team.alert.budgetDetail", {
-          spent: "$" + (p.aiMicroUsd / 1e6).toFixed(2),
-          budget: "$" + (p.budgetMicroUsd / 1e6).toFixed(2),
+          spent: fmtUsd(p.aiMicroUsd),
+          budget: fmtUsd(p.budgetMicroUsd),
         })));
     }
   }
@@ -679,8 +684,8 @@ function renderTeamKpis(t) {
 
   return [
     teamKpi(hours, tr("team.kpi.hours"), deltaTxt, delta >= 0 ? "up" : "down"),
-    teamKpi("$" + ai.toFixed(2), tr("team.kpi.aiCost"),
-            tr("team.kpi.perHour", { amount: "$" + perHour.toFixed(2) })),
+    teamKpi(fmtUsd(t.aiMicroUsd), tr("team.kpi.aiCost"),
+            tr("team.kpi.perHour", { amount: fmtUsd(perHour * 1e6) })),
     teamKpi(pct + "%", tr("team.kpi.billable"),
             tr("team.kpi.ofTotal", { part: fmtDuration(t.billableSeconds), total: hours })),
     teamKpi(String(open), tr("team.kpi.unmerged", { n: open }),
@@ -726,7 +731,7 @@ function teamProjectRow(p) {
         <div class="td-sub">${esc(p.clientName)}</div></td>
     <td class="th-comp">${compositionBar(p.composition)}</td>
     <td class="num">${fmtDuration(p.seconds)}</td>
-    <td class="num money-ai">$${(p.aiMicroUsd / 1e6).toFixed(2)}</td>
+    <td class="num money-ai">${fmtUsd(p.aiMicroUsd)}</td>
     <td class="num">${p.amountMinor !== null ? fmtMoney(p.amountMinor, p.currency) : "—"}</td>
     <td><span class="${st[1]}">${esc(st[0])}</span></td>
   </tr>`;

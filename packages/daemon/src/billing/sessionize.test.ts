@@ -3,8 +3,10 @@ import { test } from "node:test";
 
 import type { AgentTurn, CommitRecord } from "@estela/shared";
 
+import { setLang } from "../i18n/index.js";
+
 import {
-  groupByBranchAndDay, sessionize, sessionizeCommits, withoutOverlap, type WorkBlock,
+  groupByBranchAndDay, sessionize, sessionizeCommits, withoutOverlap, type WorkBlock, describeBlock,
 } from "./sessionize.js";
 
 // --- Trabajo sin agente ------------------------------------------------------
@@ -162,4 +164,29 @@ test("sin solape, fusionar sigue sumando igual que antes", () => {
   const suma = bloques.reduce((t, b) => t + b.seconds, 0);
   const [fusionado] = groupByBranchAndDay(bloques, () => "proyecto");
   assert.equal(fusionado!.seconds, suma, "sin solape no se pierde ni un segundo");
+});
+
+// ── Descripción de un bloque ────────────────────────────────────────────────
+
+function bloqueCon(asuntos: string[], branch: string | null = "main"): WorkBlock {
+  const at = new Date("2026-09-14T10:00:00Z");
+  return {
+    startedAt: at, endedAt: at, seconds: 3600, repoPath: "/r", branch, turnCount: 1,
+    aiCost: { microUsd: 0 }, models: [], sessionIds: [], unpricedModels: [],
+    commits: asuntos.map((subject, i) => ({ ...commit(`h${i}`, "2026-09-14T10:00:00Z"), subject })),
+  };
+}
+
+test("describeBlock: un commit más va en singular, en los dos idiomas", () => {
+  // Salía "(+1 commits más)" / "(+1 more commits)" en cualquier bloque con dos
+  // asuntos distintos, y esa descripción es la que acaba en el informe.
+  try {
+    setLang("es");
+    assert.equal(describeBlock(bloqueCon(["a", "b"])), "a (+1 commit más)");
+    assert.equal(describeBlock(bloqueCon(["a", "b", "c"])), "a (+2 commits más)");
+    setLang("en");
+    assert.equal(describeBlock(bloqueCon(["a", "b"])), "a (+1 more commit)");
+    assert.equal(describeBlock(bloqueCon(["a", "b", "c"])), "a (+2 more commits)");
+    assert.equal(describeBlock(bloqueCon([], null)), "Development", "sin asuntos ni rama, también traducido");
+  } finally { setLang("es"); }
 });
