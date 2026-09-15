@@ -1,6 +1,6 @@
 {
   "name": "estela",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "Registro de horas de desarrollo que no hay que rellenar: lee lo que tus agentes de IA y tu Git ya escribieron en disco.",
   "keywords": [
     "time-tracking",

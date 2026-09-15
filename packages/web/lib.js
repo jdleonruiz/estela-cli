@@ -10,10 +10,35 @@
  * empaquetador de por medio. */
 
 (function (root) {
-  const DAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
-  const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
-                  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
   const SYMBOLS = { EUR: "€", USD: "$", GBP: "£", BRL: "R$" };
+
+  /* Lo que cambia con el idioma y no es una frase: nombres de días y meses,
+     cómo se titula un día y cómo se separan los decimales. Las frases viven en
+     i18n.js; esto se queda aquí porque lo usan funciones puras que se prueban
+     sin navegador. Español por defecto: es lo que asumen los tests de siempre. */
+  const LOCALES = {
+    es: {
+      tag: "es-ES",
+      days: ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"],
+      months: ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+               "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"],
+      today: "Hoy", yesterday: "Ayer",
+      dayTitle: (weekday, day, month) => `${weekday} ${day} de ${month}`,
+    },
+    en: {
+      tag: "en-US",
+      days: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+      months: ["January", "February", "March", "April", "May", "June",
+               "July", "August", "September", "October", "November", "December"],
+      today: "Today", yesterday: "Yesterday",
+      dayTitle: (weekday, day, month) => `${weekday}, ${month} ${day}`,
+    },
+  };
+  let locale = LOCALES.es;
+
+  function setLocale(lang) { locale = LOCALES[lang] || LOCALES.es; }
+  /** Etiqueta BCP 47 para toLocaleString y compañía: "es-ES" o "en-US". */
+  function localeTag() { return locale.tag; }
 
   /** Fecha local en YYYY-MM-DD. Nunca `toISOString()` a secas: eso da la de Greenwich. */
   function localDay(date) {
@@ -56,7 +81,7 @@
   /** Importe desde unidades menores. `null` cuando no hay dato, no "0". */
   function fmtMoney(minor, currency) {
     if (minor === null || minor === undefined) return null;
-    const value = (minor / 100).toLocaleString("es-ES", {
+    const value = (minor / 100).toLocaleString(locale.tag, {
       minimumFractionDigits: 2, maximumFractionDigits: 2,
     });
     const symbol = SYMBOLS[currency];
@@ -64,10 +89,10 @@
   }
 
   function fmtDayTitle(iso, now = new Date()) {
-    if (iso === localToday(0, now)) return "Hoy";
-    if (iso === localToday(-1, now)) return "Ayer";
+    if (iso === localToday(0, now)) return locale.today;
+    if (iso === localToday(-1, now)) return locale.yesterday;
     const d = new Date(`${iso}T12:00:00`);
-    return `${DAYS[d.getDay()]} ${d.getDate()} de ${MONTHS[d.getMonth()]}`;
+    return locale.dayTitle(locale.days[d.getDay()], d.getDate(), locale.months[d.getMonth()]);
   }
 
   /** Rango de un periodo. "all" devuelve vacío: todo lo pendiente, sin acotar. */
@@ -86,7 +111,7 @@
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
-  const api = { DAYS, MONTHS, localDay, localToday, shiftDay, fmtDuration,
+  const api = { LOCALES, setLocale, localeTag, localDay, localToday, shiftDay, fmtDuration,
                 fmtMoney, fmtDayTitle, periodRange, esc };
 
   if (typeof module !== "undefined" && module.exports) module.exports = api;

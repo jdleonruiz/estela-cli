@@ -15,47 +15,52 @@
     <img class="brand-logo" src="/logo.png" alt="getestela.dev">
   </div>
   <nav class="tabs" role="tablist">
-    <button type="button" class="tab is-on" data-view="summary" role="tab">Resumen</button>
-    <button type="button" class="tab" data-view="day" role="tab">Mi día</button>
-    <button type="button" class="tab" data-view="team" role="tab">Equipo</button>
-    <button type="button" class="tab" data-view="reports" role="tab">Informes</button>
-    <button type="button" class="tab" data-view="projects" role="tab">Proyectos</button>
+    <button type="button" class="tab is-on" data-view="summary" role="tab" data-i18n="tab.summary">Resumen</button>
+    <button type="button" class="tab" data-view="day" role="tab" data-i18n="tab.day">Mi día</button>
+    <button type="button" class="tab" data-view="team" role="tab" data-i18n="tab.team">Equipo</button>
+    <button type="button" class="tab" data-view="reports" role="tab" data-i18n="tab.reports">Informes</button>
+    <button type="button" class="tab" data-view="projects" role="tab" data-i18n="tab.projects">Proyectos</button>
   </nav>
   <div class="top-right" id="top-right">
+    <button type="button" class="chip lang-switch" id="lang-switch"
+            data-i18n="lang.switch" data-i18n-title="lang.switch.title">EN</button>
     <button type="button" class="chip" id="sync-now" hidden
+            data-i18n="sync.now" data-i18n-title="sync.now.title"
             title="Sube tus horas a la nube y baja lo de tus otras máquinas">Sincronizar</button>
     <div class="upgrade-wrap" id="upgrade-wrap" hidden>
-      <button type="button" class="btn-main btn-upgrade" id="upgrade-btn">Actualizar a Pro o Teams</button>
+      <button type="button" class="btn-main btn-upgrade" id="upgrade-btn" data-i18n="upgrade.btn">Actualizar a Pro o Teams</button>
       <div class="upgrade-menu" id="upgrade-menu" hidden>
-        <div class="upgrade-ciclo" role="group" aria-label="Ciclo de facturación">
-          <button type="button" data-ciclo="monthly" class="is-on">Mensual</button>
-          <button type="button" data-ciclo="yearly">Anual</button>
+        <div class="upgrade-ciclo" role="group" aria-label="Ciclo de facturación" data-i18n-aria-label="upgrade.cycle">
+          <button type="button" data-ciclo="monthly" class="is-on" data-i18n="upgrade.monthly">Mensual</button>
+          <button type="button" data-ciclo="yearly" data-i18n="upgrade.yearly">Anual</button>
         </div>
-        <div class="upgrade-ahorro">Anual: 2 meses gratis</div>
+        <div class="upgrade-ahorro" data-i18n="upgrade.saving">Anual: 2 meses gratis</div>
         <button type="button" class="upgrade-option" data-plan="pro"
+                data-i18n-monthly="upgrade.pro.monthly" data-i18n-yearly="upgrade.pro.yearly"
                 data-monthly="9€/mes · paneles y sync ilimitados"
                 data-yearly="90€/año · paneles y sync ilimitados">
-          <b>Pro</b><span>9€/mes · paneles y sync ilimitados</span>
+          <b>Pro</b><span data-i18n="upgrade.pro.monthly">9€/mes · paneles y sync ilimitados</span>
         </button>
         <button type="button" class="upgrade-option" data-plan="teams"
+                data-i18n-monthly="upgrade.teams.monthly" data-i18n-yearly="upgrade.teams.yearly"
                 data-monthly="15€/proyecto/mes · horas de equipo medidas"
                 data-yearly="150€/proyecto/año · horas de equipo medidas">
-          <b>Teams</b><span>15€/proyecto/mes · horas de equipo medidas</span>
+          <b>Teams</b><span data-i18n="upgrade.teams.monthly">15€/proyecto/mes · horas de equipo medidas</span>
         </button>
       </div>
     </div>
     <span class="sync-warn" id="sync-warn" hidden></span>
-    <button type="button" class="sync" id="sync" title="Buscar trabajo nuevo (R)">
+    <button type="button" class="sync" id="sync" title="Buscar trabajo nuevo (R)" data-i18n-title="refresh.title">
       <span class="sync-dot" aria-hidden="true"></span>
-      <span id="sync-label">Actualizar</span>
+      <span id="sync-label" data-i18n="refresh.label">Actualizar</span>
     </button>
   </div>
 </header>
 
 <div class="banner-promo" id="banner-promo" hidden>
   <span id="banner-text"></span>
-  <a id="banner-link" href="#" target="_blank" rel="noopener" hidden>Ver más →</a>
-  <button type="button" id="banner-close" aria-label="Cerrar">×</button>
+  <a id="banner-link" href="#" target="_blank" rel="noopener" hidden data-i18n="banner.more">Ver más →</a>
+  <button type="button" id="banner-close" aria-label="Cerrar" data-i18n-aria-label="banner.close">×</button>
 </div>
 
 <main>
@@ -63,13 +68,13 @@
   <section class="view" id="view-team">
     <div class="section-head">
       <div>
-        <h1>Equipo</h1>
+        <h1 data-i18n="tab.team">Equipo</h1>
         <p class="sub" id="team-sub">…</p>
       </div>
       <div class="periods">
-        <select class="filter" id="team-project"><option value="">Todos los proyectos</option></select>
-        <button type="button" class="period" data-tperiod="month">Este mes</button>
-        <button type="button" class="period is-on" data-tperiod="quarter">3 meses</button>
+        <select class="filter" id="team-project"><option value="" data-i18n="team.allProjects">Todos los proyectos</option></select>
+        <button type="button" class="period" data-tperiod="month" data-i18n="period.month">Este mes</button>
+        <button type="button" class="period is-on" data-tperiod="quarter" data-i18n="period.quarter">3 meses</button>
       </div>
     </div>
 
@@ -82,13 +87,13 @@
   <section class="view is-on" id="view-summary">
     <div class="section-head">
       <div>
-        <h1>Resumen</h1>
+        <h1 data-i18n="tab.summary">Resumen</h1>
         <p class="sub" id="summary-range">…</p>
       </div>
       <div class="periods" id="periods">
-        <button type="button" class="period" data-period="week">Esta semana</button>
-        <button type="button" class="period is-on" data-period="month">Este mes</button>
-        <button type="button" class="period" data-period="quarter">3 meses</button>
+        <button type="button" class="period" data-period="week" data-i18n="period.week">Esta semana</button>
+        <button type="button" class="period is-on" data-period="month" data-i18n="period.month">Este mes</button>
+        <button type="button" class="period" data-period="quarter" data-i18n="period.quarter">3 meses</button>
       </div>
     </div>
 
@@ -99,22 +104,22 @@
   <!-- ══════════════ MI DÍA ══════════════ -->
   <section class="view" id="view-day">
     <div class="daynav">
-      <button type="button" class="arrow" id="prev-day" aria-label="Día anterior">←</button>
+      <button type="button" class="arrow" id="prev-day" aria-label="Día anterior" data-i18n-aria-label="day.prev">←</button>
       <div class="daynav-label">
         <h1 id="day-title">…</h1>
-        <button type="button" class="today-link" id="go-today" hidden>Volver a hoy</button>
+        <button type="button" class="today-link" id="go-today" hidden data-i18n="day.goToday">Volver a hoy</button>
       </div>
-      <button type="button" class="arrow" id="next-day" aria-label="Día siguiente">→</button>
+      <button type="button" class="arrow" id="next-day" aria-label="Día siguiente" data-i18n-aria-label="day.next">→</button>
     </div>
 
     <div class="hero" id="hero" hidden>
       <div class="hero-main">
         <div class="hero-value" id="day-hours">—</div>
-        <div class="hero-label" id="day-blocks">trabajadas</div>
+        <div class="hero-label" id="day-blocks" data-i18n="day.worked">trabajadas</div>
       </div>
       <div class="hero-main hero-money">
         <div class="hero-value" id="day-amount">—</div>
-        <div class="hero-label" id="day-amount-label">registradas</div>
+        <div class="hero-label" id="day-amount-label" data-i18n="day.recorded">registradas</div>
       </div>
     </div>
 
@@ -122,7 +127,7 @@
 
     <div class="approve" id="approve-bar" hidden>
       <button type="button" class="approve-jump" id="approve-text"></button>
-      <button type="button" class="btn-main" id="approve-btn">Aprobar el día</button>
+      <button type="button" class="btn-main" id="approve-btn" data-i18n="day.approve">Aprobar el día</button>
     </div>
   </section>
 
@@ -130,8 +135,8 @@
   <section class="view" id="view-projects">
     <div class="section-head">
       <div>
-        <h1>Proyectos</h1>
-        <p class="sub">Qué repositorios pertenecen a quién y a qué tarifa. Subir un precio
+        <h1 data-i18n="tab.projects">Proyectos</h1>
+        <p class="sub" data-i18n="projects.sub">Qué repositorios pertenecen a quién y a qué tarifa. Subir un precio
           no reescribe lo ya trabajado: la tarifa nueva empieza el día que digas.</p>
       </div>
     </div>
@@ -142,8 +147,8 @@
   <section class="view" id="view-reports">
     <div class="section-head">
       <div>
-        <h1>Informes</h1>
-        <p class="sub">Respaldo del trabajo hecho: horas y commits, para adjuntar a tu factura
+        <h1 data-i18n="tab.reports">Informes</h1>
+        <p class="sub" data-i18n="reports.sub">Respaldo del trabajo hecho: horas y commits, para adjuntar a tu factura
           o compartir con quien dirige el proyecto.</p>
       </div>
     </div>
@@ -154,6 +159,7 @@
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script src="/lib.js"></script>
+<script src="/i18n.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

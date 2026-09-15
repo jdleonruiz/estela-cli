@@ -35,6 +35,15 @@ const lib = require(join(WEB, "lib.js")) as {
   esc: (t: string) => string;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const i18n = require(join(WEB, "i18n.js")) as {
+  dict: Record<string, Record<string, string | { one: string; other: string }>>;
+  SUPPORTED: string[];
+  detectLang: (stored: string | null, navigatorLangs: string[] | undefined) => string;
+  t: (key: string, vars?: Record<string, unknown>) => string;
+  setLang: (lang: string) => string;
+};
+
 // ── Duraciones ─────────────────────────────────────────────────────────
 
 test("interfaz: nunca imprime 60 minutos", () => {
@@ -155,12 +164,14 @@ test("interfaz: no quedan fechas calculadas en UTC", () => {
     "toda conversión a YYYY-MM-DD debe restar el desfase horario antes");
 });
 
-test("interfaz: el HTML carga lib.js antes que app.js", () => {
-  // Al revés, app.js llamaría a funciones que aún no existen.
+test("interfaz: el HTML carga lib.js, luego i18n.js, luego app.js", () => {
+  // Al revés, app.js llamaría a funciones que aún no existen, e i18n.js no
+  // podría avisar a lib.js del idioma para las fechas y los importes.
   const lib = html.indexOf('src="/lib.js"');
+  const i18n = html.indexOf('src="/i18n.js"');
   const app = html.indexOf('src="/app.js"');
-  assert.ok(lib > 0 && app > 0, "los dos scripts deben estar enlazados");
-  assert.ok(lib < app, "lib.js va primero");
+  assert.ok(lib > 0 && i18n > 0 && app > 0, "los tres scripts deben estar enlazados");
+  assert.ok(lib < i18n && i18n < app, "orden: lib.js, i18n.js, app.js");
 });
 
 test("interfaz: el escapado neutraliza HTML en datos", () => {
@@ -262,7 +273,7 @@ test("interfaz: 'sin tarifa' solo se dice cuando de verdad falta", () => {
   // subtotales, no de que exista un total único.
   assert.match(appJs, /const totals = day\.totals \|\| \[\]/,
     "el día debe usar subtotales por moneda");
-  assert.match(appJs, /day\.missingRate \? "sin tarifa definida"/,
+  assert.match(appJs, /day\.missingRate \? tr\("day\.noRate"\)/,
     "la etiqueta de falta de tarifa debe venir del servidor, no deducirse de un total nulo");
   assert.ok(!/money \? "por facturar" : "sin tarifa definida"/.test(appJs),
     "no puede deducirse la falta de tarifa de que el total sea nulo");
@@ -346,7 +357,13 @@ test("las cifras de la tabla se alinean para poder compararse", () => {
 test("medido y estimado se distinguen a la vista", () => {
   // Presentar horas estimadas con el mismo aspecto que las medidas es lo que
   // convertiría esta pantalla en una herramienta para señalar a alguien.
-  assert.ok(appJs.includes('"medido"') && appJs.includes('"estimado"'));
+  assert.ok(appJs.includes('tr("team.measured")') && appJs.includes('tr("team.estimated")'));
+  // Y en los dos idiomas: en inglés tampoco pueden verse igual.
+  for (const lang of ["es", "en"]) {
+    const d = i18n.dict[lang]!;
+    assert.ok(d["team.measured"] && d["team.estimated"] && d["team.measured"] !== d["team.estimated"],
+      `${lang}: medido y estimado tienen que decir cosas distintas`);
+  }
   assert.ok(css.includes(".prec-ok"), "falta el estilo que separa ambas");
 });
 
@@ -368,7 +385,9 @@ test("la vista de equipo avisa de que sus cifras no suman con los totales", () =
   // Los totales cuentan tu trabajo imputado; la tabla de personas incluye horas
   // estimadas de gente que no usa Estela. Sin decirlo, el primer lector atento
   // ve que no cuadra y deja de creerse el resto de la pantalla.
-  assert.match(appJs, /no entran<\/b> en los totales/);
+  assert.ok(appJs.includes('tr("team.note")'), "la nota tiene que pintarse en la vista de equipo");
+  assert.match(String(i18n.dict["es"]!["team.note"]), /no entran<\/b> en los totales/);
+  assert.match(String(i18n.dict["en"]!["team.note"]), /aren't included<\/b> in the totals/);
 });
 
 test("la vista de equipo ensancha la página", () => {
@@ -393,4 +412,93 @@ test("Informes muestra un tope de filas con 'ver más', y busca en el navegador"
   assert.ok(appJs.includes("const REPORT_ROWS = 5"), "el tope debe ser explícito, no un número suelto");
   assert.ok(appJs.includes("state.reportsQuery"), "falta el estado del buscador");
   assert.ok(appJs.includes('id="reports-more"'), "falta el botón de ver más proyectos");
+});
+
+// ── Idiomas ──────────────────────────────────────────────────────────────────
+
+
+function variables(entry: string | { one: string; other: string }): string {
+  const texto = typeof entry === "string" ? entry : entry.one + entry.other;
+  return [...new Set([...texto.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!))].sort().join(",");
+}
+
+test("idiomas: español e inglés tienen exactamente las mismas claves", () => {
+  // Una clave solo en un idioma cae al español en pantalla: en inglés saldría
+  // media interfaz en otro idioma sin que nada fallara.
+  const es = Object.keys(i18n.dict["es"]!);
+  const en = Object.keys(i18n.dict["en"]!);
+  assert.deepEqual(es.filter((k) => !en.includes(k)), [], "claves sin traducir al inglés");
+  assert.deepEqual(en.filter((k) => !es.includes(k)), [], "claves en inglés que no existen en español");
+});
+
+test("idiomas: cada traducción usa las mismas variables y la misma forma", () => {
+  // "{n} bloques" traducido como "{count} blocks" dejaría el número sin poner.
+  for (const [key, es] of Object.entries(i18n.dict["es"]!)) {
+    const en = i18n.dict["en"]![key]!;
+    assert.equal(typeof en, typeof es, `${key}: uno es plural y el otro no`);
+    assert.equal(variables(en), variables(es), `${key}: variables distintas`);
+  }
+});
+
+test("idiomas: toda clave que usan la página y el HTML existe", () => {
+  const usadas = [
+    ...[...appJs.matchAll(/\btr\("([^"]+)"/g)].map((m) => m[1]!),
+    ...[...html.matchAll(/data-i18n(?:-[a-z-]+)?="([^"]+)"/g)].map((m) => m[1]!),
+  ];
+  // `kind.${kind}` se arma en tiempo de ejecución: se comprueba aparte.
+  for (const kind of ["development", "meeting", "research", "review", "travel", "support", "other"]) {
+    usadas.push(`kind.${kind}`);
+  }
+  const faltan = [...new Set(usadas)].filter((k) => !(k in i18n.dict["es"]!));
+  assert.deepEqual(faltan, [], `claves usadas que no están en i18n.js: ${faltan.join(", ")}`);
+});
+
+test("idiomas: no queda texto en español escrito a mano en app.js", () => {
+  // La forma de romper el inglés sin que falle nada más: añadir un aviso nuevo
+  // con la frase puesta directamente en vez de con tr(). Se buscan tildes y
+  // palabras que solo existen en español, fuera de comentarios.
+  const codigo = appJs.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  const lineas = codigo.split("\n").filter((l) =>
+    /["'`>]/.test(l) && /[áéíóúñ¿¡]|\b(sin|por|para|los|las|del|una|hay|desde|hasta)\b/.test(l.replace(/tr\("[^"]*"/g, "")));
+  // `hay` es el nombre de una variable, no una frase.
+  const reales = lineas.filter((l) => !/const hay =/.test(l));
+  assert.deepEqual(reales.map((l) => l.trim()), [], "texto sin pasar por tr()");
+});
+
+test("idiomas: plurales y variables se resuelven bien", () => {
+  i18n.setLang("es");
+  assert.equal(i18n.t("summary.days", { n: 1 }), "1 día trabajado", "el singular concuerda entero");
+  assert.equal(i18n.t("summary.days", { n: 3 }), "3 días trabajados");
+  i18n.setLang("en");
+  assert.equal(i18n.t("summary.days", { n: 1 }), "1 day worked");
+  assert.equal(i18n.t("team.people", { n: 2 }), "2 people", "el plural irregular no es añadir una s");
+  assert.equal(i18n.t("projects.stale.item", { name: "Web", blocks: "2 new blocks", when: "today" }),
+    "Web — 2 new blocks since you published it today");
+  i18n.setLang("es");
+});
+
+test("idiomas: el elegido a mano gana, luego el del navegador, y si no inglés", () => {
+  assert.equal(i18n.detectLang("es", ["en-US"]), "es", "lo elegido a mano manda");
+  assert.equal(i18n.detectLang(null, ["es-EC", "en"]), "es");
+  assert.equal(i18n.detectLang(null, ["en-GB"]), "en");
+  assert.equal(i18n.detectLang(null, ["fr-FR", "de"]), "en", "un idioma sin traducción cae al inglés");
+  assert.equal(i18n.detectLang("xx", undefined), "en");
+});
+
+test("idiomas: fechas e importes siguen al idioma", () => {
+  const mod = require(join(WEB, "lib.js")) as typeof lib & { setLocale: (l: string) => void };
+  const now = new Date("2026-09-14T15:00:00Z");
+  try {
+    mod.setLocale("en");
+    assert.equal(mod.fmtDayTitle(mod.localToday(0, now), now), "Today");
+    assert.equal(mod.fmtDayTitle("2026-09-07", now), "Monday, September 7");
+    assert.equal(mod.fmtMoney(1234567, "USD"), "$12,345.67", "en inglés, coma de miles y punto decimal");
+    mod.setLocale("es");
+    assert.equal(mod.fmtDayTitle("2026-09-07", now), "lunes 7 de septiembre");
+    // 5 cifras: en español, 1234 va sin separador de miles por norma (lo
+    // hace así Intl), así que se prueba con un número donde sí toca.
+    assert.equal(mod.fmtMoney(1234567, "EUR"), "€12.345,67");
+  } finally {
+    mod.setLocale("es");
+  }
 });

@@ -1,4 +1,4 @@
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
@@ -70,6 +70,8 @@ export interface ServerOptions {
   readonly dbPath?: string;
   /** Cada cuánto reimportar. 0 lo desactiva. */
   readonly autoImportMinutes?: number;
+  /** Solo para tests: recibe el servidor para poder cerrarlo al terminar. */
+  readonly onServer?: (server: Server) => void;
 }
 
 /**
@@ -226,9 +228,20 @@ export function startServer(options: ServerOptions = {}): Promise<string> {
     });
   });
 
+  options.onServer?.(server);
+
   return new Promise((resolve) => {
     server.listen(port, "127.0.0.1", () => resolve(`http://127.0.0.1:${port}`));
   });
+}
+
+/**
+ * Los pocos mensajes que este servidor escribe él mismo, en el idioma de la
+ * interfaz. La página manda `X-Estela-Lang` en cada petición; el resto de
+ * textos (casi todos) los pone la propia página desde i18n.js.
+ */
+function texto(req: IncomingMessage, es: string, en: string): string {
+  return req.headers["x-estela-lang"] === "en" ? en : es;
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse, dbPath: string): Promise<void> {
@@ -330,7 +343,7 @@ async function api(
       const cuenta = store.getCloudAccount(db);
       if (!cuenta) {
         return json(res, 401, {
-          error: "Vincula una cuenta para compartir.", needsLogin: true,
+          error: texto(req, "Vincula una cuenta para compartir.", "Link an account to share."), needsLogin: true,
         });
       }
       const body = await readJson(req);
@@ -458,9 +471,13 @@ async function api(
       const projectId = String(body["projectId"] ?? "");
       const repoPath = String(body["repoPath"] ?? "");
       if (!store.getProject(db, projectId)) {
-        return json(res, 404, { error: `No existe el proyecto "${projectId}".` });
+        return json(res, 404, {
+          error: texto(req, `No existe el proyecto "${projectId}".`, `Project "${projectId}" doesn't exist.`),
+        });
       }
-      if (!repoPath) return json(res, 400, { error: "Falta la ruta del repositorio." });
+      if (!repoPath) {
+        return json(res, 400, { error: texto(req, "Falta la ruta del repositorio.", "The repository path is missing.") });
+      }
       store.addProjectRepo(db, projectId, repoPath);
       // Importar en el acto: vincular sin imputar deja el proyecto igual de
       // vacío que antes, y quien lo hizo se queda pensando que no funcionó.
@@ -475,7 +492,9 @@ async function api(
     if (path === "/api/sync" && req.method === "POST") {
       const cuenta = store.getCloudAccount(db);
       if (!cuenta) {
-        return json(res, 401, { error: "Vincula una cuenta para sincronizar.", needsLogin: true });
+        return json(res, 401, {
+          error: texto(req, "Vincula una cuenta para sincronizar.", "Link an account to sync."), needsLogin: true,
+        });
       }
       const ids = store.listProjectSyncs(db).map((x) => x.projectId);
       const hechos: { projectId: string; ok: boolean; detalle: string }[] = [];
@@ -530,7 +549,7 @@ async function api(
       return json(res, 200, { approved: n });
     }
 
-    return json(res, 404, { error: `Ruta desconocida: ${path}` });
+    return json(res, 404, { error: texto(req, `Ruta desconocida: ${path}`, `Unknown route: ${path}`) });
   } finally {
     db.close();
   }
@@ -1101,6 +1120,7 @@ function createManualEntry(db: Db, body: Record<string, unknown>): string {
 
 function buildProjects(db: Db) {
   const clients = new Map(store.listClients(db).map((c) => [c.id, c]));
+  const syncs = new Map(store.listProjectSyncs(db).map((s) => [s.projectId, s]));
 
   return {
     clients: [...clients.values()],
@@ -1122,6 +1142,14 @@ function buildProjects(db: Db) {
 
       return {
         id: p.id, name: p.name, billable: p.billable,
+        // La tarjeta solo enseña tarifa a los proyectos de cliente, y lo decide
+        // con `kind`. Sin él aquí, todas decían "sin tarifa", también las que
+        // la tenían puesta.
+        kind: p.kind,
+        // Con qué alcance sincroniza, o null si no lo hace. Es lo que decide si
+        // la cabecera ofrece el botón de Sincronizar: sin este campo solo salía
+        // a quien ya había publicado un panel.
+        syncScope: syncs.get(p.id)?.scope ?? null,
         clientId: p.clientId,
         clientName: client?.name ?? "—",
         currency: client?.currency ?? "EUR",

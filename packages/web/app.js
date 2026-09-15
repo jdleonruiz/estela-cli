@@ -18,21 +18,20 @@ const state = {
 // ── Formato ────────────────────────────────────────────────────────────
 // Las funciones puras viven en lib.js para poder probarlas sin navegador.
 
-const KINDS = [
-  ["development", "Desarrollo"], ["meeting", "Reunión"], ["research", "Investigación"],
-  ["review", "Revisión"], ["travel", "Desplazamiento"], ["support", "Soporte"],
-  ["other", "Otro"],
-];
+// Los textos salen de i18n.js, que ya decidió el idioma antes de cargar esto.
+const KINDS = ["development", "meeting", "research", "review", "travel", "support", "other"]
+  .map((kind) => [kind, tr(`kind.${kind}`)]);
 
 function fmtTime(iso) {
-  return new Date(iso).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString(localeTag(), { hour: "2-digit", minute: "2-digit" });
 }
 
 // ── Red ────────────────────────────────────────────────────────────────
 
 async function api(path, options) {
   const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
+    // El servidor local traduce sus pocos mensajes de error con esto.
+    headers: { "Content-Type": "application/json", "X-Estela-Lang": getLang() },
     ...options,
   });
   const body = await res.json();
@@ -78,7 +77,7 @@ function renderDay() {
   if (hasEntries) {
     $("#day-hours").textContent = fmtDuration(day.totalSeconds);
     $("#day-blocks").textContent =
-      day.entries.length === 1 ? "en 1 bloque" : `en ${day.entries.length} bloques`;
+      tr("day.inBlocks", { n: day.entries.length });
 
     // Con varias monedas se enseñan todas. Decir "sin tarifa" cuando las hay
     // manda a revisar una configuración que está bien.
@@ -89,10 +88,10 @@ function renderDay() {
 
     $("#day-amount").textContent = money || "—";
     $("#day-amount").parentElement.querySelector(".hero-label").textContent =
-      totals.length > 1 ? "por facturar (por moneda)"
-      : totals.length === 1 ? "por facturar"
-      : day.missingRate ? "sin tarifa definida"
-      : "sin trabajo facturable";
+      totals.length > 1 ? tr("day.toInvoiceByCurrency")
+      : totals.length === 1 ? tr("day.toInvoice")
+      : day.missingRate ? tr("day.noRate")
+      : tr("day.noBillable");
   } else {
     // Vaciar aunque esté oculto: una cifra vieja esperando en el DOM es un
     // número equivocado a la espera de que algo la muestre por accidente.
@@ -108,9 +107,7 @@ function renderDay() {
   const pending = day.pendingApproval;
   $("#approve-bar").hidden = !hasEntries || pending === 0;
   if (pending > 0) {
-    $("#approve-text").textContent = pending === 1
-      ? "Queda 1 bloque por revisar — llévame a él"
-      : `Quedan ${pending} bloques por revisar — llévame al primero`;
+    $("#approve-text").textContent = tr("day.pending", { n: pending });
   }
 }
 
@@ -118,15 +115,14 @@ function renderEmpty() {
   const today = localToday();
   if (state.date === today) {
     return `<div class="empty">
-      <h2>Todavía nada por aquí</h2>
-      <p>En cuanto trabajes con un agente en un repositorio configurado, aparecerá solo.
-         Si ya trabajaste, trae lo de hoy:</p>
+      <h2>${tr("day.emptyToday.title")}</h2>
+      <p>${tr("day.emptyToday.body")}</p>
       <code>estela import</code>
     </div>`;
   }
   return `<div class="empty">
-    <h2>Sin actividad este día</h2>
-    <p>No hay ningún bloque de trabajo registrado.</p>
+    <h2>${tr("day.empty.title")}</h2>
+    <p>${tr("day.empty.body")}</p>
   </div>`;
 }
 
@@ -151,9 +147,9 @@ function renderRow(entry) {
   const meta = [
     entry.projectName,
     entry.clientName,
-    entry.source === "manual" ? "añadido a mano"
+    entry.source === "manual" ? tr("row.manual")
       : entry.source === "commit"
-        ? `${fmtTime(entry.startedAt)}–${fmtTime(entry.endedAt)} · deducido de commits`
+        ? `${fmtTime(entry.startedAt)}–${fmtTime(entry.endedAt)} · ${tr("row.fromCommits")}`
         : `${fmtTime(entry.startedAt)}–${fmtTime(entry.endedAt)}`,
   ].filter(Boolean).join(" · ");
 
@@ -167,7 +163,7 @@ function renderRow(entry) {
     </span>
     <span class="row-figs">
       <span class="row-time">${fmtDuration(entry.seconds)}</span>
-      <span class="row-money ${money ? "" : "none"}">${money || (entry.billable ? "sin tarifa" : "no facturable")}</span>
+      <span class="row-money ${money ? "" : "none"}">${money || (entry.billable ? tr("row.noRate") : tr("row.notBillable"))}</span>
     </span>
     <span class="chev" aria-hidden="true">›</span>
   </button>
@@ -186,12 +182,12 @@ function renderRowBody(entry) {
     : "";
 
   const ai = entry.aiMicroUsd > 0
-    ? `<p class="detail-line">Consumo de IA: <b>$${(entry.aiMicroUsd / 1e6).toFixed(2)}</b> en tarifa API equivalente.</p>`
+    ? `<p class="detail-line">${tr("row.ai", { amount: "$" + (entry.aiMicroUsd / 1e6).toFixed(2) })}</p>`
     : "";
 
   if (entry.invoiced) {
     return `<div class="row-body">
-      <p class="detail-line">Este bloque ya está facturado, así que no se puede editar.</p>
+      <p class="detail-line">${tr("row.invoiced")}</p>
       ${commits}${ai}
     </div>`;
   }
@@ -199,16 +195,16 @@ function renderRowBody(entry) {
   return `
 <div class="row-body">
   <div class="field">
-    <label for="d-${esc(entry.id)}">Qué hiciste</label>
+    <label for="d-${esc(entry.id)}">${tr("field.what")}</label>
     <input id="d-${esc(entry.id)}" type="text" value="${esc(entry.description)}" data-field="description">
   </div>
   <div class="field-pair">
     <div class="field">
-      <label for="p-${esc(entry.id)}">Proyecto</label>
+      <label for="p-${esc(entry.id)}">${tr("field.project")}</label>
       <select id="p-${esc(entry.id)}" data-field="projectId">${projects}</select>
     </div>
     <div class="field">
-      <label for="m-${esc(entry.id)}">Minutos</label>
+      <label for="m-${esc(entry.id)}">${tr("field.minutes")}</label>
       <input id="m-${esc(entry.id)}" type="number" min="0" step="1"
              value="${Math.round(entry.seconds / 60)}" data-field="minutes">
     </div>
@@ -216,7 +212,7 @@ function renderRowBody(entry) {
   ${commits}${ai}
   <div class="row-actions">
     <button type="button" class="chip ${entry.billable ? "is-on" : ""}" data-billable>
-      ${entry.billable ? "Facturable" : "No facturable"}
+      ${entry.billable ? tr("row.billableOn") : tr("row.billableOff")}
     </button>
   </div>
 </div>`;
@@ -236,31 +232,30 @@ function renderAddForm(day) {
 
   return `
 <div class="addwrap">
-  <button type="button" class="add-toggle" id="add-toggle">+ Añadir horas sin código</button>
+  <button type="button" class="add-toggle" id="add-toggle">${tr("add.toggle")}</button>
   <form class="addform" id="add-form" hidden>
-    <p class="addform-hint">Desarrollo sin agente, reuniones, desplazamientos, investigación.
-      Un import nunca las toca.</p>
+    <p class="addform-hint">${tr("add.hint")}</p>
     <div class="addrow">
       <label class="field">
-        <span>Tipo</span>
+        <span>${tr("add.kind")}</span>
         <select id="add-kind">${kinds}</select>
       </label>
       <label class="field">
-        <span>Minutos</span>
+        <span>${tr("field.minutes")}</span>
         <input id="add-minutes" type="number" min="5" step="5" value="60" required>
       </label>
     </div>
     <label class="field">
-      <span>Qué hiciste</span>
-      <input id="add-what" type="text" placeholder="Seguimiento semanal con el cliente">
+      <span>${tr("field.what")}</span>
+      <input id="add-what" type="text" placeholder="${tr("add.whatPlaceholder")}">
     </label>
     <label class="field">
-      <span>Proyecto</span>
+      <span>${tr("field.project")}</span>
       <select id="add-project">${projects}</select>
     </label>
     <div class="addactions">
-      <button type="button" class="chip" id="add-cancel">Cancelar</button>
-      <button type="submit" class="btn-main">Añadir</button>
+      <button type="button" class="chip" id="add-cancel">${tr("common.cancel")}</button>
+      <button type="submit" class="btn-main">${tr("add.submit")}</button>
     </div>
   </form>
 </div>`;
@@ -294,7 +289,7 @@ function wireAddForm() {
         }),
       });
       await loadDay();
-      toast("Horas añadidas");
+      toast(tr("toast.hoursAdded"));
     } catch (error) {
       toast(error.message);
     }
@@ -338,10 +333,17 @@ async function save(id, patch) {
       body: JSON.stringify(patch),
     });
     await loadDay();
-    toast("Guardado");
+    toast(tr("toast.saved"));
   } catch (error) {
     toast(error.message);
   }
+}
+
+/** "hoy", "ayer" o "hace N días", para decir cuándo se publicó un panel. */
+function haceCuanto(days) {
+  if (days === 0) return tr("when.today");
+  if (days === 1) return tr("when.yesterday");
+  return tr("when.daysAgo", { n: days });
 }
 
 // ── Resumen: todos los proyectos a la vez ──────────────────────────────
@@ -355,50 +357,46 @@ async function loadSummary() {
 function renderSummary() {
   const s = state.summary;
   $("#summary-range").textContent =
-    `${s.activeProjects} proyecto${s.activeProjects === 1 ? "" : "s"} con actividad · ` +
-    `${s.activeDays} día${s.activeDays === 1 ? "" : "s"} trabajados`;
+    `${tr("summary.projects", { n: s.activeProjects })} · ${tr("summary.days", { n: s.activeDays })}`;
 
   // Con varias monedas se enseñan todas: un guion parecería que falta un dato.
   const money = (s.totals || []).length
     ? s.totals.map((t) => fmtMoney(t.amountMinor, t.currency)).join(" + ")
     : null;
   const moneyLabel = (s.totals || []).length > 1
-    ? "valor del trabajo (por moneda)" : "valor del trabajo";
+    ? tr("summary.valueByCurrency") : tr("summary.value");
 
   $("#kpis").innerHTML = `
-    ${kpi(fmtDuration(s.totalSeconds), "horas registradas")}
+    ${kpi(fmtDuration(s.totalSeconds), tr("summary.kpiHours"))}
     ${kpi(money || "—", moneyLabel, "kpi-money")}
     ${s.billableSeconds !== s.totalSeconds
-        ? kpi(fmtDuration(s.billableSeconds), "de ellas facturables", "kpi-quiet") : ""}
-    ${kpi(String(s.pendingApproval), s.pendingApproval === 1 ? "bloque por revisar" : "bloques por revisar",
+        ? kpi(fmtDuration(s.billableSeconds), tr("summary.kpiBillable"), "kpi-quiet") : ""}
+    ${kpi(String(s.pendingApproval), tr("summary.kpiPending", { n: s.pendingApproval }),
           s.pendingApproval > 0 ? "kpi-attention" : "")}
-    ${kpi("$" + (s.aiMicroUsd / 1e6).toFixed(2), "consumo de IA", "kpi-quiet")}`;
+    ${kpi("$" + (s.aiMicroUsd / 1e6).toFixed(2), tr("summary.kpiAi"), "kpi-quiet")}`;
 
   const parts = [];
 
   if (s.projects.length === 0) {
     parts.push(`<div class="empty">
-      <h2>Sin actividad en este periodo</h2>
-      <p>Prueba con un rango más amplio, o comprueba que tus repositorios estén
-         asignados a un proyecto.</p>
+      <h2>${tr("summary.empty.title")}</h2>
+      <p>${tr("summary.empty.body")}</p>
       <code>estela status</code>
     </div>`);
   } else {
     if (s.pendingApproval > 0) {
       parts.push(`<div class="approve-all">
-        <p>Hay <b>${s.pendingApproval}</b> bloques de trabajo <b>tuyo</b> sin revisar
-           en este periodo. Al configurar un proyecto entra de golpe todo su
-           histórico. Pulsa el aviso de cada proyecto para ir a ellos.</p>
-        <button type="button" class="btn-main" id="approve-all">Aprobar el periodo</button>
+        <p>${tr("summary.approveAll", { n: s.pendingApproval })}</p>
+        <button type="button" class="btn-main" id="approve-all">${tr("summary.approveAll.btn")}</button>
       </div>`);
     }
     parts.push(renderSparkline(s.byDay));
-    parts.push(`<h2 class="block-title">Proyectos</h2>`);
+    parts.push(`<h2 class="block-title">${tr("tab.projects")}</h2>`);
     parts.push(`<div class="plist">${s.projects.map(renderProjectRow).join("")}</div>`);
   }
 
   if (s.activity.length) {
-    parts.push(`<h2 class="block-title">Actividad reciente</h2>`);
+    parts.push(`<h2 class="block-title">${tr("summary.activity")}</h2>`);
     parts.push(`<div class="feed">${s.activity.map(renderActivity).join("")}</div>`);
   }
 
@@ -411,7 +409,7 @@ function renderSummary() {
         method: "POST", body: JSON.stringify({ from, to }),
       });
       await loadSummary();
-      toast(`${r.approved} bloques aprobados`);
+      toast(tr("toast.blocksApproved", { n: r.approved }));
     } catch (error) { toast(error.message); }
   });
 
@@ -422,13 +420,13 @@ function renderSummary() {
     btn.addEventListener("click", async () => {
       try {
         const r = await api(`/api/pending-days?project=${encodeURIComponent(btn.dataset.pending)}`);
-        if (!r.days.length) { toast("Ya no queda nada por revisar ahí"); return; }
+        if (!r.days.length) { toast(tr("summary.nothingLeft")); return; }
         state.date = r.days[0].date;
         showView("day");
         const otros = r.days.length - 1;
         toast(otros > 0
-          ? `${r.days[0].blocks} por revisar aquí · ${otros} ${otros === 1 ? "día más" : "días más"} con pendientes`
-          : `${r.days[0].blocks} por revisar — es el último día pendiente`);
+          ? tr("summary.pendingHere", { blocks: r.days[0].blocks, more: tr("summary.moreDays", { n: otros }) })
+          : tr("summary.lastPending", { blocks: r.days[0].blocks }));
       } catch (error) { toast(error.message); }
     });
   });
@@ -465,29 +463,29 @@ function renderSparkline(byDay) {
  */
 function renderCompartir(projectId, pub) {
   const url = (pub.baseUrl || "https://getestela.dev") + "/e/" + pub.token + "/";
-  const texto = encodeURIComponent("Te comparto el avance del proyecto: " + url);
+  const texto = encodeURIComponent(tr("share.message", { url }));
   const clientes = state.panelClients?.[pub.token] || [];
 
   return `
 <div class="share-ways" data-token="${esc(pub.token)}" data-url="${esc(url)}">
   <div class="share-row">
-    <button type="button" class="chip" data-copy-url>Copiar enlace</button>
+    <button type="button" class="chip" data-copy-url>${tr("share.copy")}</button>
     <a class="chip" href="https://wa.me/?text=${texto}" target="_blank" rel="noopener">WhatsApp</a>
-    <a class="chip" href="mailto:?subject=${encodeURIComponent("Avance del proyecto")}&body=${texto}">Correo</a>
+    <a class="chip" href="mailto:?subject=${encodeURIComponent(tr("share.subject"))}&body=${texto}">${tr("share.email")}</a>
   </div>
   <label class="share-label" for="cl-${esc(projectId)}">
-    O dáselo por su correo y se lo mandamos nosotros — además le aparece en su cuenta
+    ${tr("share.byEmail")}
   </label>
   <div class="share-row">
     <input id="cl-${esc(projectId)}" class="share-mails" type="text"
-           placeholder="cliente@empresa.com, otro@empresa.com"
+           placeholder="${tr("share.emailsPlaceholder")}"
            value="${esc(clientes.map((c) => c.email).join(", "))}">
-    <button type="button" class="chip" data-save-clients>Guardar</button>
+    <button type="button" class="chip" data-save-clients>${tr("common.save")}</button>
   </div>
   ${clientes.length ? `<ul class="share-who">${clientes.map((c) =>
     `<li>${esc(c.email)} — ${c.entrado
-      ? "<b>ya tiene cuenta</b>, lo ve al entrar"
-      : "aún no ha entrado en getestela.dev/app"}</li>`).join("")}</ul>` : ""}
+      ? tr("share.hasAccount")
+      : tr("share.notYet")}</li>`).join("")}</ul>` : ""}
   <div class="share-msg"></div>
 </div>`;
 }
@@ -500,8 +498,8 @@ function renderProjectRow(p) {
   // por día a ciegas. El aviso es el propio camino.
   const flag = p.pendingApproval > 0
     ? `<button type="button" class="tag tag-warn tag-go" data-pending="${esc(p.projectId)}"
-        title="Ir al día más reciente con bloques sin revisar">${p.pendingApproval} por revisar →</button>` : "";
-  const KIND_TAG = { employment: "nómina", internal: "interno" };
+        title="${tr("project.pendingTitle")}">${tr("project.pendingTag", { n: p.pendingApproval })}</button>` : "";
+  const KIND_TAG = { employment: tr("kind.employment"), internal: tr("kind.internal") };
   const notBillable = KIND_TAG[p.kind] ? `<span class="tag">${KIND_TAG[p.kind]}</span>` : "";
 
   return `
@@ -509,7 +507,7 @@ function renderProjectRow(p) {
   <div class="prow-text">
     <div class="prow-name">${esc(p.projectName)} ${flag}${notBillable}</div>
     <div class="prow-meta">${esc(p.clientName)}${rate ? ` · ${rate}/h` : ""} ·
-      ${p.days} día${p.days === 1 ? "" : "s"} · última vez ${esc(p.lastDay)}</div>
+      ${tr("project.days", { n: p.days })} · ${tr("project.lastSeen", { date: esc(p.lastDay) })}</div>
   </div>
   <div class="prow-figs">
     <div class="prow-hours">${fmtDuration(p.seconds)}</div>
@@ -519,7 +517,7 @@ function renderProjectRow(p) {
 }
 
 function renderActivity(c) {
-  const when = new Date(c.at).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
+  const when = new Date(c.at).toLocaleDateString(localeTag(), { day: "numeric", month: "short" });
   return `
 <div class="act">
   <code>${esc(c.hash)}</code>
@@ -560,8 +558,7 @@ function renderTeam() {
   const people = t.people.length;
 
   $("#team-sub").textContent =
-    `${people} persona${people === 1 ? "" : "s"} · ` +
-    `${t.activeDays} día${t.activeDays === 1 ? "" : "s"} con actividad`;
+    `${tr("team.people", { n: people })} · ${tr("team.activeDays", { n: t.activeDays })}`;
 
   fillProjectFilter(t.projects);
   $("#team-alerts").innerHTML = renderAlerts(t);
@@ -569,18 +566,18 @@ function renderTeam() {
 
   const parts = [];
   if (t.projects.length) {
-    parts.push(`<h2 class="block-title">Por proyecto</h2>`);
+    parts.push(`<h2 class="block-title">${tr("team.byProject")}</h2>`);
     parts.push(`<div class="tbl-wrap"><table class="tbl">
       <thead><tr>
-        <th>Proyecto</th><th class="th-comp">Composición</th>
-        <th class="num">Horas</th><th class="num">Coste IA</th>
-        <th class="num">Valor</th><th>Estado</th>
+        <th>${tr("team.th.project")}</th><th class="th-comp">${tr("team.th.composition")}</th>
+        <th class="num">${tr("team.th.hours")}</th><th class="num">${tr("team.th.aiCost")}</th>
+        <th class="num">${tr("team.th.value")}</th><th>${tr("team.th.status")}</th>
       </tr></thead>
       <tbody>${t.projects.map(teamProjectRow).join("")}</tbody></table></div>`);
     parts.push(`<p class="legend">
-      <span class="sw sw-agent"></span> medido con agente
-      <span class="sw sw-commit"></span> estimado de commits
-      <span class="sw sw-manual"></span> anotado a mano</p>`);
+      <span class="sw sw-agent"></span> ${tr("team.legend.agent")}
+      <span class="sw sw-commit"></span> ${tr("team.legend.commit")}
+      <span class="sw sw-manual"></span> ${tr("team.legend.manual")}</p>`);
   }
 
   if (people) {
@@ -594,30 +591,27 @@ function renderTeam() {
     // los totales son tu trabajo imputado, y aquí hay horas estimadas de gente
     // que no usa Estela. Sin esta nota, el primer lector atento encuentra que
     // los números no cuadran y deja de creerse toda la pantalla.
-    parts.push(`<h2 class="block-title">Personas
-      <span class="block-note">por actividad reciente</span></h2>`);
-    parts.push(`<p class="note-inline">Las horas de tus compañeros se estiman
-      desde sus commits y <b>no entran</b> en los totales de arriba, que cuentan
-      solo tu trabajo imputado. Si alguien instala Estela, su fila pasa a
-      medida.</p>`);
+    parts.push(`<h2 class="block-title">${tr("team.peopleTitle")}
+      <span class="block-note">${tr("team.byRecent")}</span></h2>`);
+    parts.push(`<p class="note-inline">${tr("team.note")}</p>`);
     parts.push(`<div class="tbl-wrap"><table class="tbl">
       <thead><tr>
-        <th>Persona</th><th class="num">Horas</th><th>Precisión</th>
-        <th>Ramas</th><th class="num">Última vez</th>
+        <th>${tr("team.th.person")}</th><th class="num">${tr("team.th.hours")}</th><th>${tr("team.th.precision")}</th>
+        <th>${tr("team.th.branches")}</th><th class="num">${tr("team.th.lastSeen")}</th>
       </tr></thead>
       <tbody>${shown.map(personRow).join("")}</tbody></table></div>`);
 
     if (hidden > 0) {
       parts.push(`<button type="button" class="more" id="team-more">
-        Ver ${hidden} persona${hidden === 1 ? "" : "s"} más</button>`);
+        ${tr("team.showMore", { n: hidden })}</button>`);
     } else if (state.teamAll && t.people.length > TEAM_ROWS) {
-      parts.push(`<button type="button" class="more" id="team-more">Ver menos</button>`);
+      parts.push(`<button type="button" class="more" id="team-more">${tr("common.showLess")}</button>`);
     }
   }
 
   if (!t.projects.length && !people) {
-    parts.push(`<div class="empty"><h2>Sin actividad en este periodo</h2>
-      <p>Prueba con un rango más amplio.</p></div>`);
+    parts.push(`<div class="empty"><h2>${tr("summary.empty.title")}</h2>
+      <p>${tr("team.empty.body")}</p></div>`);
   }
 
   $("#team-body").innerHTML = parts.join("");
@@ -636,22 +630,26 @@ function renderAlerts(t) {
     if (p.budgetPct !== null && p.budgetPct >= 80) {
       const over = p.budgetPct >= 100;
       out.push(alertBox(over ? "danger" : "warn",
-        `${p.projectName} ha ${over ? "superado" : "consumido el " + p.budgetPct + "% de"} su presupuesto de IA`,
-        `$${(p.aiMicroUsd / 1e6).toFixed(2)} de $${(p.budgetMicroUsd / 1e6).toFixed(2)} en este periodo.`));
+        over
+          ? tr("team.alert.budgetOver", { project: p.projectName })
+          : tr("team.alert.budgetNear", { project: p.projectName, pct: p.budgetPct }),
+        tr("team.alert.budgetDetail", {
+          spent: "$" + (p.aiMicroUsd / 1e6).toFixed(2),
+          budget: "$" + (p.budgetMicroUsd / 1e6).toFixed(2),
+        })));
     }
   }
 
   const stale = t.openWork.filter((w) => w.ageDays >= 14);
   if (stale.length) {
     out.push(alertBox("warn",
-      `${stale.length} rama${stale.length === 1 ? "" : "s"} sin integrar desde hace más de dos semanas`,
-      `La más antigua, ${stale[0].name}, lleva ${stale[0].ageDays} días. ` +
-      `Puede ser trabajo parado o una revisión pendiente en el otro lado.`));
+      tr("team.alert.stale", { n: stale.length }),
+      tr("team.alert.staleDetail", { name: stale[0].name, days: stale[0].ageDays })));
   }
 
   if (t.pendingApproval > 0) {
-    out.push(alertBox("info", `${t.pendingApproval} bloques sin revisar`,
-      "Hasta revisarlos no deberían salir en un informe."));
+    out.push(alertBox("info", tr("team.alert.pending", { n: t.pendingApproval }),
+      tr("team.alert.pendingDetail")));
   }
   return out.join("");
 }
@@ -667,8 +665,8 @@ function renderTeamKpis(t) {
   const hours = fmtDuration(t.totalSeconds);
   const delta = t.totalSeconds - t.previousSeconds;
   const deltaTxt = t.previousSeconds > 0
-    ? `${delta >= 0 ? "+" : "−"}${fmtDuration(Math.abs(delta))} frente al periodo anterior`
-    : "sin periodo anterior con el que comparar";
+    ? tr("team.kpi.delta", { delta: `${delta >= 0 ? "+" : "−"}${fmtDuration(Math.abs(delta))}` })
+    : tr("team.kpi.noPrevious");
 
   const ai = t.aiMicroUsd / 1e6;
   const perHour = t.totalSeconds > 0 ? (ai / (t.totalSeconds / 3600)) : 0;
@@ -680,13 +678,13 @@ function renderTeamKpis(t) {
   const oldest = open ? t.openWork[0] : null;
 
   return [
-    teamKpi(hours, "horas del periodo", deltaTxt, delta >= 0 ? "up" : "down"),
-    teamKpi("$" + ai.toFixed(2), "coste de IA",
-            `$${perHour.toFixed(2)} por hora trabajada`),
-    teamKpi(pct + "%", "facturable",
-            `${fmtDuration(t.billableSeconds)} de ${hours}`),
-    teamKpi(String(open), open === 1 ? "rama sin integrar" : "ramas sin integrar",
-            oldest ? `la más antigua, ${oldest.ageDays} días` : "todo integrado",
+    teamKpi(hours, tr("team.kpi.hours"), deltaTxt, delta >= 0 ? "up" : "down"),
+    teamKpi("$" + ai.toFixed(2), tr("team.kpi.aiCost"),
+            tr("team.kpi.perHour", { amount: "$" + perHour.toFixed(2) })),
+    teamKpi(pct + "%", tr("team.kpi.billable"),
+            tr("team.kpi.ofTotal", { part: fmtDuration(t.billableSeconds), total: hours })),
+    teamKpi(String(open), tr("team.kpi.unmerged", { n: open }),
+            oldest ? tr("team.kpi.oldest", { n: oldest.ageDays }) : tr("team.kpi.allMerged"),
             open > 0 ? "warn" : ""),
   ].join("");
 }
@@ -707,7 +705,9 @@ function compositionBar(c) {
   if (!total) return "";
   const seg = (n, cls) => n > 0
     ? `<span class="seg ${cls}" style="width:${(n / total) * 100}%"></span>` : "";
-  const title = `agente ${fmtDuration(c.agent)} · commits ${fmtDuration(c.commit)} · a mano ${fmtDuration(c.manual)}`;
+  const title = tr("team.composition", {
+    agent: fmtDuration(c.agent), commit: fmtDuration(c.commit), manual: fmtDuration(c.manual),
+  });
   return `<div class="comp" title="${esc(title)}">
     ${seg(c.agent, "sw-agent")}${seg(c.commit, "sw-commit")}${seg(c.manual, "sw-manual")}
   </div>`;
@@ -715,11 +715,11 @@ function compositionBar(c) {
 
 function teamProjectRow(p) {
   const STATE = {
-    employment: ["nómina", "tag"],
-    internal: ["interno", "tag"],
+    employment: [tr("kind.employment"), "tag"],
+    internal: [tr("kind.internal"), "tag"],
   };
   const st = STATE[p.kind] ??
-    (p.pendingApproval > 0 ? ["por revisar", "tag tag-warn"] : ["listo", "tag tag-ok"]);
+    (p.pendingApproval > 0 ? [tr("team.status.pending"), "tag tag-warn"] : [tr("team.status.ready"), "tag tag-ok"]);
 
   return `<tr>
     <td><div class="td-name">${esc(p.projectName)}</div>
@@ -739,10 +739,10 @@ function personRow(p) {
     : `<span class="td-sub">—</span>`;
 
   return `<tr>
-    <td><div class="td-name">${esc(p.name)}${p.isMe ? ' <span class="tag">tú</span>' : ""}</div>
+    <td><div class="td-name">${esc(p.name)}${p.isMe ? ` <span class="tag">${tr("team.you")}</span>` : ""}</div>
         <div class="td-sub">${esc(p.emails[0] || "")}</div></td>
     <td class="num">${fmtDuration(p.seconds)}</td>
-    <td><span class="prec ${p.measured ? "prec-ok" : ""}">${p.measured ? "medido" : "estimado"}</span></td>
+    <td><span class="prec ${p.measured ? "prec-ok" : ""}">${p.measured ? tr("team.measured") : tr("team.estimated")}</span></td>
     <td>${branches}</td>
     <td class="num td-sub">${esc(p.lastDay || "—")}</td>
   </tr>`;
@@ -752,7 +752,7 @@ function fillProjectFilter(projects) {
   const sel = $("#team-project");
   if (sel.dataset.filled === String(projects.length) && sel.value === state.teamProject) return;
   const seen = state.team.projects.map((p) => [p.projectId, p.projectName]);
-  sel.innerHTML = `<option value="">Todos los proyectos</option>` +
+  sel.innerHTML = `<option value="">${tr("team.allProjects")}</option>` +
     seen.map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join("");
   sel.value = state.teamProject;
   sel.dataset.filled = String(projects.length);
@@ -803,20 +803,15 @@ function renderProjects(data, orphans) {
   const atrasados = (data.publications || []).filter((p) => p.staleBlocks > 0);
   if (atrasados.length) {
     parts.push(`<div class="stale">
-      <p><b>${atrasados.length === 1 ? "Un panel compartido está" : atrasados.length + " paneles están"}
-         desactualizado${atrasados.length === 1 ? "" : "s"}.</b>
-         Tu cliente está viendo datos anteriores a tu último trabajo. Esto no
-         tiene que ver con los bloques por revisar: aquí solo salen los
-         proyectos que has compartido, y cuenta lo que cambió desde que lo
-         publicaste, no lo que te falta por aprobar.</p>
+      <p><b>${tr("projects.stale.head", { n: atrasados.length })}</b>
+         ${tr("projects.stale.body")}</p>
       <ul>${atrasados.map((p) => {
         const nombre = (data.projects.find((x) => x.id === p.projectId) || {}).name || p.projectId;
-        return `<li>${esc(nombre)} — ${p.staleBlocks}
-          ${p.staleBlocks === 1 ? "bloque nuevo" : "bloques nuevos"}
-          desde que lo publicaste ${p.daysAgo === 0 ? "hoy" :
-            p.daysAgo === 1 ? "ayer" : "hace " + p.daysAgo + " días"}</li>`;
+        return `<li>${tr("projects.stale.item", {
+          name: esc(nombre), blocks: tr("blocks.new", { n: p.staleBlocks }), when: haceCuanto(p.daysAgo),
+        })}</li>`;
       }).join("")}</ul>
-      <p class="stale-fix">Pulsa <b>Compartir con el cliente</b> en cada uno y vuelve a subirlo.</p>
+      <p class="stale-fix">${tr("projects.stale.fix")}</p>
     </div>`);
   }
 
@@ -825,7 +820,7 @@ function renderProjects(data, orphans) {
   const rate = p.kind === "client" ? fmtMoney(p.hourlyMinor, p.currency) : null;
     const history = p.rateHistory.length > 1
       ? `<div class="rate-hist">${p.rateHistory.map((r) =>
-          `<span>${esc(fmtMoney(r.minor, r.currency))}/h desde ${esc(r.from)}</span>`).join("")}</div>`
+          `<span>${tr("rate.historyItem", { amount: esc(fmtMoney(r.minor, r.currency)), date: esc(r.from) })}</span>`).join("")}</div>`
       : "";
 
     parts.push(`
@@ -833,59 +828,56 @@ function renderProjects(data, orphans) {
   <div class="pcard-head">
     <div>
       <div class="pcard-name">${esc(p.name)}</div>
-      <div class="pcard-meta">${esc(p.clientName)} · ${fmtDuration(p.seconds)} en ${p.blocks} bloques</div>
+      <div class="pcard-meta">${tr("projects.meta", {
+        client: esc(p.clientName), duration: fmtDuration(p.seconds), blocks: tr("blocks", { n: p.blocks }),
+      })}</div>
     </div>
     <div class="pcard-rate">
-      <div class="pcard-rate-v">${rate ? esc(rate) + "/h" : "sin tarifa"}</div>
+      <div class="pcard-rate-v">${rate ? esc(rate) + "/h" : tr("row.noRate")}</div>
     </div>
   </div>
   ${p.repoPaths.length
     ? `<div class="repos">${p.repoPaths.map((r) => `<code>${esc(r)}</code>`).join("")}</div>`
     : `<div class="pcard-warn">
-         <p>Sin repositorio: no se le imputa nada todavía.</p>
+         <p>${tr("projects.noRepo")}</p>
          ${orphans.length
            ? `<div class="row-inline">
                 <select class="repo-pick" data-project="${esc(p.id)}">
                   ${orphans.slice(0, 40).map((r) =>
-                    `<option value="${esc(r.path)}">${esc(r.name)} — ${esc(r.turns)} turnos, hasta ${esc(r.lastAt)}</option>`).join("")}
+                    `<option value="${esc(r.path)}">${tr("projects.orphanOption", { name: esc(r.name), turns: esc(r.turns), last: esc(r.lastAt) })}</option>`).join("")}
                 </select>
-                <button type="button" class="chip repo-link" data-project="${esc(p.id)}">Vincular</button>
+                <button type="button" class="chip repo-link" data-project="${esc(p.id)}">${tr("projects.link")}</button>
               </div>`
-           : `<p class="addform-hint">No hemos detectado ningún repositorio sin asignar.
-                Trabaja un rato con tu agente y vuelve, o vincúlalo con
-                <code>estela team repo --project ${esc(p.id)} --add &lt;ruta&gt;</code>.</p>`}
+           : `<p class="addform-hint">${tr("projects.noOrphans", { id: esc(p.id) })}</p>`}
        </div>`}
   ${history}
   <div class="share-block">
     <button type="button" class="chip share-btn${pubs.get(p.id) && pubs.get(p.id).staleBlocks > 0 ? " is-stale" : ""}">
-      ${pubs.has(p.id) ? "Actualizar lo compartido" : "Compartir con el cliente"}
+      ${pubs.has(p.id) ? tr("share.update") : tr("share.share")}
     </button>
     <span class="share-hint">${
-      !pubs.has(p.id) ? "Genera un panel de solo lectura con enlace no adivinable."
+      !pubs.has(p.id) ? tr("share.hintNew")
       : pubs.get(p.id).staleBlocks > 0
-        ? `<b class="stale-mark">${pubs.get(p.id).staleBlocks} bloques nuevos</b> desde que lo publicaste.`
-        : `Publicado ${
-            pubs.get(p.id).daysAgo === 0 ? "hoy" :
-            pubs.get(p.id).daysAgo === 1 ? "ayer" :
-            "hace " + pubs.get(p.id).daysAgo + " días"} · al día.`
+        ? tr("share.hintStale", { blocks: tr("blocks.new", { n: pubs.get(p.id).staleBlocks }) })
+        : tr("share.hintFresh", { when: haceCuanto(pubs.get(p.id).daysAgo) })
     }</span>
     <div class="share-out" hidden></div>
     ${pubs.has(p.id) ? renderCompartir(p.id, pubs.get(p.id)) : ""}
   </div>
   <form class="rateform">
-    <span>Cambiar tarifa a</span>
+    <span>${tr("rate.changeTo")}</span>
     <input type="number" class="rate-new" min="0" step="0.5"
            value="${p.hourlyMinor ? (p.hourlyMinor / 100) : ""}" placeholder="45">
-    <span>${esc(p.currency)}/h desde</span>
+    <span>${tr("rate.from", { currency: esc(p.currency) })}</span>
     <input type="date" class="rate-from" value="${localToday()}">
-    <button type="submit" class="chip">Guardar</button>
+    <button type="submit" class="chip">${tr("common.save")}</button>
   </form>
 </div>`);
   }
 
   if (!data.projects.length) {
-    parts.push(`<div class="empty"><h2>Todavía no hay proyectos</h2>
-      <p>Crea el primero abajo y asígnale el repositorio donde trabajas.</p></div>`);
+    parts.push(`<div class="empty"><h2>${tr("projects.empty.title")}</h2>
+      <p>${tr("projects.empty.body")}</p></div>`);
   }
 
   // Repos con trabajo capturado que no pertenecen a nadie. Es la lista más
@@ -895,51 +887,48 @@ function renderProjects(data, orphans) {
   const orphanCards = orphans.slice(0, 12).map((r) => `
     <button type="button" class="orphan" data-path="${esc(r.path)}" data-name="${esc(r.name)}">
       <span class="orphan-name">${esc(r.name)}</span>
-      <span class="orphan-meta">${r.turns} turnos · hasta ${esc(r.lastAt)}</span>
+      <span class="orphan-meta">${tr("projects.orphanMeta", { turns: r.turns, last: esc(r.lastAt) })}</span>
     </button>`).join("");
 
   const orphanOptions = orphans.slice(0, 40)
-    .map((r) => `<option value="${esc(r.path)}">${esc(r.name)} — ${r.turns} turnos, hasta ${esc(r.lastAt)}</option>`)
+    .map((r) => `<option value="${esc(r.path)}">${tr("projects.orphanOption", { name: esc(r.name), turns: r.turns, last: esc(r.lastAt) })}</option>`)
     .join("");
 
   const clientOptions = data.clients
     .map((c) => `<option value="${esc(c.id)}">${esc(c.name)} (${esc(c.currency)})</option>`).join("");
 
   parts.push(`
-<h2 class="block-title">Nuevo proyecto</h2>
+<h2 class="block-title">${tr("newProject.title")}</h2>
 <form class="newproject" id="new-project">
-  ${orphans.length ? `<p class="addform-hint">Tienes ${orphans.length} repositorios con trabajo
-     capturado y sin proyecto. Son horas que ya registraste pero todavía no puedes informar.
-     Pulsa uno para empezar:</p>
+  ${orphans.length ? `<p class="addform-hint">${tr("newProject.orphans", { n: orphans.length })}</p>
      <div class="orphans">${orphanCards}</div>` : ""}
   <label class="field">
-    <span>Repositorio</span>
+    <span>${tr("newProject.repo")}</span>
     <select id="np-repo">
-      <option value="">— elegir uno de los detectados —</option>
+      <option value="">${tr("newProject.pickRepo")}</option>
       ${orphanOptions}
     </select>
   </label>
   <div class="addrow">
-    <label class="field"><span>Nombre del proyecto</span>
-      <input id="np-name" type="text" placeholder="App de Acme" required></label>
-    <label class="field"><span>Tarifa por hora</span>
+    <label class="field"><span>${tr("newProject.name")}</span>
+      <input id="np-name" type="text" placeholder="${tr("newProject.namePlaceholder")}" required></label>
+    <label class="field"><span>${tr("newProject.rate")}</span>
       <input id="np-rate" type="number" min="0" step="0.5" placeholder="45"></label>
   </div>
   <div class="addrow">
-    <label class="field"><span>Cliente existente</span>
-      <select id="np-client"><option value="">— cliente nuevo —</option>${clientOptions}</select></label>
-    <label class="field"><span>…o cliente nuevo</span>
-      <input id="np-clientname" type="text" placeholder="Acme S.L."></label>
-    <label class="field np-cur"><span>Moneda</span>
+    <label class="field"><span>${tr("newProject.client")}</span>
+      <select id="np-client"><option value="">${tr("newProject.newClientOption")}</option>${clientOptions}</select></label>
+    <label class="field"><span>${tr("newProject.newClient")}</span>
+      <input id="np-clientname" type="text" placeholder="${tr("newProject.clientPlaceholder")}"></label>
+    <label class="field np-cur"><span>${tr("newProject.currency")}</span>
       <select id="np-currency">
         <option>EUR</option><option>USD</option><option>GBP</option>
         <option>MXN</option><option>COP</option><option>BRL</option>
       </select></label>
   </div>
-  <div class="addactions"><button type="submit" class="btn-main">Crear proyecto</button></div>
+  <div class="addactions"><button type="submit" class="btn-main">${tr("newProject.submit")}</button></div>
 </form>
-<p class="note">Tras crear el proyecto, ejecuta <code>estela import</code> para que el
-   trabajo ya capturado de ese repositorio se impute.</p>`);
+<p class="note">${tr("newProject.note")}</p>`);
 
   $("#projects-body").innerHTML = parts.join("");
   wireProjects();
@@ -959,8 +948,7 @@ async function askAuthor(projectId, repoPath) {
   const box = document.createElement("div");
   box.className = "authorbox";
   box.innerHTML =
-    `<p class="addform-hint">¿Con cuál de estos correos commiteas tú en este repositorio?
-      Si eliges mal, se capturarán los commits de otra persona.</p>` +
+    `<p class="addform-hint">${tr("author.ask")}</p>` +
     authors.slice(0, 8).map((a) =>
       `<button type="button" class="chip author-pick" data-email="${esc(a.email)}">
         ${esc(a.email)} <span class="author-n">${a.commits}</span>
@@ -975,7 +963,7 @@ async function askAuthor(projectId, repoPath) {
         body: JSON.stringify({ projectId, emails: btn.dataset.email }),
       });
       await loadProjects();
-      toast("Identidad guardada — ejecuta estela import");
+      toast(tr("toast.identitySaved"));
     });
   });
 }
@@ -1019,7 +1007,7 @@ function wireProjects() {
         }),
       });
       await loadProjects();
-      toast("Proyecto creado");
+      toast(tr("toast.projectCreated"));
       // El correo de commit es lo primero que hay que configurar: sin él se
       // capturan los commits equivocados, o casi ninguno.
       if ($("#np-repo").value) await askAuthor(nuevo.id, $("#np-repo").value);
@@ -1041,8 +1029,8 @@ function wireProjects() {
           body: JSON.stringify({ projectId, repoPath: sel.value }),
         });
         toast(r.importing
-          ? "Vinculado · importando, aparecerá en unos segundos"
-          : (r.blocks ? `Vinculado · ${r.blocks} bloques imputados` : "Repositorio vinculado"));
+          ? tr("toast.linkedImporting")
+          : (r.blocks ? tr("toast.linkedBlocks", { blocks: tr("blocks", { n: r.blocks }) }) : tr("toast.repoLinked")));
         await loadProjects();
       } catch (error) { toast(error.message); btn.disabled = false; }
     });
@@ -1051,12 +1039,12 @@ function wireProjects() {
   document.querySelectorAll("[data-copy-url]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const url = btn.closest(".share-ways").dataset.url;
-      try { await navigator.clipboard.writeText(url); toast("Enlace copiado"); }
+      try { await navigator.clipboard.writeText(url); toast(tr("toast.linkCopied")); }
       catch {
         const ta = document.createElement("textarea");
         ta.value = url; document.body.appendChild(ta); ta.select();
-        try { document.execCommand("copy"); toast("Enlace copiado"); }
-        catch { toast("No se pudo copiar"); }
+        try { document.execCommand("copy"); toast(tr("toast.linkCopied")); }
+        catch { toast(tr("toast.copyFailed")); }
         document.body.removeChild(ta);
       }
     });
@@ -1076,11 +1064,11 @@ function wireProjects() {
           method: "POST",
           body: JSON.stringify({ token: caja.dataset.token, clients }),
         });
-        toast(clients.length ? "Compartido — le llega un correo" : "Ya no se comparte con nadie");
+        toast(clients.length ? tr("toast.sharedByEmail") : tr("toast.sharedWithNobody"));
         await loadProjects();
       } catch (error) {
         msg.textContent = error.body?.needsLogin
-          ? "Hace falta vincular una cuenta: estela login --email tu@correo.com"
+          ? tr("needsLogin.cmd")
           : error.message;
         btn.disabled = false;
       }
@@ -1107,11 +1095,11 @@ function wireProjects() {
 
         out.hidden = false;
         out.innerHTML =
-          '<p class="share-line"><b>' + (r.adopted ? "Panel vinculado" : "Panel publicado") +
+          '<p class="share-line"><b>' + (r.adopted ? tr("publish.linked") : tr("publish.published")) +
           '</b></p>' +
-          '<p class="share-line">Enlace: <code>' + esc(r.url) + '</code></p>' +
-          '<p class="share-warn">Quien tenga el enlace, entra: no hay contraseña.</p>';
-        toast(r.adopted ? "Vinculado a tu cuenta" : "Panel publicado");
+          '<p class="share-line">' + tr("publish.link") + ' <code>' + esc(r.url) + '</code></p>' +
+          '<p class="share-warn">' + tr("publish.noPassword") + '</p>';
+        toast(r.adopted ? tr("toast.linkedToAccount") : tr("publish.published"));
 
         // Publicar pone a cero los "bloques nuevos desde que lo publicaste",
         // pero ese número vive en `state`, que se quedaba con el valor de
@@ -1131,10 +1119,10 @@ function wireProjects() {
         if (error.body?.needsLogin) {
           out2.hidden = false;
           out2.innerHTML =
-            '<p class="share-line"><b>Hace falta vincular una cuenta</b></p>' +
-            '<p class="share-line">Publicar aloja el panel en getestela.dev, y eso exige sesión:</p>' +
-            '<code class="cmd">estela login --email tu@correo.com</code>' +
-            '<p class="share-warn">Se ejecuta una vez, en la terminal. Luego vuelve a pulsar aquí.</p>';
+            '<p class="share-line"><b>' + tr("publish.needsLogin.title") + '</b></p>' +
+            '<p class="share-line">' + tr("publish.needsLogin.why") + '</p>' +
+            '<code class="cmd">' + tr("publish.needsLogin.cmd") + '</code>' +
+            '<p class="share-warn">' + tr("publish.needsLogin.once") + '</p>';
         } else {
           toast(error.message);
         }
@@ -1147,7 +1135,7 @@ function wireProjects() {
       e.preventDefault();
       const projectId = form.closest(".pcard").dataset.project;
       const value = Number(form.querySelector(".rate-new").value);
-      if (!(value > 0)) { toast("Escribe una tarifa"); return; }
+      if (!(value > 0)) { toast(tr("toast.enterRate")); return; }
       try {
         await api("/api/rate", {
           method: "POST",
@@ -1158,7 +1146,7 @@ function wireProjects() {
           }),
         });
         await loadProjects();
-        toast("Tarifa guardada — lo ya trabajado conserva la anterior");
+        toast(tr("toast.rateSaved"));
       } catch (error) { toast(error.message); }
     });
   });
@@ -1187,25 +1175,25 @@ function renderReports() {
   const parts = [];
 
   parts.push(`<div class="filters" id="rep-periods">
-    <button type="button" class="period${state.period === "week" ? " is-on" : ""}" data-period="week">Esta semana</button>
-    <button type="button" class="period${state.period === "month" ? " is-on" : ""}" data-period="month">Este mes</button>
-    <button type="button" class="period${state.period === "quarter" ? " is-on" : ""}" data-period="quarter">3 meses</button>
-    <button type="button" class="period${state.period === "all" ? " is-on" : ""}" data-period="all">Todo lo pendiente</button>
+    <button type="button" class="period${state.period === "week" ? " is-on" : ""}" data-period="week">${tr("period.week")}</button>
+    <button type="button" class="period${state.period === "month" ? " is-on" : ""}" data-period="month">${tr("period.month")}</button>
+    <button type="button" class="period${state.period === "quarter" ? " is-on" : ""}" data-period="quarter">${tr("period.quarter")}</button>
+    <button type="button" class="period${state.period === "all" ? " is-on" : ""}" data-period="all">${tr("period.all")}</button>
   </div>`);
 
   const fuera = overview.outsideRange;
   if (fuera && fuera.blocks > 0) {
-    parts.push(`<p class="note">Hay además <b>${fmtDuration(fuera.seconds)}</b> pendientes
-      fuera de este periodo, en ${fuera.blocks} bloques. Pulsa
-      <b>Todo lo pendiente</b> para incluirlos.</p>`);
+    parts.push(`<p class="note">${tr("reports.outside", {
+      duration: fmtDuration(fuera.seconds), blocks: tr("blocks", { n: fuera.blocks }), all: tr("period.all"),
+    })}</p>`);
   }
 
   if (overview.warning) parts.push(`<div class="warn">${esc(overview.warning)}</div>`);
 
   if (overview.unbilled.length === 0) {
     parts.push(`<div class="empty">
-      <h2>Nada que informar todavía</h2>
-      <p>Aquí aparecerán los proyectos con horas aprobadas y sin informar.</p>
+      <h2>${tr("reports.empty.title")}</h2>
+      <p>${tr("reports.empty.body")}</p>
       <code>estela status</code>
     </div>`);
   } else {
@@ -1218,11 +1206,11 @@ function renderReports() {
 
     if (overview.unbilled.length > REPORT_ROWS || q) {
       parts.push(`<input type="search" class="search" id="rep-search"
-        placeholder="Buscar proyecto o cliente…" value="${esc(state.reportsQuery)}">`);
+        placeholder="${tr("reports.search")}" value="${esc(state.reportsQuery)}">`);
     }
 
     if (q && matches.length === 0) {
-      parts.push(`<p class="note">Ningún proyecto coincide con «${esc(state.reportsQuery)}».</p>`);
+      parts.push(`<p class="note">${tr("reports.noMatch", { q: esc(state.reportsQuery) })}</p>`);
     }
 
     const shown = state.reportsAll ? matches : matches.slice(0, REPORT_ROWS);
@@ -1235,8 +1223,9 @@ function renderReports() {
   <button type="button" class="report-head" data-toggle-report="${esc(row.projectId)}" aria-expanded="${open}">
     <div class="report-text">
       <div class="report-name">${esc(row.projectName)}</div>
-      <div class="report-client">${esc(row.clientName)} · ${row.blocks} bloques ·
-        todo lo pendiente desde ${esc(row.firstDay)}</div>
+      <div class="report-client">${tr("reports.client", {
+        client: esc(row.clientName), blocks: tr("blocks", { n: row.blocks }), date: esc(row.firstDay),
+      })}</div>
     </div>
     <div class="report-figs">
       <div class="report-hours">${fmtDuration(row.seconds)}</div>
@@ -1246,28 +1235,27 @@ function renderReports() {
   </button>
   ${open ? `
   <form class="report-actions" data-project="${esc(row.projectId)}">
-    <label class="field"><span>Desde</span>
+    <label class="field"><span>${tr("reports.from")}</span>
       <input type="date" class="rep-from" value="${esc(row.firstDay)}"></label>
-    <label class="field"><span>Hasta</span>
+    <label class="field"><span>${tr("reports.to")}</span>
       <input type="date" class="rep-to" value="${localToday()}"></label>
-    <label class="field"><span>Tu nombre</span>
-      <input type="text" class="rep-author" placeholder="Jonathan León"></label>
+    <label class="field"><span>${tr("reports.author")}</span>
+      <input type="text" class="rep-author" placeholder="${tr("reports.authorPlaceholder")}"></label>
     <label class="checkline"><input type="checkbox" class="rep-amounts">
-      <span>Incluir importes</span></label>
-    <button type="submit" class="btn-main">Descargar informe</button>
+      <span>${tr("reports.amounts")}</span></label>
+    <button type="submit" class="btn-main">${tr("reports.download")}</button>
   </form>` : ""}
 </div>`);
     }
 
     if (!state.reportsAll && matches.length > REPORT_ROWS) {
       parts.push(`<button type="button" class="more" id="reports-more">
-        Ver ${matches.length - REPORT_ROWS} proyecto${matches.length - REPORT_ROWS === 1 ? "" : "s"} más</button>`);
+        ${tr("reports.more", { n: matches.length - REPORT_ROWS })}</button>`);
     } else if (state.reportsAll && matches.length > REPORT_ROWS) {
-      parts.push(`<button type="button" class="more" id="reports-more">Ver menos</button>`);
+      parts.push(`<button type="button" class="more" id="reports-more">${tr("common.showLess")}</button>`);
     }
 
-    parts.push(`<p class="note">El informe recoge horas y commits. No es una factura:
-      Estela no emite documentos fiscales, adjunta este respaldo a la tuya.</p>`);
+    parts.push(`<p class="note">${tr("reports.note")}</p>`);
   }
 
   $("#reports-body").innerHTML = parts.join("");
@@ -1317,7 +1305,7 @@ function renderReports() {
       // El servidor lo devuelve con Content-Disposition, así que el navegador
       // lo descarga en vez de abrirlo.
       window.location.href = `/api/report?${q}`;
-      toast("Informe descargado");
+      toast(tr("toast.reportDownloaded"));
     });
   });
 }
@@ -1346,19 +1334,18 @@ async function wireSync() {
   btn.addEventListener("click", async () => {
     btn.disabled = true;
     const antes = btn.textContent;
-    btn.textContent = "Sincronizando…";
+    btn.textContent = tr("sync.syncing");
     try {
       const r = await api("/api/sync", { method: "POST" });
       const bien = r.projects.filter((p) => p.ok).length;
       const mal = r.projects.filter((p) => !p.ok);
       toast(mal.length
-        ? `${bien} sincronizados · ${mal[0].projectId}: ${mal[0].detalle}`
-        : (bien ? `${bien} ${bien === 1 ? "proyecto sincronizado" : "proyectos sincronizados"}`
-                : "No hay proyectos con sync activado"));
+        ? tr("sync.partial", { ok: bien, project: mal[0].projectId, detail: mal[0].detalle })
+        : (bien ? tr("sync.done", { n: bien }) : tr("sync.none")));
       if (state.view === "projects") await loadProjects();
     } catch (error) {
       toast(error.body?.needsLogin
-        ? "Hace falta vincular una cuenta: estela login --email tu@correo.com"
+        ? tr("needsLogin.cmd")
         : error.message);
     }
     btn.textContent = antes;
@@ -1419,7 +1406,7 @@ $("#approve-btn").addEventListener("click", async () => {
       body: JSON.stringify({ date: state.date }),
     });
     await loadDay();
-    toast(approved === 1 ? "1 bloque aprobado" : `${approved} bloques aprobados`);
+    toast(tr("toast.blocksApproved", { n: approved }));
   } catch (error) {
     toast(error.message);
   }
@@ -1452,7 +1439,7 @@ function reloadView() {
 function showSync(status) {
   const warn = $("#sync-warn");
   if (status && status.ok === false) {
-    warn.textContent = "No se pudo actualizar";
+    warn.textContent = tr("refresh.failed");
     warn.title = status.error || "";
     warn.hidden = false;
   } else {
@@ -1468,7 +1455,7 @@ async function sync({ force }) {
   const btn = $("#sync");
   const label = $("#sync-label");
   btn.classList.add("is-busy");
-  label.textContent = "Buscando…";
+  label.textContent = tr("refresh.searching");
   try {
     // force = el botón: pide un import nuevo. Sin force solo se consulta cómo
     // fue el último, que es lo que basta al volver a la pestaña.
@@ -1481,7 +1468,7 @@ async function sync({ force }) {
     showSync({ ok: false, error: String(error) });
   } finally {
     btn.classList.remove("is-busy");
-    label.textContent = "Actualizar";
+    label.textContent = tr("refresh.label");
     syncing = false;
   }
 }
@@ -1563,7 +1550,7 @@ document.querySelectorAll(".upgrade-option").forEach((btn) => {
       // criterio que ya usa /api/publish para distinguir "hace falta
       // vincular cuenta" de un error genérico.
       toast(error.body?.needsLogin
-        ? "Vincula tu cuenta primero: estela login --email tu@correo.com"
+        ? tr("upgrade.needsLogin")
         : error.message);
     } finally {
       btn.disabled = false;
@@ -1592,6 +1579,9 @@ $("#banner-close").addEventListener("click", () => {
   localStorage.setItem("estela.bannerDismissed", $("#banner-text").textContent);
   $("#banner-promo").hidden = true;
 });
+
+// Cambiar de idioma recarga: todo lo ya pintado sale de nuevo en el otro.
+$("#lang-switch").addEventListener("click", () => switchLang());
 
 // ── Arranque ───────────────────────────────────────────────────────────
 
