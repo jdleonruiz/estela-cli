@@ -99,6 +99,12 @@ export const EN: Record<string, string> = {
     "  Data:   {0}",
   "\n  Ctrl+C para parar.\n":
     "\n  Ctrl+C to stop.\n",
+  "\n  Estela — demo con datos inventados  {0}":
+    "\n  Estela — demo with made-up data  {0}",
+  "  No es tu trabajo: no se ha tocado tu base ni se ha leído nada tuyo.":
+    "  This isn't your work: nothing of yours was read, and your data wasn't touched.",
+  "  Para el tuyo de verdad:  estela setup":
+    "  For your real one:  estela setup",
   "\nEstela\n":
     "\nEstela\n",
   "Leyendo lo que tus agentes ya guardaron en disco…":
@@ -438,6 +444,9 @@ export const EN: Record<string, string> = {
     "v{0}. Update Estela before continuing.",
   "Falló la migración v{0} ({1}): ":
     "Migration v{0} failed ({1}): ",
+  // ── demo.ts ──
+  "Seguimiento semanal con Northwind":
+    "Weekly sync with Northwind",
   // ── doctor.ts ──
   "No hay ningún proyecto configurado":
     "No project is set up",
@@ -531,6 +540,27 @@ export const EN: Record<string, string> = {
     "  Nothing serious: {0} warnings.",
   "  Solo notas informativas.":
     "  Only informational notes.",
+  // ── export/share.ts ──
+  "No hay trabajo registrado en este periodo.":
+    "No work recorded in this period.",
+  "valor del trabajo":
+    "value of work",
+  "Informe de horas de {0} para {1}":
+    "Hours report by {0} for {1}",
+  "Informe de horas para {0}":
+    "Hours report for {0}",
+  "{0} al {1}":
+    "{0} to {1}",
+  "horas trabajadas":
+    "hours worked",
+  "día con actividad":
+    "day with activity",
+  "días con actividad":
+    "days with activity",
+  "Generado con Estela a partir de la actividad real de Git y del editor.":
+    "Generated with Estela from real Git and editor activity.",
+  "Cada bloque está respaldado por sus commits.":
+    "Every block is backed by its commits.",
   // ── publish.ts ──
   "Necesitas una cuenta para publicar. Vincúlala con:\n\n":
     "You need an account to publish. Link it with:\n\n",

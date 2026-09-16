@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 // `node:sqlite` avisa de que es experimental en cada arranque. Es ruido para
 // quien solo quiere su factura, y el aviso no le dice nada accionable.
@@ -14,7 +14,7 @@ import {
   WORK_KIND_LABELS,
 } from "@estela/shared";
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 
 import { amortize, monthOf, shareForProject } from "./billing/amortize.js";
 import { issueInvoice, InvoiceError, marginOf, rateAt, renderInvoice } from "./billing/invoice.js";
@@ -22,6 +22,7 @@ import { attachCommits, describeBlock, groupByBranchAndDay, sessionize,
          sessionizeCommits, withoutOverlap } from "./billing/sessionize.js";
 import { DEFAULT_DB_PATH, openDatabase } from "./db/schema.js";
 import * as store from "./db/store.js";
+import { seedDemo } from "./demo.js";
 import { diagnose, renderFindings } from "./doctor.js";
 import { applySetup, planSetup, summarize, summaryLine } from "./setup.js";
 import { invoiceToCsv, timeEntriesToCsv } from "./export/csv.js";
@@ -80,6 +81,9 @@ estela — registro de horas para desarrollo asistido por IA
         autores del repositorio para que elijas el tuyo.
 
   estela web [--port 4319]            Abre el panel en tu navegador.
+  estela demo [--port 4320]           El panel lleno con datos inventados, para
+                                      ver de qué va sin esperar a tener
+                                      historial. No toca tu base.
   estela doctor                       Revisa los datos y avisa de lo que
                                       rompería una demo. Úsalo antes de publicar.
   estela status                       Qué hay capturado y sin imputar.
@@ -200,6 +204,9 @@ estela — time tracking for AI-assisted development
         the repository's authors so you can pick yours.
 
   estela web [--port 4319]            Opens the dashboard in your browser.
+  estela demo [--port 4320]           The dashboard filled with made-up data, to
+                                      see what it does without waiting to build
+                                      up history. It never touches your data.
   estela doctor                       Checks your data and flags anything that
                                       would ruin a demo. Run it before publishing.
   estela status                       What's been captured and not yet assigned.
@@ -350,6 +357,30 @@ async function cmdWeb(args: Args, dbPath: string): Promise<void> {
   console.log(tr`  Datos:  ${dbPath}`);
   console.log(tr`\n  Ctrl+C para parar.\n`);
   // No devuelve: el servidor se queda escuchando.
+  await new Promise(() => {});
+}
+
+/**
+ * `estela demo` — el producto lleno, con datos inventados.
+ *
+ * Quien instala esto sin historial de agente termina el setup y ve una pantalla
+ * casi vacía: ha hecho lo que se le pidió y no ha visto el producto. Esto le
+ * enseña de qué va en diez segundos, en una base aparte que se puede borrar.
+ */
+async function cmdDemo(args: Args, dbPath: string): Promise<void> {
+  const rutaDemo = join(dirname(dbPath), "estela-demo.db");
+  rmSync(rutaDemo, { force: true });
+  mkdirSync(dirname(rutaDemo), { recursive: true });
+
+  const db = openDatabase(rutaDemo);
+  try { seedDemo(db); } finally { db.close(); }
+
+  const port = Number(str(args, "port") ?? 4320);
+  const url = await startServer({ port, dbPath: rutaDemo, autoImportMinutes: 0, demo: true });
+  console.log(tr`\n  Estela — demo con datos inventados  ${url}`);
+  console.log(tr`  No es tu trabajo: no se ha tocado tu base ni se ha leído nada tuyo.`);
+  console.log(tr`  Para el tuyo de verdad:  estela setup`);
+  console.log(tr`\n  Ctrl+C para parar.\n`);
   await new Promise(() => {});
 }
 
@@ -1497,6 +1528,7 @@ async function main(): Promise<void> {
   switch (command) {
     case "setup":             await cmdSetup(args, dbPath); break;
     case "web":               await cmdWeb(args, dbPath); break;
+    case "demo":              await cmdDemo(args, dbPath); break;
     case "import":            await cmdImport(args, dbPath); break;
     case "client add":        cmdClientAdd(args, dbPath); break;
     case "project add":       cmdProjectAdd(args, dbPath); break;

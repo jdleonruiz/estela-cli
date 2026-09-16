@@ -1,13 +1,18 @@
 {
   "name": "estela",
-  "version": "0.1.22",
-  "description": "Registro de horas de desarrollo que no hay que rellenar: lee lo que tus agentes de IA y tu Git ya escribieron en disco.",
+  "version": "0.1.23",
+  "description": "Time tracking you never fill in: rebuilds your billable hours from Claude Code transcripts and your Git history, and splits what the AI cost per project.",
   "keywords": [
     "time-tracking",
-    "git",
     "claude-code",
+    "claude",
     "ai-cost",
-    "freelance"
+    "billable-hours",
+    "timesheet",
+    "freelance",
+    "git",
+    "invoice",
+    "cli"
   ],
   "license": "MIT",
   "type": "commonjs",

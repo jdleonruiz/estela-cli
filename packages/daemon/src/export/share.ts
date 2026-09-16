@@ -1,5 +1,6 @@
 import type { AiPayer, Client, Project, TimeEntry } from "@estela/shared";
 import { formatDuration, formatMoney, localDate, type Money } from "@estela/shared";
+import { getLang, tr } from "../i18n/index.js";
 
 /**
  * Informe compartible: un único fichero HTML, autónomo.
@@ -80,7 +81,7 @@ export function buildShareReport(options: ShareOptions): string {
     authorName: options.authorName ?? null,
     body: included.length
       ? rows
-      : `<p class="empty">No hay trabajo registrado en este periodo.</p>`,
+      : `<p class="empty">${tr`No hay trabajo registrado en este periodo.`}</p>`,
   });
 }
 
@@ -141,11 +142,11 @@ interface PageData {
 function page(d: PageData): string {
   const amountBlock = d.totalAmount
     ? `<div class="kpi"><span class="kpi-v">${esc(formatMoney(d.totalAmount))}</span>
-         <span class="kpi-l">valor del trabajo</span></div>`
+         <span class="kpi-l">${tr`valor del trabajo`}</span></div>`
     : "";
 
   return `<!doctype html>
-<html lang="es">
+<html lang="${getLang()}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -200,23 +201,24 @@ footer a{color:var(--jade)}
 <div class="wrap">
   <header>
     <h1>${esc(d.project.name)}</h1>
-    <p class="meta">Informe de horas${d.authorName ? ` de ${esc(d.authorName)}` : ""}
-       para ${esc(d.client.name)} · ${esc(d.from)} al ${esc(d.to)}</p>
+    <p class="meta">${d.authorName
+      ? tr`Informe de horas de ${esc(d.authorName)} para ${esc(d.client.name)}`
+      : tr`Informe de horas para ${esc(d.client.name)}`} · ${tr`${esc(d.from)} al ${esc(d.to)}`}</p>
   </header>
 
   <div class="kpis">
     <div class="kpi"><span class="kpi-v">${esc(formatDuration(d.totalSeconds))}</span>
-      <span class="kpi-l">horas trabajadas</span></div>
+      <span class="kpi-l">${tr`horas trabajadas`}</span></div>
     <div class="kpi"><span class="kpi-v">${d.dayCount}</span>
-      <span class="kpi-l">${d.dayCount === 1 ? "día" : "días"} con actividad</span></div>
+      <span class="kpi-l">${d.dayCount === 1 ? tr`día con actividad` : tr`días con actividad`}</span></div>
     ${amountBlock}
   </div>
 
   ${d.body}
 
   <footer>
-    Generado con Estela a partir de la actividad real de Git y del editor.
-    Cada bloque está respaldado por sus commits.<br>
+    ${tr`Generado con Estela a partir de la actividad real de Git y del editor.`}
+    ${tr`Cada bloque está respaldado por sus commits.`}<br>
     <a href="https://getestela.dev">getestela.dev</a>
   </footer>
 </div>
@@ -224,13 +226,30 @@ footer a{color:var(--jade)}
 </html>`;
 }
 
-const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
-                "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
-const DAYS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+/**
+ * "lunes 14 de septiembre" o "Monday, September 14".
+ *
+ * A mano y no con `toLocaleDateString`: este HTML lo abre el cliente en su
+ * navegador, pero lo genera tu máquina, y el idioma tiene que ser el del
+ * documento, no el de quien lo lee ni el del sistema que lo generó.
+ */
+const MESES = {
+  es: ["enero", "febrero", "marzo", "abril", "mayo", "junio",
+       "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"],
+  en: ["January", "February", "March", "April", "May", "June",
+       "July", "August", "September", "October", "November", "December"],
+};
+const DIAS = {
+  es: ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"],
+  en: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+};
 
 function longDate(iso: string): string {
   const d = new Date(`${iso}T12:00:00Z`);
-  return `${DAYS[d.getUTCDay()]} ${d.getUTCDate()} de ${MONTHS[d.getUTCMonth()]}`;
+  const lang = getLang();
+  const dia = DIAS[lang][d.getUTCDay()]!;
+  const mes = MESES[lang][d.getUTCMonth()]!;
+  return lang === "en" ? `${dia}, ${mes} ${d.getUTCDate()}` : `${dia} ${d.getUTCDate()} de ${mes}`;
 }
 
 function esc(text: string): string {

@@ -73,6 +73,8 @@ export interface ServerOptions {
   readonly autoImportMinutes?: number;
   /** Solo para tests: recibe el servidor para poder cerrarlo al terminar. */
   readonly onServer?: (server: Server) => void;
+  /** `estela demo`: datos inventados, y ningún import que los pise. */
+  readonly demo?: boolean;
 }
 
 /**
@@ -220,6 +222,10 @@ export function startServer(options: ServerOptions = {}): Promise<string> {
   const port = options.port ?? 4319;
   const dbPath = options.dbPath ?? DEFAULT_DB_PATH;
   const autoMinutes = options.autoImportMinutes ?? 5;
+  // En la demo, el botón "Actualizar" del panel leería los transcripts REALES
+  // de quien la está mirando y los metería en la base de ejemplo. Un flag de
+  // módulo basta: en un proceso solo hay un servidor.
+  modoDemo = options.demo === true;
   if (autoMinutes > 0) startAutoImport(dbPath, autoMinutes);
 
   const server = createServer((req, res) => {
@@ -246,6 +252,8 @@ function handle(req: IncomingMessage, res: ServerResponse, dbPath: string): Prom
   return withLang(req.headers["x-estela-lang"] === "en" ? "en" : "es", () => handleRequest(req, res, dbPath));
 }
 
+let modoDemo = false;
+
 async function handleRequest(req: IncomingMessage, res: ServerResponse, dbPath: string): Promise<void> {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const path = url.pathname;
@@ -254,6 +262,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse, dbPath: 
   // cinco minutos. Va antes que api() porque importOnce abre su propia conexión
   // y no hace falta una segunda sobre el mismo fichero.
   if (path === "/api/import" && req.method === "POST") {
+    // En demo no se importa nada: los transcripts de quien mira la demo son
+    // suyos y no tienen nada que hacer en una base de ejemplo.
+    if (modoDemo) return json(res, 200, { at: new Date().toISOString(), ok: true, blocks: 0, error: null });
     return json(res, 200, await runImport(dbPath));
   }
   if (path === "/api/import-status" && req.method === "GET") {

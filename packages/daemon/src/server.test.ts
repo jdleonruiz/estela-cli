@@ -9,6 +9,7 @@ import { money } from "@estela/shared";
 
 import { openDatabase } from "./db/schema.js";
 import * as store from "./db/store.js";
+import { seedDemo } from "./demo.js";
 import { startServer } from "./server.js";
 
 /**
@@ -23,7 +24,11 @@ import { startServer } from "./server.js";
 
 let puerto = 4700;
 
-async function conServidor(preparar: (dbPath: string) => void, probar: (base: string) => Promise<void>) {
+async function conServidor(
+  preparar: (dbPath: string) => void,
+  probar: (base: string) => Promise<void>,
+  opciones: { demo?: boolean } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "estela-server-"));
   const dbPath = join(dir, "estela.db");
   const db = openDatabase(dbPath);
@@ -32,6 +37,7 @@ async function conServidor(preparar: (dbPath: string) => void, probar: (base: st
   let server: Server | undefined;
   const base = await startServer({
     port: puerto++, dbPath, autoImportMinutes: 0, onServer: (s) => { server = s; },
+    ...(opciones.demo ? { demo: true } : {}),
   });
   try {
     await probar(base);
@@ -85,4 +91,24 @@ test("los mensajes del servidor siguen el idioma de la página", async () => {
     assert.match(en.error, /^Unknown route/);
     assert.match(es.error, /^Ruta desconocida/, "sin cabecera, español: es lo que había");
   });
+});
+
+test("en demo, el botón de actualizar no lee los transcripts de quien mira", async () => {
+  // Es la promesa que se le hace a quien ejecuta `estela demo`: no se lee nada
+  // suyo. Un import en esa base metería su trabajo real entre los datos de
+  // ejemplo, y dejaría de ser una demo.
+  await conServidor(
+    (dbPath) => {
+      const db = openDatabase(dbPath);
+      try { seedDemo(db, { now: new Date("2026-09-15T18:00:00") }); } finally { db.close(); }
+    },
+    async (base) => {
+      const antes = await (await fetch(`${base}/api/summary?from=2026-08-01&to=2026-09-15`)).json() as { totalSeconds: number };
+      const r = await (await fetch(`${base}/api/import`, { method: "POST" })).json() as { ok: boolean; blocks: number };
+      assert.equal(r.ok, true, "no puede parecer un error: simplemente no hay nada que importar");
+      assert.equal(r.blocks, 0);
+      const despues = await (await fetch(`${base}/api/summary?from=2026-08-01&to=2026-09-15`)).json() as { totalSeconds: number };
+      assert.equal(despues.totalSeconds, antes.totalSeconds, "la demo no puede cambiar al pulsar actualizar");
+    },
+    { demo: true });
 });
