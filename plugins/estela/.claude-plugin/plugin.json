@@ -1,0 +1,11 @@
+{
+  "name": "estela",
+  "description": "Turn your Claude Code session history into billable hours, AI cost per project, and client reports — no timer, no hooks.",
+  "version": "0.1.0",
+  "author": {
+    "name": "JD León"
+  },
+  "homepage": "https://getestela.dev",
+  "repository": "https://github.com/jdleonruiz/estela-cli",
+  "license": "MIT"
+}

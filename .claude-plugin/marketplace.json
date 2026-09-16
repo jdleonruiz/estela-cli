@@ -1,0 +1,15 @@
+{
+  "name": "estela-cli",
+  "owner": {
+    "name": "JD León",
+    "url": "https://getestela.dev"
+  },
+  "plugins": [
+    {
+      "name": "estela",
+      "source": "./plugins/estela",
+      "description": "Turn your Claude Code session history into billable hours, AI cost per project, and client reports — no timer, no hooks.",
+      "version": "0.1.0"
+    }
+  ]
+}
