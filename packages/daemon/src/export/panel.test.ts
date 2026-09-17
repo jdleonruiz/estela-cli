@@ -172,6 +172,54 @@ test("un proyecto sin trabajo produce una página válida", () => {
   assert.ok(html.includes("Portal Ventas"));
 });
 
+// ── Ritmo: "30 días con actividad", no "30 de 51" ─────────────────────
+
+test("los días con actividad no se presentan como una fracción de un objetivo", () => {
+  // El caso real: un líder de proyecto vio "30 de 51 días con actividad" y lo
+  // leyó como una meta incumplida (30 de 51 esperados), cuando 51 es solo la
+  // distancia en el calendario entre el primer y el último bloque de trabajo,
+  // no un plazo ni una meta. El patrón "activeDays+\" de \"+spanDays" no puede
+  // volver a aparecer en el script del panel.
+  const html = buildPanel({
+    ...BASE,
+    entries: [entry("2026-07-28", 3600), entry("2026-09-16", 3600)],
+  });
+  assert.ok(!/D\.rhythm\.activeDays\s*\+\s*"\s*de\s*"\s*\+\s*D\.rhythm\.spanDays/.test(html),
+    "no debe volver el formato 'X de Y' para los días con actividad");
+});
+
+test("en su lugar, el rango de fechas explica el número sin necesitar pasar el ratón por encima", () => {
+  const html = buildPanel({
+    ...BASE,
+    entries: [entry("2026-07-28", 3600), entry("2026-09-16", 3600)],
+  });
+  assert.ok(html.includes("shortDate(D.days[0].date)") && html.includes("shortDate(D.days[D.days.length-1].date)"),
+    "la etiqueta debe construirse a partir del primer y el último día reales");
+});
+
+test("un solo día con actividad va en singular", () => {
+  const html = buildPanel({ ...BASE, entries: [entry("2026-08-10", 3600)] });
+  assert.ok(html.includes('"día con actividad"'));
+  assert.ok(!html.includes('"días con actividad"'.replace("días", "día con actividad") + "s"));
+});
+
+test("shortDate: el mismo cálculo que hace el navegador, ejecutado aquí", () => {
+  // Se extrae la función tal cual vive en el script (misma fuente, no una
+  // reimplementación) para comprobar que el rango que verá el líder de
+  // proyecto es el correcto con los datos reales del caso que motivó esto.
+  const html = buildPanel({
+    ...BASE,
+    entries: [entry("2026-07-28", 3600), entry("2026-09-16", 3600)],
+  });
+  const src = /function shortDate\(iso\)\{[\s\S]*?\n\}/.exec(html)![0];
+  const MONTHS = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto",
+                  "septiembre","octubre","noviembre","diciembre"];
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const shortDate = new Function("MONTHS", `${src}\nreturn shortDate;`)(MONTHS) as (iso: string) => string;
+  assert.equal(shortDate("2026-07-28"), "28 jul");
+  assert.equal(shortDate("2026-09-16"), "16 sep");
+});
+
 test("los hijos de la rejilla pueden encoger", () => {
   // El fallo que esto previene: min-width:auto es el valor por defecto de un
   // hijo de rejilla, así que no encoge por debajo de su contenido. Un nombre

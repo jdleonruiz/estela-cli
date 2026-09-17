@@ -506,6 +506,8 @@ function esc(t){return String(t).replace(/[&<>"']/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
 function longDate(iso){var d=new Date(iso+"T12:00:00Z");
   return DAYS[d.getUTCDay()]+" "+d.getUTCDate()+" de "+MONTHS[d.getUTCMonth()];}
+function shortDate(iso){var d=new Date(iso+"T12:00:00Z");
+  return d.getUTCDate()+" "+MONTHS[d.getUTCMonth()].slice(0,3);}
 function el(id){return document.getElementById(id);}
 
 function shown(){
@@ -526,8 +528,17 @@ function renderHead(){
     (D.open.length===1?" frente abierto":" frentes abiertos")+"</b>");
   el("lead").innerHTML = frase.length ? frase.join(" ")+"." : "";
 
+  // "30 de 51" se lee como una fracción contra un objetivo ("cumplió 30 de
+  // 51 días"), y no lo es: 51 es solo la distancia en el calendario entre el
+  // primer y el último bloque, no una meta ni un plazo. El número grande pasa
+  // a ser solo los días con trabajo, y el rango de fechas explica el resto
+  // sin necesitar pasar el ratón por encima.
+  var rango = D.days.length
+    ? " · del "+shortDate(D.days[0].date)+" al "+shortDate(D.days[D.days.length-1].date)
+    : "";
   var k = [["", dur(D.totalSeconds), "horas trabajadas"],
-           ["", D.rhythm.activeDays+" de "+D.rhythm.spanDays, "días con actividad"],
+           ["", String(D.rhythm.activeDays),
+            (D.rhythm.activeDays===1?"día con actividad":"días con actividad")+rango],
            ["", String(D.features.length), D.features.length===1?"frente de trabajo":"frentes de trabajo"]];
   if (D.totalAmount) k.push(["accent", D.totalAmount, "valor del trabajo"]);
   el("kpis").innerHTML = k.map(function(x){
