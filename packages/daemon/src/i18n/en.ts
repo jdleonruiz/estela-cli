@@ -195,6 +195,22 @@ export const EN: Record<string, string> = {
     "  repository: {0}",
   "No existe el proyecto \"{0}\".":
     "Project \"{0}\" doesn't exist.",
+  "\"{0}\" ya estaba cerrado desde el {1}.":
+    "\"{0}\" was already closed on {1}.",
+  "  ⚠ \"{0}\" tiene {1} sin facturar en {2} bloques.":
+    "  ⚠ \"{0}\" has {1} unbilled in {2} blocks.",
+  "    Ciérralo igual, o factúralo primero con: estela report --project {0} --cutoff <fecha>":
+    "    Close it anyway, or bill it first with: estela report --project {0} --cutoff <date>",
+  "\n\"{0}\" cerrado. Los datos siguen ahí; si vuelve a captar":
+    "\n\"{0}\" closed. The data is still there; if it captures",
+  "trabajo, \"estela doctor\" avisa en vez de perderlo en silencio.":
+    "work again, \"estela doctor\" flags it instead of silently losing it.",
+  "Para reabrirlo:  estela project reopen --project {0}":
+    "To reopen it:  estela project reopen --project {0}",
+  "\"{0}\" ya estaba abierto.":
+    "\"{0}\" was already open.",
+  "\"{0}\" reabierto.":
+    "\"{0}\" reopened.",
   "\"{0}\" no tiene presupuesto de IA.":
     "\"{0}\" has no AI budget.",
   "\"{0}\": ${1} al mes.":
@@ -223,6 +239,8 @@ export const EN: Record<string, string> = {
     "No clients set up. Start with:",
   "  estela client add --id <id> --name <nombre> --currency EUR":
     "  estela client add --id <id> --name <name> --currency EUR",
+  " (cerrado)":
+    " (closed)",
   "    tarifa:          {0}":
     "    rate:            {0}",
   "— sin definir —":
@@ -484,6 +502,18 @@ export const EN: Record<string, string> = {
     "less accurate than the rest of the report.",
   "Revísalos en Mi día y corrige los minutos antes de emitir el informe.":
     "Review them in My day and correct the minutes before issuing the report.",
+  "\"{0}\" está cerrado pero volvió a captar trabajo":
+    "\"{0}\" is closed but captured work again",
+  "1 bloque nuevo":
+    "1 new block",
+  "{0} bloques nuevos":
+    "{0} new blocks",
+  " ({0}) desde que se cerró, el {1}.":
+    " ({0}) since it was closed, on {1}.",
+  "Factúralo y ciérralo otra vez, o si sigues trabajando en él: ":
+    "Bill it and close it again, or if you're still working on it: ",
+  "estela project reopen --project {0}":
+    "estela project reopen --project {0}",
   "{0} imputaciones con la fecha descuadrada":
     "{0} entries with a mismatched date",
   "Su identificador lleva una fecha distinta a la del día al que están ":

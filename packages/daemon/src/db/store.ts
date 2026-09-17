@@ -26,7 +26,10 @@ export function upsertClient(db: DatabaseSync, client: Client): void {
          client.taxId ?? null, client.email ?? null, client.address ?? null);
 }
 
-export function upsertProject(db: DatabaseSync, project: Project): void {
+// closedAt no entra aquí a propósito: cerrar y reabrir son closeProject() y
+// reopenProject(), no un campo más que "estela project add" pueda pisar sin
+// querer si alguien vuelve a ejecutarlo sobre un proyecto ya cerrado.
+export function upsertProject(db: DatabaseSync, project: Omit<Project, "closedAt">): void {
   db.prepare(`
     INSERT INTO projects (id, client_id, name, billable, rounding_minutes, ai_cost_policy, kind)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -98,7 +101,24 @@ export function getProject(db: DatabaseSync, id: string): Project | null {
     roundingMinutes: row["rounding_minutes"] as number,
     aiCostPolicy: row["ai_cost_policy"] as Project["aiCostPolicy"],
     kind: (row["kind"] as Project["kind"]) ?? "client",
+    closedAt: row["closed_at"] ? new Date(row["closed_at"] as string) : null,
   };
+}
+
+/**
+ * Cierra un proyecto. No borra nada y no bloquea el import si vuelve a haber
+ * actividad — perder un bloque real capturado de verdad sería peor que
+ * avisar de más; `estela doctor` es quien avisa. Es idempotente: cerrar un
+ * proyecto ya cerrado no le cambia la fecha.
+ */
+export function closeProject(db: DatabaseSync, id: string, at: Date = new Date()): void {
+  db.prepare("UPDATE projects SET closed_at = ? WHERE id = ? AND closed_at IS NULL")
+    .run(iso(at), id);
+}
+
+/** Reabre un proyecto cerrado. Sin efecto si ya estaba abierto. */
+export function reopenProject(db: DatabaseSync, id: string): void {
+  db.prepare("UPDATE projects SET closed_at = NULL WHERE id = ?").run(id);
 }
 
 export function listProjects(db: DatabaseSync): Project[] {

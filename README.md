@@ -83,6 +83,25 @@ captures three commits out of seventeen hundred.
 The report backs up your work with hours and commits. It isn't an invoice:
 Estela doesn't issue tax documents, so attach it to your own.
 
+**A cutoff doesn't mean you stop working on the project.** Without
+`--dry-run`, `estela report --cutoff <date>` marks those hours as invoiced
+and keeps letting new hours pile up for the next cutoff:
+
+```sh
+estela report --project acme-web --cutoff 2026-08-31 --pdf august.pdf
+# ...keep working as usual...
+estela report --project acme-web --cutoff 2026-09-30 --pdf september.pdf
+```
+
+When a project is genuinely done, close it — nothing gets deleted, and if
+it captures work again (a teammate, or you without remembering), `estela
+doctor` flags it instead of silently losing it:
+
+```sh
+estela project close --project acme-web
+estela project reopen --project acme-web   # if you need to pick it up again
+```
+
 ## Sharing progress with your client
 
 ```sh

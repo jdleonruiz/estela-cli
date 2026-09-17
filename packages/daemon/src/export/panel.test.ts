@@ -9,7 +9,7 @@ import { buildPanel, newPanelToken } from "./panel.js";
 const CLIENT: Client = { id: "nebula", name: "Nebula", currency: "EUR" };
 const PROJECT: Project = {
   id: "portal-ventas", clientId: "nebula", name: "Portal Ventas", repoPaths: [],
-  billable: true, roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client",
+  billable: true, roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client", closedAt: null,
 };
 
 function entry(day: string, seconds: number, over: Partial<TimeEntry> = {}): TimeEntry {

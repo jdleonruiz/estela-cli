@@ -228,6 +228,12 @@ export interface Project {
    */
   readonly aiCostPolicy: "absorbed" | "passthrough";
   readonly kind: ProjectKind;
+  /**
+   * Cuándo se cerró, o `null` si sigue activo. Cerrar no es borrar: los datos
+   * siguen ahí, se puede reabrir, y si vuelve a captar trabajo no se pierde
+   * — `estela doctor` avisa en vez de tragárselo en silencio.
+   */
+  readonly closedAt: Date | null;
 }
 
 /**

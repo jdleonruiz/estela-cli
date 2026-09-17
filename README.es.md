@@ -81,6 +81,26 @@ tres commits de mil setecientos.
 El informe respalda tu trabajo con horas y commits. No es una factura: Estela
 no emite documentos fiscales, así que adjúntalo a la tuya.
 
+**Un corte no te obliga a dejar de trabajar en el proyecto.** Sin
+`--dry-run`, `estela report --cutoff <fecha>` marca esas horas como
+facturadas y sigue dejando que se acumulen horas nuevas para el siguiente
+corte:
+
+```sh
+estela report --project acme-web --cutoff 2026-08-31 --pdf agosto.pdf
+# ...sigues trabajando normalmente...
+estela report --project acme-web --cutoff 2026-09-30 --pdf septiembre.pdf
+```
+
+Cuando de verdad termines un proyecto, ciérralo — no borra nada, y si vuelve
+a captar trabajo (un compañero, o tú sin acordarte), `estela doctor` avisa
+en vez de perderlo en silencio:
+
+```sh
+estela project close --project acme-web
+estela project reopen --project acme-web   # si hace falta volver a él
+```
+
 ## Compartir el avance con tu cliente
 
 ```sh

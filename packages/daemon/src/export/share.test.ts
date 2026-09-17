@@ -9,7 +9,7 @@ import { buildShareReport } from "./share.js";
 const CLIENT: Client = { id: "nebula", name: "Nebula", currency: "EUR" };
 const PROJECT: Project = {
   id: "nebula", clientId: "nebula", name: "Portal Ventas", repoPaths: [],
-  billable: true, roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client",
+  billable: true, roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client", closedAt: null,
 };
 
 function entry(id: string, dayIso: string, seconds: number, micro = 250_000_000): TimeEntry {

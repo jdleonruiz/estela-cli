@@ -41,7 +41,9 @@ CREATE TABLE IF NOT EXISTS projects (
   kind              TEXT NOT NULL DEFAULT 'client',
   -- Presupuesto mensual de IA en micro-USD. NULL es "no vigilar", que no es lo
   -- mismo que un presupuesto de cero.
-  ai_budget_micro_usd INTEGER
+  ai_budget_micro_usd INTEGER,
+  -- NULL = activo. Ver la migración 12 para por qué cerrar no bloquea nada.
+  closed_at         TEXT
 );
 
 -- Con qué identidad commiteas en cada proyecto.
@@ -262,6 +264,16 @@ CREATE TABLE IF NOT EXISTS personal_sync_state (
  * empezar no es una opción de mantenimiento.
  */
 const MIGRATIONS: readonly { version: number; describe: string; run: (db: DatabaseSync) => void }[] = [
+  {
+    version: 12,
+    describe: "cierre de proyecto",
+    run: (db) => {
+      // NULL = activo. Cerrar no borra nada ni bloquea el import si vuelve a
+      // haber actividad — eso sería peor que avisar de más. Es reversible con
+      // `estela project reopen`.
+      addColumn(db, "projects", "closed_at", "TEXT");
+    },
+  },
   {
     version: 11,
     describe: "cuenta cloud, alcance de sincronización y consentimiento de IA",

@@ -318,3 +318,101 @@ test("una base nueva sirve la vista de equipo sin migrar nada", () => {
     ).all());
   } finally { db.close(); }
 });
+
+// ── Cierre de proyecto ──────────────────────────────────────────────────
+
+test("una base v11 (sin closed_at) se migra a v12 sin perder lo que ya había", () => {
+  // La misma clase de fallo que el primer test del fichero: CREATE TABLE IF
+  // NOT EXISTS no toca una tabla que ya existe, así que sin la migración
+  // explícita, closeProject() reventaría con "no such column: closed_at" en
+  // cualquier base creada antes de esta versión.
+  const path = tempDb();
+
+  const old = new DatabaseSync(path);
+  old.exec(`
+    CREATE TABLE schema_version (version INTEGER NOT NULL);
+    INSERT INTO schema_version VALUES (11);
+    CREATE TABLE clients (id TEXT PRIMARY KEY, name TEXT NOT NULL, currency TEXT NOT NULL,
+                          tax_id TEXT, email TEXT, address TEXT);
+    CREATE TABLE projects (id TEXT PRIMARY KEY, client_id TEXT NOT NULL, name TEXT NOT NULL,
+                           billable INTEGER NOT NULL DEFAULT 1,
+                           rounding_minutes INTEGER NOT NULL DEFAULT 0,
+                           ai_cost_policy TEXT NOT NULL DEFAULT 'absorbed',
+                           kind TEXT NOT NULL DEFAULT 'client',
+                           ai_budget_micro_usd INTEGER);
+    CREATE TABLE project_repos (project_id TEXT NOT NULL, repo_path TEXT NOT NULL);
+    CREATE TABLE project_authors (project_id TEXT NOT NULL, author_email TEXT NOT NULL);
+    CREATE TABLE rate_periods (project_id TEXT NOT NULL, hourly_minor INTEGER NOT NULL,
+                               currency TEXT NOT NULL, effective_from TEXT NOT NULL,
+                               effective_to TEXT);
+    CREATE TABLE time_entries (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, started_at TEXT NOT NULL,
+      local_date TEXT NOT NULL DEFAULT '', ended_at TEXT NOT NULL, seconds INTEGER NOT NULL,
+      description TEXT NOT NULL, billable INTEGER NOT NULL DEFAULT 1,
+      approved INTEGER NOT NULL DEFAULT 0, invoice_id TEXT,
+      ai_micro_usd INTEGER NOT NULL DEFAULT 0, agent_seconds INTEGER NOT NULL DEFAULT 0,
+      commit_hashes TEXT NOT NULL DEFAULT '', agents TEXT NOT NULL DEFAULT '',
+      source TEXT NOT NULL DEFAULT 'agent', kind TEXT NOT NULL DEFAULT 'development',
+      branch TEXT, updated_at TEXT NOT NULL DEFAULT '');
+    INSERT INTO clients VALUES ('c','Cliente','EUR',NULL,NULL,NULL);
+    INSERT INTO projects VALUES ('p','c','Proyecto',1,0,'absorbed','client',NULL);
+  `);
+  old.close();
+
+  const db = openDatabase(path);
+  try {
+    const columns = (db.prepare("PRAGMA table_info(projects)").all() as { name: string }[])
+      .map((c) => c.name);
+    assert.ok(columns.includes("closed_at"), "la migración añadió closed_at");
+
+    const version = (db.prepare("SELECT version FROM schema_version").get() as { version: number });
+    assert.equal(version.version, 12);
+
+    // El proyecto de antes de migrar sigue ahí, y closeProject funciona ya.
+    const antes = store.getProject(db, "p")!;
+    assert.equal(antes.closedAt, null, "una base migrada empieza con el proyecto abierto");
+    store.closeProject(db, "p", new Date("2026-09-17T00:00:00Z"));
+    assert.equal(store.getProject(db, "p")!.closedAt?.toISOString(), "2026-09-17T00:00:00.000Z");
+  } finally { db.close(); }
+});
+
+test("cerrar es idempotente: no le cambia la fecha a un proyecto ya cerrado", () => {
+  const db = openDatabase(":memory:");
+  try {
+    seedProject(db);
+    store.closeProject(db, "p", new Date("2026-09-01T00:00:00Z"));
+    store.closeProject(db, "p", new Date("2026-09-17T00:00:00Z"));
+    assert.equal(store.getProject(db, "p")!.closedAt?.toISOString(), "2026-09-01T00:00:00.000Z",
+      "la segunda llamada no debe mover la fecha del cierre");
+  } finally { db.close(); }
+});
+
+test("reabrir deja el proyecto activo, y se puede volver a cerrar después", () => {
+  const db = openDatabase(":memory:");
+  try {
+    seedProject(db);
+    store.closeProject(db, "p", new Date("2026-09-01T00:00:00Z"));
+    store.reopenProject(db, "p");
+    assert.equal(store.getProject(db, "p")!.closedAt, null);
+
+    // Reabierto, closeProject vuelve a actuar (no lo bloquea el "ya cerrado").
+    store.closeProject(db, "p", new Date("2026-09-17T00:00:00Z"));
+    assert.equal(store.getProject(db, "p")!.closedAt?.toISOString(), "2026-09-17T00:00:00.000Z");
+  } finally { db.close(); }
+});
+
+test("cerrar un proyecto no borra ni bloquea sus imputaciones", () => {
+  // La decisión de diseño que sostiene todo esto: cerrar es un aviso, no un
+  // candado. Perder un bloque real capturado de verdad sería peor que dejar
+  // que uno se cuele después del cierre — para eso está el aviso de doctor.
+  const db = openDatabase(":memory:");
+  try {
+    seedProject(db);
+    const id = store.saveTimeEntry(db, entry());
+    store.closeProject(db, "p", new Date("2026-08-25T09:00:00Z"));
+
+    assert.doesNotThrow(() => store.saveTimeEntry(db, { ...entry(), id: "te_otro" }));
+    assert.ok(store.getTimeEntries(db, "p").some((e) => e.id === id), "lo anterior sigue ahí");
+    assert.equal(store.getTimeEntries(db, "p").length, 2, "y lo nuevo se guarda igual");
+  } finally { db.close(); }
+});

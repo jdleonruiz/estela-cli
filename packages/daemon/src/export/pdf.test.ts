@@ -109,7 +109,7 @@ test("wrap parte el texto respetando el ancho", () => {
 const CLIENT: Client = { id: "nebula", name: "Nebula", currency: "EUR", taxId: "B-12345678" };
 const PROJECT: Project = {
   id: "p", clientId: "nebula", name: "Portal Ventas", repoPaths: [],
-  billable: true, roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client",
+  billable: true, roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client", closedAt: null,
 };
 
 function invoice(lineCount: number): Invoice {

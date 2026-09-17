@@ -61,6 +61,11 @@ estela — registro de horas para desarrollo asistido por IA
         conservar, lo que omitas se queda vacío.
   estela project add --id <id> --client <id> --name <nombre> --repo <ruta>
                      [--rounding <min>] [--ai-cost absorbed|passthrough]
+  estela project close --project <id>
+        Dice que un proyecto terminó. No borra nada ni deja de capturar si
+        vuelve a haber actividad ahí — "estela doctor" avisa en ese caso, en
+        vez de perder el bloque o facturarlo por sorpresa.
+  estela project reopen --project <id>
   estela rate set --project <id> --rate <importe> [--from YYYY-MM-DD]
   estela budget --project <id> [--amount <dólares>|none]
         Presupuesto mensual de IA. Sin --amount, consulta el actual. Alimenta
@@ -184,6 +189,11 @@ estela — time tracking for AI-assisted development
         anything you leave out is cleared.
   estela project add --id <id> --client <id> --name <name> --repo <path>
                      [--rounding <min>] [--ai-cost absorbed|passthrough]
+  estela project close --project <id>
+        Marks a project as done. Doesn't delete anything or stop capturing if
+        there's activity there again — "estela doctor" flags that instead of
+        silently dropping the block or billing it by surprise.
+  estela project reopen --project <id>
   estela rate set --project <id> --rate <amount> [--from YYYY-MM-DD]
   estela budget --project <id> [--amount <dollars>|none]
         Monthly AI budget. Without --amount, shows the current one. Feeds the
@@ -683,6 +693,66 @@ function cmdProjectAdd(args: Args, dbPath: string): void {
 }
 
 /**
+ * `estela project close` — dice que un proyecto terminó, sin borrar nada.
+ *
+ * A propósito NO bloquea `estela import`: si vuelve a haber actividad ahí
+ * (un compañero commitea, o retomas el proyecto sin acordarte de reabrirlo),
+ * perder ese bloque real sería peor que capturarlo de más. `estela doctor`
+ * es quien avisa si un proyecto cerrado vuelve a captar trabajo.
+ */
+function cmdProjectClose(args: Args, dbPath: string): void {
+  const db = openDatabase(dbPath);
+  try {
+    const projectId = required(args, "project");
+    const project = store.getProject(db, projectId);
+    if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
+
+    if (project.closedAt) {
+      console.log(tr`"${project.name}" ya estaba cerrado desde el ${project.closedAt.toISOString().slice(0, 10)}.`);
+      return;
+    }
+
+    const pending = store.getTimeEntries(db, projectId)
+      .filter((e) => e.billable && e.invoiceId === null);
+    if (pending.length > 0) {
+      const seconds = pending.reduce((s, e) => s + e.seconds, 0);
+      console.log(tr`  ⚠ "${project.name}" tiene ${formatDuration(seconds)} sin facturar en ${pending.length} bloques.`);
+      console.log(tr`    Ciérralo igual, o factúralo primero con: estela report --project ${projectId} --cutoff <fecha>`);
+    }
+
+    // Fin del día local, no el instante exacto: "estela log" fecha las horas
+    // manuales de hoy a las 10:00 hora local sin importar cuándo se anoten (a
+    // propósito, para no fingir precisión). Cerrar "ahora mismo" por la tarde
+    // dejaría esas horas de la mañana con una marca posterior al cierre, y el
+    // aviso de doctor saltaría sin que hubiera pasado nada raro. Mismo criterio
+    // que ya usa "estela report --cutoff" para el corte de facturación.
+    const hoy = localDate(new Date());
+    store.closeProject(db, projectId, new Date(`${hoy}T23:59:59`));
+    console.log(tr`
+"${project.name}" cerrado. Los datos siguen ahí; si vuelve a captar`);
+    console.log(tr`trabajo, "estela doctor" avisa en vez de perderlo en silencio.`);
+    console.log(tr`Para reabrirlo:  estela project reopen --project ${projectId}`);
+  } finally { db.close(); }
+}
+
+function cmdProjectReopen(args: Args, dbPath: string): void {
+  const db = openDatabase(dbPath);
+  try {
+    const projectId = required(args, "project");
+    const project = store.getProject(db, projectId);
+    if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
+
+    if (!project.closedAt) {
+      console.log(tr`"${project.name}" ya estaba abierto.`);
+      return;
+    }
+
+    store.reopenProject(db, projectId);
+    console.log(tr`"${project.name}" reabierto.`);
+  } finally { db.close(); }
+}
+
+/**
  * Presupuesto mensual de IA de un proyecto.
  *
  * En dólares, que es la moneda en la que facturan los modelos, aunque le
@@ -774,7 +844,7 @@ function cmdStatus(dbPath: string): void {
         const ai = pending.reduce((s, e) => s + e.aiCost.microUsd, 0);
         const rate = rateAt(store.getRates(db, project.id), project.id, new Date());
 
-        console.log(`  ${project.name}`);
+        console.log(`  ${project.name}` + (project.closedAt ? tr` (cerrado)` : ""));
         console.log(tr`    tarifa:          ${rate ? `${formatMoney(rate)}/h` : tr`— sin definir —`}`);
         console.log(tr`    sin facturar:    ${formatDuration(seconds)} en ${pending.length} bloques`);
         if (rate && seconds > 0) {
@@ -1532,6 +1602,8 @@ async function main(): Promise<void> {
     case "import":            await cmdImport(args, dbPath); break;
     case "client add":        cmdClientAdd(args, dbPath); break;
     case "project add":       cmdProjectAdd(args, dbPath); break;
+    case "project close":     cmdProjectClose(args, dbPath); break;
+    case "project reopen":    cmdProjectReopen(args, dbPath); break;
     case "rate set":          cmdRateSet(args, dbPath); break;
     case "budget":            cmdBudget(args, dbPath); break;
     case "subscription add":  cmdSubscriptionAdd(args, dbPath); break;

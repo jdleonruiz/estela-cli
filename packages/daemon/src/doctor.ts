@@ -99,6 +99,29 @@ export function diagnose(db: DatabaseSync): Finding[] {
         });
       }
     }
+
+    // 3c. Un proyecto cerrado que ha vuelto a captar trabajo. Cerrar no
+    //     bloquea el import: perder un bloque real capturado de verdad sería
+    //     peor que avisar de más. Este es el aviso — sin él, esas horas
+    //     nunca llegan a facturarse ni tampoco se sabe que hay que reabrirlo.
+    if (project.closedAt) {
+      const row = db.prepare(`
+        SELECT COUNT(*) AS n, COALESCE(SUM(seconds), 0) AS secs
+        FROM time_entries WHERE project_id = ? AND started_at > ?
+      `).get(project.id, project.closedAt.toISOString()) as { n: number; secs: number };
+
+      if (row.n > 0) {
+        const fecha = project.closedAt.toISOString().slice(0, 10);
+        findings.push({
+          severity: "warning",
+          title: tr`"${project.name}" está cerrado pero volvió a captar trabajo`,
+          detail: (row.n === 1 ? tr`1 bloque nuevo` : tr`${row.n} bloques nuevos`) +
+            tr` (${formatDuration(row.secs)}) desde que se cerró, el ${fecha}.`,
+          fix: tr`Factúralo y ciérralo otra vez, o si sigues trabajando en él: ` +
+            tr`estela project reopen --project ${project.id}`,
+        });
+      }
+    }
   }
 
   // 4. La invariante de las fechas. El fallo real: el día contado dos veces

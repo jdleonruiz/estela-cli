@@ -20,7 +20,7 @@ const PROYECTO: Project = {
   repoPaths: ["/home/dev/proyectos/portal-ventas"],
   billable: true,
   roundingMinutes: 0,
-  aiCostPolicy: "absorbed", kind: "client",
+  aiCostPolicy: "absorbed", kind: "client", closedAt: null,
 };
 
 const TARIFA: RatePeriod = {
