@@ -59,12 +59,32 @@ function sembrar(dbPath: string): void {
       id: "nomina", clientId: "acme", name: "Trabajo en nómina", repoPaths: [],
       billable: false, roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "employment",
     });
+    // Facturable pero sin tarifa vigente, a propósito: para probar el aviso
+    // sin depender del proyecto de nómina, que ni siquiera llega a intentarlo.
+    store.upsertProject(db, {
+      id: "sin-tarifa", clientId: "acme", name: "Sin tarifa todavía", repoPaths: [],
+      billable: true, roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client",
+    });
     store.addRatePeriod(db, {
       projectId: "web", hourlyRate: money(4500, "EUR"),
       effectiveFrom: new Date("2026-01-01T00:00:00Z"), effectiveTo: null,
     });
     store.setProjectSync(db, {
       projectId: "web", scope: "personal", remoteProjectId: "web", remoteOrgId: null, inviteToken: null,
+    });
+    store.saveTimeEntry(db, {
+      id: "te_web_1", projectId: "web",
+      startedAt: new Date("2026-09-10T10:00:00Z"), endedAt: new Date("2026-09-10T12:00:00Z"),
+      seconds: 7200, description: "Trabajo facturable", billable: true, invoiceId: null,
+      aiCost: { microUsd: 0 }, agentSeconds: 7200, commitHashes: [], agents: ["claude-code"],
+      source: "agent", kind: "development", branch: "main",
+    });
+    store.saveTimeEntry(db, {
+      id: "te_sintarifa_1", projectId: "sin-tarifa",
+      startedAt: new Date("2026-09-10T10:00:00Z"), endedAt: new Date("2026-09-10T11:00:00Z"),
+      seconds: 3600, description: "Trabajo sin tarifa", billable: true, invoiceId: null,
+      aiCost: { microUsd: 0 }, agentSeconds: 3600, commitHashes: [], agents: ["claude-code"],
+      source: "agent", kind: "development", branch: "main",
     });
   } finally { db.close(); }
 }
@@ -111,4 +131,78 @@ test("en demo, el botón de actualizar no lee los transcripts de quien mira", as
       assert.equal(despues.totalSeconds, antes.totalSeconds, "la demo no puede cambiar al pulsar actualizar");
     },
     { demo: true });
+});
+
+// ── Corte de facturación desde la web ───────────────────────────────────
+
+test("un corte desde la web marca las horas como facturadas y devuelve el PDF", async () => {
+  await conServidor(sembrar, async (base) => {
+    const antes = await (await fetch(`${base}/api/overview`)).json() as
+      { unbilled: { projectId: string; seconds: number }[] };
+    assert.ok(antes.unbilled.some((p) => p.projectId === "web" && p.seconds === 7200),
+      "las 2h de partida tienen que verse como pendientes");
+
+    const res = await fetch(`${base}/api/invoice`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "web", cutoff: "2026-09-30", author: "Ana" }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("Content-Type"), "application/pdf");
+    assert.match(res.headers.get("Content-Disposition") ?? "", /attachment; filename="INF-/);
+
+    const pdf = Buffer.from(await res.arrayBuffer());
+    assert.equal(pdf.subarray(0, 4).toString("latin1"), "%PDF", "el cuerpo es un PDF de verdad");
+
+    const despues = await (await fetch(`${base}/api/overview`)).json() as
+      { unbilled: { projectId: string }[] };
+    assert.ok(!despues.unbilled.some((p) => p.projectId === "web"),
+      "tras el corte, esas horas ya no están pendientes");
+  });
+});
+
+test("cortar un proyecto que no existe da 404, no un PDF vacío", async () => {
+  await conServidor(sembrar, async (base) => {
+    const res = await fetch(`${base}/api/invoice`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "no-existe", cutoff: "2026-09-30" }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json() as { error: string };
+    assert.match(body.error, /No existe el proyecto/);
+  });
+});
+
+test("una fecha de corte inválida da 400 en vez de reventar", async () => {
+  await conServidor(sembrar, async (base) => {
+    const res = await fetch(`${base}/api/invoice`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "web", cutoff: "no-es-una-fecha" }),
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+test("sin horas pendientes, 400 con el motivo — no se cobra dos veces", async () => {
+  await conServidor(sembrar, async (base) => {
+    // Corte anterior a la única entrada del proyecto: nada que facturar ahí.
+    const res = await fetch(`${base}/api/invoice`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "web", cutoff: "2026-01-01" }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json() as { error: string };
+    assert.match(body.error, /No hay horas pendientes/);
+  });
+});
+
+test("un proyecto facturable sin tarifa vigente avisa en vez de facturar a cero", async () => {
+  await conServidor(sembrar, async (base) => {
+    const res = await fetch(`${base}/api/invoice`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "sin-tarifa", cutoff: "2026-09-30" }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json() as { error: string };
+    assert.match(body.error, /Sin tarifa vigente/);
+  });
 });

@@ -691,7 +691,8 @@ main.wide { max-width: 1180px; }
   display: flex; align-items: center; gap: 7px; font-size: .85rem;
   color: var(--ink-2); padding-bottom: 8px;
 }
-.report-actions .btn-main { margin-left: auto; padding: 9px 18px; font-size: .9rem; }
+.report-actions .report-btns { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.report-actions .btn-main { padding: 9px 18px; font-size: .9rem; }
 
 /* ── Aviso flotante ─────────────────────────────────────────────────── */
 

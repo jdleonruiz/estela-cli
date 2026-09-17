@@ -1248,7 +1248,10 @@ function renderReports() {
       <input type="text" class="rep-author" placeholder="${tr("reports.authorPlaceholder")}"></label>
     <label class="checkline"><input type="checkbox" class="rep-amounts">
       <span>${tr("reports.amounts")}</span></label>
-    <button type="submit" class="btn-main">${tr("reports.download")}</button>
+    <div class="report-btns">
+      <button type="button" class="chip rep-cutoff">${tr("reports.cutoff")}</button>
+      <button type="submit" class="btn-main">${tr("reports.download")}</button>
+    </div>
   </form>` : ""}
 </div>`);
     }
@@ -1313,6 +1316,62 @@ function renderReports() {
       toast(tr("toast.reportDownloaded"));
     });
   });
+
+  // Cortar y facturar: a diferencia del botón de arriba, ESTO marca las horas
+  // como facturadas en el servidor (POST, no una descarga de solo lectura), así
+  // que pide confirmación explícita antes de nada. No hay deshacer desde aquí.
+  document.querySelectorAll(".rep-cutoff").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const form = btn.closest(".report-actions");
+      const projectId = form.dataset.project;
+      const cutoff = form.querySelector(".rep-to").value;
+      const author = form.querySelector(".rep-author").value;
+      const row = (state.reportsOverview?.unbilled || []).find((r) => r.projectId === projectId);
+      const proyecto = row ? row.projectName : projectId;
+
+      if (!window.confirm(tr("reports.cutoff.confirm", { project: proyecto, date: cutoff }))) return;
+
+      btn.disabled = true;
+      try {
+        await cutoffAndInvoice(projectId, cutoff, author);
+        toast(tr("toast.invoiced"));
+        await loadReports();
+      } catch (error) {
+        toast(error.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+/**
+ * POST que muta datos y a la vez entrega un fichero: no puede ser una
+ * navegación como la descarga de solo lectura de arriba (eso sería siempre un
+ * GET). Se pide como fetch normal y el PDF que devuelve se fuerza a descargar
+ * con un enlace sintético — el mismo patrón que usa cualquier app sin
+ * framework para esto.
+ */
+async function cutoffAndInvoice(projectId, cutoff, author) {
+  const res = await fetch("/api/invoice", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId, cutoff, author }),
+  });
+  if (!res.ok) {
+    let message = `Error ${res.status}`;
+    try { message = (await res.json()).error || message; } catch { /* cuerpo no era JSON */ }
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const match = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "");
+  const filename = match ? match[1] : "factura.pdf";
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
 }
 
 // ── Navegación ─────────────────────────────────────────────────────────

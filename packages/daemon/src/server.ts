@@ -6,13 +6,14 @@ import { extname, join, normalize } from "node:path";
 import type { WorkKind } from "@estela/shared";
 import { billableAmount, localDate, roundSeconds, WORK_KIND_LABELS } from "@estela/shared";
 
-import { amortize, shareForProject } from "./billing/amortize.js";
-import { rateAt } from "./billing/invoice.js";
+import { amortize, monthOf, shareForProject } from "./billing/amortize.js";
+import { InvoiceError, issueInvoice, rateAt } from "./billing/invoice.js";
 import { attachCommits, describeBlock, groupByBranchAndDay, sessionize,
          sessionizeCommits, withoutOverlap } from "./billing/sessionize.js";
 import { DEFAULT_DB_PATH, openDatabase } from "./db/schema.js";
 import * as store from "./db/store.js";
 import { buildShareReport } from "./export/share.js";
+import { invoiceToPdf } from "./export/invoice-pdf.js";
 import { openWork } from "./metrics/index.js";
 import { NoAccountError, publishPanel } from "./publish.js";
 import { syncProject } from "./sync.js";
@@ -542,6 +543,16 @@ async function api(
       const withAmounts = url.searchParams.get("amounts") === "1";
       return sendReport(db, res, projectId, from, to, withAmounts,
         url.searchParams.get("author") ?? "");
+    }
+
+    // Corte de facturación: el equivalente en la web a "estela report
+    // --cutoff", sin --dry-run. A diferencia de /api/report (arriba), esto SÍ
+    // marca las horas como facturadas — es la única vía de la web que lo hace,
+    // así que solo se llega aquí desde un botón con confirmación explícita.
+    if (path === "/api/invoice" && req.method === "POST") {
+      const body = await readJson(req);
+      return sendInvoice(db, res, String(body["projectId"] ?? ""),
+        String(body["cutoff"] ?? ""), typeof body["author"] === "string" ? body["author"] : "");
     }
 
     if (path === "/api/entry" && req.method === "POST") {
@@ -1338,6 +1349,67 @@ function sendReport(
     "Content-Length": body.length,
   });
   res.end(body);
+}
+
+/**
+ * Corta hasta una fecha, marca esas horas como facturadas y devuelve el PDF.
+ *
+ * Mismo cálculo que "estela report --cutoff" en la CLI (issueInvoice +
+ * saveInvoice, en una transacción), sin --dry-run: no hay equivalente de solo
+ * vista previa en la web todavía. Sin datos del emisor (--from-name en la
+ * CLI) el PDF sale sin esa cabecera, igual que en la terminal.
+ */
+function sendInvoice(
+  db: Db, res: ServerResponse, projectId: string, cutoffRaw: string, author: string,
+): void {
+  const project = store.getProject(db, projectId);
+  if (!project) return json(res, 404, { error: tr`No existe el proyecto "${projectId}".` });
+  const client = store.getClient(db, project.clientId)!;
+
+  const cutoffAt = new Date(`${cutoffRaw}T23:59:59Z`);
+  if (Number.isNaN(cutoffAt.getTime())) return json(res, 400, { error: tr`Fecha inválida: ${cutoffRaw}` });
+
+  const entries = store.getTimeEntries(db, projectId);
+  const subs = store.listSubscriptions(db);
+  const months = new Set<string>();
+  for (const e of entries) {
+    if (e.billable && e.invoiceId === null && e.endedAt <= cutoffAt) months.add(monthOf(e.startedAt));
+  }
+  const amortized = subs.length
+    ? shareForProject(
+        amortize(store.consumptionByProjectMonth(db), subs, store.totalConsumptionByMonth(db)),
+        projectId, [...months])
+    : null;
+
+  let invoice;
+  try {
+    invoice = issueInvoice({
+      client, project, rates: store.getRates(db, projectId),
+      entries, cutoffAt, number: store.nextInvoiceNumber(db, "INF"),
+      ...(amortized ? { aiAmortized: amortized } : {}),
+    });
+  } catch (error) {
+    if (error instanceof InvoiceError) return json(res, 400, { error: error.message });
+    throw error;
+  }
+
+  const billed = entries
+    .filter((e) => e.billable && e.invoiceId === null && e.endedAt <= cutoffAt)
+    .map((e) => e.id);
+  store.saveInvoice(db, invoice, billed);
+
+  const pdf = invoiceToPdf(invoice, client, project, {
+    ...(author ? { issuer: { name: author } } : {}),
+    ...(invoice.aiAmortized ? { amortizedAiCost: invoice.aiAmortized } : {}),
+  });
+
+  const filename = `${invoice.number}.pdf`;
+  res.writeHead(200, {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="${filename}"`,
+    "Content-Length": pdf.length,
+  });
+  res.end(pdf);
 }
 
 /**
