@@ -9,7 +9,10 @@
       "name": "estela",
       "source": "./plugins/estela",
       "description": "Turn your Claude Code session history into billable hours, AI cost per project, and client reports — no timer, no hooks.",
-      "version": "0.1.0"
+      "version": "0.1.0",
+      "category": "productivity",
+      "homepage": "https://getestela.dev",
+      "license": "MIT"
     }
   ]
 }
