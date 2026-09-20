@@ -61,6 +61,21 @@ you can run it again.
 Estela speaks English and Spanish, following your system's language. Force one
 with `--lang en` on any command, or `ESTELA_LANG=en` for good.
 
+### Windows
+
+Estela runs on Windows. It's tested by hand on a real machine, not in CI, so if
+something looks off, [open an issue](https://github.com/jdleonruiz/estela-cli/issues).
+Two things trip people up before Estela even starts:
+
+- **`npm : ... cannot be loaded because running scripts is disabled`** —
+  PowerShell blocks npm's own scripts by default. Once, and only for your user:
+  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+- **`npm error Class extends value undefined is not a constructor or null`** —
+  you have two Node installs fighting over the same folder, usually
+  `nvm-windows` plus a Node from the installer or `winget`. Keep one: uninstall
+  the standalone Node, then `nvm install lts` and `nvm use lts` from an
+  administrator terminal. `where.exe npm` should list a single path.
+
 ## Reporting to a client
 
 Projects are created as internal and without a rate, because making one up

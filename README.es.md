@@ -60,6 +60,21 @@ volver a ejecutar.
 Estela habla español e inglés, según el idioma de tu sistema. Fuerza uno con
 `--lang es` en cualquier comando, o con `ESTELA_LANG=es` para siempre.
 
+### Windows
+
+Estela funciona en Windows. Está probada a mano en un equipo real, no en CI, así
+que si algo no cuadra, [abre una incidencia](https://github.com/jdleonruiz/estela-cli/issues).
+Hay dos tropiezos que ocurren antes de que Estela llegue a arrancar:
+
+- **`npm : ... no se puede cargar el archivo ... no está firmado`** — PowerShell
+  bloquea por defecto los scripts del propio npm. Una vez, y solo para tu
+  usuario: `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+- **`npm error Class extends value undefined is not a constructor or null`** —
+  tienes dos instalaciones de Node peleando por la misma carpeta, normalmente
+  `nvm-windows` más un Node del instalador o de `winget`. Deja una sola:
+  desinstala el Node suelto, y luego `nvm install lts` y `nvm use lts` desde una
+  terminal de administrador. `where.exe npm` debe mostrar una única ruta.
+
 ## Informar a un cliente
 
 Los proyectos se crean como internos y sin tarifa, porque inventarla daría
