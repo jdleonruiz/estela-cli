@@ -45,6 +45,28 @@ export function withLang<T>(lang: Lang, fn: () => T): T {
   return scoped.run(lang, fn);
 }
 
+/**
+ * En qué idioma sale un documento que se le entrega a un cliente.
+ *
+ * De más a menos explícito: un `--lang` escrito en el comando, luego el idioma
+ * que se le fijó a ese cliente, y solo si nadie dijo nada, el de la terminal.
+ * El del cliente va por encima de la terminal porque el documento no lo lee
+ * quien lo genera: un freelance con la terminal en español que factura a una
+ * empresa alemana no quiere mandarle un PDF en español porque su Mac lo esté.
+ */
+export function documentLang(input: {
+  readonly explicit?: string | null | undefined;
+  readonly clientLanguage?: Lang | null | undefined;
+}): Lang {
+  if (input.explicit === "es" || input.explicit === "en") return input.explicit;
+  return input.clientLanguage ?? getLang();
+}
+
+/** El locale con el que se escriben los importes de un documento en ese idioma. */
+export function moneyLocale(lang: Lang): string {
+  return lang === "en" ? "en-US" : "es-EC";
+}
+
 /** La clave de una plantilla: sus trozos fijos unidos por {0}, {1}… */
 export function keyOf(strings: readonly string[]): string {
   let key = strings[0] ?? "";

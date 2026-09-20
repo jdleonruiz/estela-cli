@@ -181,6 +181,14 @@ export interface Client {
   readonly taxId?: string;
   readonly email?: string;
   readonly address?: string;
+  /**
+   * Idioma de lo que recibe este cliente: el panel compartido, el PDF, el CSV.
+   *
+   * Es del cliente, no de quien factura: un freelance con la terminal en
+   * español puede facturar a una empresa alemana en inglés. Sin valor, se usa
+   * el idioma de la terminal de quien genera el documento.
+   */
+  readonly language?: "es" | "en";
 }
 
 /**

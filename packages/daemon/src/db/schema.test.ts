@@ -14,6 +14,16 @@ function tempDb(): string {
   return join(mkdtempSync(join(tmpdir(), "estela-db-")), "estela.db");
 }
 
+function versionOf(db: DatabaseSync): number {
+  return (db.prepare("SELECT version FROM schema_version").get() as { version: number }).version;
+}
+
+/** La versión a la que llega cualquier base: la de una recién creada. */
+function versionDeUnaBaseNueva(): number {
+  const db = openDatabase(":memory:");
+  try { return versionOf(db); } finally { db.close(); }
+}
+
 function seedProject(db: ReturnType<typeof openDatabase>): void {
   store.upsertClient(db, { id: "c", name: "Cliente", currency: "EUR" });
   store.upsertProject(db, {
@@ -75,8 +85,8 @@ test("una base antigua se migra en vez de reventar", () => {
     assert.ok(columns.includes("source"), "la migración añadió source");
     assert.ok(columns.includes("kind"), "la migración añadió kind");
 
-    const version = (db.prepare("SELECT version FROM schema_version").get() as { version: number });
-    assert.equal(version.version, 2);
+    assert.equal(versionOf(db), versionDeUnaBaseNueva(),
+      "una base migrada termina en la misma versión que una nueva, no en la de la última migración que corrió");
 
     // Lo que ya había sigue ahí. Migrar no puede perder el trabajo de meses.
     const previo = db.prepare("SELECT * FROM time_entries WHERE id='viejo'")
@@ -365,8 +375,7 @@ test("una base v11 (sin closed_at) se migra a v12 sin perder lo que ya había", 
       .map((c) => c.name);
     assert.ok(columns.includes("closed_at"), "la migración añadió closed_at");
 
-    const version = (db.prepare("SELECT version FROM schema_version").get() as { version: number });
-    assert.equal(version.version, 12);
+    assert.equal(versionOf(db), versionDeUnaBaseNueva());
 
     // El proyecto de antes de migrar sigue ahí, y closeProject funciona ya.
     const antes = store.getProject(db, "p")!;
@@ -414,5 +423,61 @@ test("cerrar un proyecto no borra ni bloquea sus imputaciones", () => {
     assert.doesNotThrow(() => store.saveTimeEntry(db, { ...entry(), id: "te_otro" }));
     assert.ok(store.getTimeEntries(db, "p").some((e) => e.id === id), "lo anterior sigue ahí");
     assert.equal(store.getTimeEntries(db, "p").length, 2, "y lo nuevo se guarda igual");
+  } finally { db.close(); }
+});
+
+// ── Orden de las migraciones ────────────────────────────────────────────
+
+test("una base de varias versiones atrás llega a la actual de una sola vez", () => {
+  // El fallo real: las migraciones se recorrían de la más nueva a la más vieja
+  // y se anotaba como versión la última que corría, así que una base v3 quedaba
+  // en "v4" con todo aplicado y solo convergía a fuerza de abrirla otra vez.
+  const path = tempDb();
+  const nueva = openDatabase(path);
+  nueva.exec("UPDATE schema_version SET version = 3");
+  nueva.close();
+
+  const db = openDatabase(path);
+  try {
+    assert.equal(versionOf(db), versionDeUnaBaseNueva(),
+      "una sola apertura basta para dejarla al día");
+  } finally { db.close(); }
+});
+
+// ── Idioma de los documentos de cada cliente ────────────────────────────
+
+test("una base v12 (sin language) se migra y el idioma se guarda y se lee", () => {
+  const path = tempDb();
+  const prep = openDatabase(path);
+  prep.exec("INSERT INTO clients (id, name, currency) VALUES ('c', 'Cliente', 'EUR')");
+  prep.exec("ALTER TABLE clients DROP COLUMN language");
+  prep.exec("UPDATE schema_version SET version = 12");
+  prep.close();
+
+  const db = openDatabase(path);
+  try {
+    const columns = (db.prepare("PRAGMA table_info(clients)").all() as { name: string }[])
+      .map((c) => c.name);
+    assert.ok(columns.includes("language"), "la migración añadió language");
+    assert.equal(versionOf(db), versionDeUnaBaseNueva());
+
+    // Un cliente de antes de migrar no tiene idioma: sigue el de la terminal,
+    // que es lo que pasaba antes de que existiera el campo.
+    assert.equal(store.getClient(db, "c")!.language, undefined);
+
+    store.upsertClient(db, { id: "c", name: "Cliente", currency: "EUR", language: "en" });
+    assert.equal(store.getClient(db, "c")!.language, "en");
+
+    store.upsertClient(db, { id: "c", name: "Cliente", currency: "EUR" });
+    assert.equal(store.getClient(db, "c")!.language, undefined,
+      "upsertClient escribe lo que recibe: conservar el idioma es cosa de quien lo llama");
+  } finally { db.close(); }
+});
+
+test("un valor de idioma que no existe en la base se ignora en vez de propagarse", () => {
+  const db = openDatabase(":memory:");
+  try {
+    db.exec("INSERT INTO clients (id, name, currency, language) VALUES ('c', 'X', 'EUR', 'klingon')");
+    assert.equal(store.getClient(db, "c")!.language, undefined);
   } finally { db.close(); }
 });

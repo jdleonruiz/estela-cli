@@ -1,6 +1,7 @@
 import type { Client, Invoice, Money, Project } from "@estela/shared";
 import { formatAiCost, formatDuration, formatMoney } from "@estela/shared";
 
+import { getLang, moneyLocale, tr } from "../i18n/index.js";
 import { PdfDocument } from "./pdf.js";
 
 /**
@@ -37,12 +38,15 @@ export function invoiceToPdf(
 ): Buffer {
   const doc = new PdfDocument();
   const date = (d: Date) => d.toISOString().slice(0, 10);
+  // Los importes van con el locale del documento, no con el de la terminal: el
+  // cliente lee "€1.254,79" o "€1,254.79" según SU idioma.
+  const money = (m: Money) => formatMoney(m, moneyLocale(getLang()));
   let y = M;
 
   // --- Cabecera -------------------------------------------------------------
-  doc.text(M, y + 4, "INFORME DE HORAS", "Helvetica-Bold", 20);
+  doc.text(M, y + 4, tr`INFORME DE HORAS`, "Helvetica-Bold", 20);
   doc.textRight(COL_AMOUNT, y - 2, invoice.number, "Helvetica-Bold", 12);
-  doc.textRight(COL_AMOUNT, y + 12, `Emitido el ${date(invoice.issuedAt)}`, "Helvetica", 9, 0.4);
+  doc.textRight(COL_AMOUNT, y + 12, tr`Emitido el ${date(invoice.issuedAt)}`, "Helvetica", 9, 0.4);
   y += 30;
 
   doc.line(M, y, COL_AMOUNT, y, 1.2, 0.15);
@@ -53,7 +57,7 @@ export function invoiceToPdf(
   const issuer = options.issuer;
 
   if (issuer) {
-    doc.text(M, y, "DE", "Helvetica-Bold", 8, 0.45);
+    doc.text(M, y, tr`DE`, "Helvetica-Bold", 8, 0.45);
     doc.text(M, y + 15, issuer.name, "Helvetica-Bold", 11);
     let sub = y + 29;
     for (const line of [issuer.taxId, issuer.email, issuer.address]) {
@@ -63,7 +67,7 @@ export function invoiceToPdf(
     }
   }
 
-  doc.text(rightCol, y, "PARA", "Helvetica-Bold", 8, 0.45);
+  doc.text(rightCol, y, tr`PARA`, "Helvetica-Bold", 8, 0.45);
   doc.text(rightCol, y + 15, client.name, "Helvetica-Bold", 11);
   let clientY = y + 29;
   for (const line of [client.taxId, client.email, client.address]) {
@@ -76,19 +80,19 @@ export function invoiceToPdf(
 
   // --- Proyecto y periodo ---------------------------------------------------
   doc.rect(M, y - 12, COL_AMOUNT - M, 34, 0.96);
-  doc.text(M + 12, y, "PROYECTO", "Helvetica-Bold", 8, 0.45);
+  doc.text(M + 12, y, tr`PROYECTO`, "Helvetica-Bold", 8, 0.45);
   doc.text(M + 12, y + 13, project.name, "Helvetica", 10);
-  doc.text(rightCol, y, "PERIODO", "Helvetica-Bold", 8, 0.45);
+  doc.text(rightCol, y, tr`PERIODO`, "Helvetica-Bold", 8, 0.45);
   doc.text(rightCol, y + 13,
-    `${date(invoice.periodStart)}  al  ${date(invoice.cutoffAt)}`, "Helvetica", 10);
+    tr`${date(invoice.periodStart)}  al  ${date(invoice.cutoffAt)}`, "Helvetica", 10);
   y += 48;
 
   // --- Cabecera de tabla ----------------------------------------------------
   const header = () => {
-    doc.text(M, y, "CONCEPTO", "Helvetica-Bold", 8, 0.45);
-    doc.textRight(COL_TIME, y, "TIEMPO", "Helvetica-Bold", 8, 0.45);
-    doc.textRight(COL_RATE, y, "TARIFA", "Helvetica-Bold", 8, 0.45);
-    doc.textRight(COL_AMOUNT, y, "IMPORTE", "Helvetica-Bold", 8, 0.45);
+    doc.text(M, y, tr`CONCEPTO`, "Helvetica-Bold", 8, 0.45);
+    doc.textRight(COL_TIME, y, tr`TIEMPO`, "Helvetica-Bold", 8, 0.45);
+    doc.textRight(COL_RATE, y, tr`TARIFA`, "Helvetica-Bold", 8, 0.45);
+    doc.textRight(COL_AMOUNT, y, tr`IMPORTE`, "Helvetica-Bold", 8, 0.45);
     y += 7;
     doc.line(M, y, COL_AMOUNT, y, 0.8, 0.3);
     y += 15;
@@ -113,8 +117,8 @@ export function invoiceToPdf(
     const text = PdfDocument.truncate(line.description, "Helvetica", 10, maxDescWidth);
     doc.text(M, y, text, "Helvetica", 10);
     doc.textRight(COL_TIME, y, formatDuration(line.seconds), "Helvetica", 10, 0.2);
-    doc.textRight(COL_RATE, y, `${formatMoney(line.hourlyRate)}/h`, "Helvetica", 10, 0.4);
-    doc.textRight(COL_AMOUNT, y, formatMoney(line.amount), "Helvetica", 10);
+    doc.textRight(COL_RATE, y, `${money(line.hourlyRate)}/h`, "Helvetica", 10, 0.4);
+    doc.textRight(COL_AMOUNT, y, money(line.amount), "Helvetica", 10);
     y += 9;
     doc.line(M, y, COL_AMOUNT, y, 0.4, 0.9);
     y += 12;
@@ -127,23 +131,23 @@ export function invoiceToPdf(
   doc.line(M, y, COL_AMOUNT, y, 0.8, 0.3);
   y += 18;
 
-  doc.text(M, y, `${invoice.lines.length} conceptos`, "Helvetica", 9, 0.4);
+  doc.text(M, y, invoice.lines.length === 1 ? tr`1 concepto` : tr`${invoice.lines.length} conceptos`, "Helvetica", 9, 0.4);
   doc.textRight(COL_TIME, y, formatDuration(invoice.totalSeconds), "Helvetica-Bold", 10);
-  doc.textRight(COL_AMOUNT, y, formatMoney(invoice.subtotal), "Helvetica", 10);
+  doc.textRight(COL_AMOUNT, y, money(invoice.subtotal), "Helvetica", 10);
   y += 18;
 
   if (invoice.aiCostBilled) {
     doc.text(M, y,
-      `Coste de IA repercutido (1 USD = ${invoice.usdFxRate} ${invoice.currency})`,
+      tr`Coste de IA repercutido (1 USD = ${invoice.usdFxRate} ${invoice.currency})`,
       "Helvetica", 9, 0.4);
-    doc.textRight(COL_AMOUNT, y, formatMoney(invoice.aiCostBilled), "Helvetica", 10);
+    doc.textRight(COL_AMOUNT, y, money(invoice.aiCostBilled), "Helvetica", 10);
     y += 18;
   }
 
   y += 4;
   doc.rect(rightCol - 20, y - 14, COL_AMOUNT - rightCol + 20, 32, 0.94);
-  doc.text(rightCol - 8, y + 2, "VALOR", "Helvetica-Bold", 11);
-  doc.textRight(COL_AMOUNT - 8, y + 3, formatMoney(invoice.total), "Helvetica-Bold", 14);
+  doc.text(rightCol - 8, y + 2, tr`VALOR`, "Helvetica-Bold", 11);
+  doc.textRight(COL_AMOUNT - 8, y + 3, money(invoice.total), "Helvetica-Bold", 14);
   y += 46;
 
   // --- Nota interna ---------------------------------------------------------
@@ -152,16 +156,16 @@ export function invoiceToPdf(
   if (invoice.aiCost.microUsd > 0 && !invoice.aiCostBilled) {
     doc.line(M, y, COL_AMOUNT, y, 0.4, 0.85);
     y += 14;
-    doc.text(M, y, "NOTA INTERNA (no se comparte)", "Helvetica-Bold", 7, 0.55);
+    doc.text(M, y, tr`NOTA INTERNA (no se comparte)`, "Helvetica-Bold", 7, 0.55);
     y += 12;
 
-    const consumption = `Consumo de IA del periodo: ${formatAiCost(invoice.aiCost)} en tarifa API equivalente.`;
+    const consumption = tr`Consumo de IA del periodo: ${formatAiCost(invoice.aiCost)} en tarifa API equivalente.`;
     doc.text(M, y, consumption, "Helvetica", 8, 0.5);
     y += 11;
 
     if (options.amortizedAiCost) {
       doc.text(M, y,
-        `Coste real imputado desde tu suscripción: ${formatMoney(options.amortizedAiCost)}.`,
+        tr`Coste real imputado desde tu suscripción: ${money(options.amortizedAiCost)}.`,
         "Helvetica", 8, 0.5);
       y += 11;
     }

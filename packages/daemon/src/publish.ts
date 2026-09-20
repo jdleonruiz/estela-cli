@@ -11,7 +11,7 @@ import { emailsOverlap, teamView } from "./metrics/team.js";
 import { listTeamMembers, type TeamMemberSummary } from "./team.js";
 import { mergedBranches } from "./watchers/git.js";
 import { myEmailsByRepo } from "./watchers/identity.js";
-import { tr } from "./i18n/index.js";
+import { documentLang, tr, withLang, type Lang } from "./i18n/index.js";
 
 /**
  * Publica un panel, alojado en la cuenta vinculada.
@@ -42,6 +42,11 @@ export interface PublishOptions {
    * republicar el avance de la semana no puede desvincular al cliente.
    */
   readonly clients?: readonly string[];
+  /**
+   * Idioma del panel, si se pide expresamente. Sin él manda el que se fijó para
+   * el cliente, y sin ese, el de la terminal de quien publica.
+   */
+  readonly language?: Lang;
 }
 
 export interface PublishResult {
@@ -87,7 +92,10 @@ export async function publishPanel(db: DatabaseSync, options: PublishOptions): P
 
   const team = await buildTeam(db, project, projectCommits);
 
-  const html = buildPanel({
+  // El panel es un fichero estático: el idioma queda fijado en el momento de
+  // publicar, y republicar es lo que lo cambia.
+  const lang = documentLang({ explicit: options.language, clientLanguage: client.language });
+  const html = withLang(lang, () => buildPanel({
     project, client,
     entries: store.getTimeEntries(db, options.projectId),
     ...(options.includeTeam !== false ? { team } : {}),
@@ -102,7 +110,7 @@ export async function publishPanel(db: DatabaseSync, options: PublishOptions): P
           `SELECT hash, subject FROM commits WHERE hash IN (${hashes.map(() => "?").join(",")})`
         ).all(...hashes) as { hash: string; subject: string }[]
       : [],
-  });
+  }));
 
   // Alojarlo exige sesión: es la cuenta la que decide cuántos paneles caben
   // en tu plan, y sin ella no hay a quién cargarle esa cuota.

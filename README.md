@@ -95,6 +95,20 @@ estela report --project acme-web --cutoff 2026-08-31 --dry-run
 almost never commit with your global email, and without telling Estela it
 captures three commits out of seventeen hundred.
 
+**The language is the client's, not your terminal's.** What your client receives
+(the PDF, the CSV, the report and the published panel) comes out in the language
+you set for that client, so you can use Estela in Spanish and bill a company in
+English:
+
+```sh
+estela client add --id acme --name "ACME" --currency EUR --language en
+```
+
+Without it Estela uses your terminal's language, and tells you when it does.
+Running `client add` again keeps the language you set (`--language auto` removes
+it), and `--lang en` on a single command overrides everything. A published panel
+is a static file, so to change its language you republish it.
+
 The report backs up your work with hours and commits. It isn't an invoice:
 Estela doesn't issue tax documents, so attach it to your own.
 

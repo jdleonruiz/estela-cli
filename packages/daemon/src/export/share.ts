@@ -1,6 +1,7 @@
 import type { AiPayer, Client, Project, TimeEntry } from "@estela/shared";
 import { formatDuration, formatMoney, localDate, type Money } from "@estela/shared";
-import { getLang, tr } from "../i18n/index.js";
+import { getLang, moneyLocale, tr } from "../i18n/index.js";
+import { longDate } from "./dates.js";
 
 /**
  * Informe compartible: un único fichero HTML, autónomo.
@@ -115,7 +116,7 @@ function renderDay(day: DayGroup, options: ShareOptions, showAmounts: boolean): 
       if (rate) {
         amount = `<td class="amount">${esc(formatMoney({
           amount: Math.round((rate.amount * entry.seconds) / 3600), currency: rate.currency,
-        }))}</td>`;
+        }, moneyLocale(getLang())))}</td>`;
       } else amount = `<td class="amount">—</td>`;
     }
 
@@ -127,7 +128,7 @@ function renderDay(day: DayGroup, options: ShareOptions, showAmounts: boolean): 
   }).join("\n");
 
   return `<section class="day">
-  <h3>${esc(longDate(day.date))} <span class="day-total">${esc(formatDuration(day.seconds))}</span></h3>
+  <h3>${esc(longDate(day.date, getLang()))} <span class="day-total">${esc(formatDuration(day.seconds))}</span></h3>
   <table>${items}</table>
 </section>`;
 }
@@ -141,7 +142,7 @@ interface PageData {
 
 function page(d: PageData): string {
   const amountBlock = d.totalAmount
-    ? `<div class="kpi"><span class="kpi-v">${esc(formatMoney(d.totalAmount))}</span>
+    ? `<div class="kpi"><span class="kpi-v">${esc(formatMoney(d.totalAmount, moneyLocale(getLang())))}</span>
          <span class="kpi-l">${tr`valor del trabajo`}</span></div>`
     : "";
 
@@ -224,32 +225,6 @@ footer a{color:var(--jade)}
 </div>
 </body>
 </html>`;
-}
-
-/**
- * "lunes 14 de septiembre" o "Monday, September 14".
- *
- * A mano y no con `toLocaleDateString`: este HTML lo abre el cliente en su
- * navegador, pero lo genera tu máquina, y el idioma tiene que ser el del
- * documento, no el de quien lo lee ni el del sistema que lo generó.
- */
-const MESES = {
-  es: ["enero", "febrero", "marzo", "abril", "mayo", "junio",
-       "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"],
-  en: ["January", "February", "March", "April", "May", "June",
-       "July", "August", "September", "October", "November", "December"],
-};
-const DIAS = {
-  es: ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"],
-  en: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
-};
-
-function longDate(iso: string): string {
-  const d = new Date(`${iso}T12:00:00Z`);
-  const lang = getLang();
-  const dia = DIAS[lang][d.getUTCDay()]!;
-  const mes = MESES[lang][d.getUTCMonth()]!;
-  return lang === "en" ? `${dia}, ${mes} ${d.getUTCDate()}` : `${dia} ${d.getUTCDate()} de ${mes}`;
 }
 
 function esc(text: string): string {

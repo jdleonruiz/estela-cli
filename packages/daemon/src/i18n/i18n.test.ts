@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { test } from "node:test";
 
 import { EN } from "./en.js";
-import { detectLang, getLang, keyOf, langFromTag, setLang, tr, withLang } from "./index.js";
+import { detectLang, documentLang, getLang, keyOf, langFromTag, moneyLocale, setLang, tr, withLang } from "./index.js";
 
 /**
  * El idioma de la terminal.
@@ -209,4 +209,28 @@ test("i18n: dos peticiones a la vez no se pisan el idioma", async () => {
     assert.equal(es, "Invitación revocada.");
     assert.equal(tr`Invitación revocada.`, "Invitación revocada.", "fuera de una petición, el de la terminal");
   } finally { setLang(antes); }
+});
+
+test("i18n: documentLang, de lo más explícito a lo menos: --lang, cliente, terminal", () => {
+  setLang("es");
+  try {
+    // Sin nada: la terminal.
+    assert.equal(documentLang({}), "es");
+    setLang("en");
+    assert.equal(documentLang({}), "en");
+    // El idioma del cliente gana a la terminal: el documento no lo lee quien lo genera.
+    assert.equal(documentLang({ clientLanguage: "es" }), "es");
+    // Un --lang escrito en el comando gana a todo.
+    assert.equal(documentLang({ explicit: "es", clientLanguage: "en" }), "es");
+    // Un valor que no es un idioma no decide nada.
+    assert.equal(documentLang({ explicit: "fr", clientLanguage: "es" }), "es");
+    assert.equal(documentLang({ explicit: null, clientLanguage: null }), "en");
+    // Dentro de withLang, "la terminal" es la de esa petición.
+    assert.equal(withLang("es", () => documentLang({})), "es");
+  } finally { setLang("es"); }
+});
+
+test("i18n: moneyLocale, un locale por idioma", () => {
+  assert.equal(moneyLocale("en"), "en-US");
+  assert.equal(moneyLocale("es"), "es-EC");
 });

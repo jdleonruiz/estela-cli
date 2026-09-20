@@ -675,4 +675,148 @@ export const EN: Record<string, string> = {
     "{0} of {1} records of a known type were malformed ",
   "Claude Code puede haber cambiado su formato: revisa los totales antes de facturar.":
     "Claude Code may have changed its format: check the totals before billing.",
+  // ── export/invoice-pdf.ts (lo que recibe el cliente) ──
+  "INFORME DE HORAS":
+    "HOURS REPORT",
+  "Emitido el {0}":
+    "Issued {0}",
+  "DE":
+    "FROM",
+  "PARA":
+    "TO",
+  "PROYECTO":
+    "PROJECT",
+  "PERIODO":
+    "PERIOD",
+  "{0}  al  {1}":
+    "{0}  to  {1}",
+  "1 concepto":
+    "1 item",
+  "VALOR":
+    "VALUE",
+  "NOTA INTERNA (no se comparte)":
+    "INTERNAL NOTE (not shared)",
+  "Consumo de IA del periodo: {0} en tarifa API equivalente.":
+    "AI usage for the period: {0} at equivalent API rates.",
+  "Coste real imputado desde tu suscripción: {0}.":
+    "Actual cost allocated from your subscription: {0}.",
+  // ── export/panel.ts (lo que recibe el cliente) ──
+  "Avance del proyecto":
+    "Project progress",
+  "Solo lectura":
+    "Read-only",
+  "En qué se fue el esfuerzo":
+    "Where the effort went",
+  "Detalle por día":
+    "Day-by-day detail",
+  "Esto es una foto del proyecto":
+    "This is a snapshot of the project",
+  "Se genera de la actividad real de Git y del editor, y se actualiza cuando quien lo publica lo vuelve a publicar.":
+    "It is generated from real Git and editor activity, and it updates whenever whoever published it publishes it again.",
+  "Verlo para un equipo":
+    "See it for a team",
+  "Horas medidas con {0}.":
+    "Hours measured with {0}.",
+  "El grueso del trabajo fue **{0}**":
+    "Most of the work went into **{0}**",
+  "con **{0} entrega**":
+    "with **{0} delivery**",
+  "con **{0} entregas**":
+    "with **{0} deliveries**",
+  "y **{0} frente abierto**":
+    "and **{0} open workstream**",
+  "y **{0} frentes abiertos**":
+    "and **{0} open workstreams**",
+  "del {0} al {1}":
+    "from {0} to {1}",
+  "frente de trabajo":
+    "workstream",
+  "frentes de trabajo":
+    "workstreams",
+  "integrado":
+    "merged",
+  "en curso":
+    "in progress",
+  "y {0} más":
+    "and {0} more",
+  "{0} día de trabajo, sin commits asociados.":
+    "{0} day of work, no associated commits.",
+  "{0} días de trabajo, sin commits asociados.":
+    "{0} days of work, no associated commits.",
+  "{0} commit":
+    "{0} commit",
+  "{0} commits":
+    "{0} commits",
+  "{0} rama":
+    "{0} branch",
+  "{0} ramas":
+    "{0} branches",
+  "hasta {0}":
+    "until {0}",
+  "medido":
+    "measured",
+  "Se mide con Teams":
+    "Measured with Teams",
+  "tú":
+    "you",
+  "Horas medidas de tu equipo":
+    "Measured hours for your team",
+  "Las de tu gente pueden estimarse desde sus commits, pero medirlas exige que instalen Estela. Con **Teams** se miden, y dejan de ser una suposición que alguien pueda discutir.":
+    "Your team's hours can be estimated from their commits, but measuring them requires them to install Estela. With **Teams** they are measured, and stop being an assumption anyone can dispute.",
+  "El coste de IA se informa **por proyecto**, nunca por persona, y solo la que paga la empresa. Lo que cada cual gasta de su bolsillo es suyo.":
+    "AI cost is reported **per project**, never per person, and only what the company pays for. What each person spends out of their own pocket is theirs.",
+  "Ver qué incluye Teams →":
+    "See what Teams includes →",
+  "Equipo del proyecto":
+    "Project team",
+  "{0} persona con actividad. Salen de los commits del repositorio, con sus identidades de git ya unificadas.":
+    "{0} person with activity. They come from the repository's commits, with their git identities already merged.",
+  "{0} personas con actividad. Salen de los commits del repositorio, con sus identidades de git ya unificadas.":
+    "{0} people with activity. They come from the repository's commits, with their git identities already merged.",
+  "Ritmo":
+    "Pace",
+  "jornada típica":
+    "typical day",
+  "día la pausa más larga":
+    "day, longest break",
+  "días la pausa más larga":
+    "days, longest break",
+  "Pendiente de integrar":
+    "Waiting to be merged",
+  "Trabajo terminado que aún no está en la rama principal.":
+    "Finished work that isn't on the main branch yet.",
+  "hoy":
+    "today",
+  "ayer":
+    "yesterday",
+  "hace {0} d":
+    "{0} d ago",
+  "Dónde costó más":
+    "Where it cost the most",
+  "Ficheros retocados varias veces en pocos días. Suele señalar requisitos que se afinaron sobre la marcha.":
+    "Files reworked several times within a few days. It usually points to requirements that were refined along the way.",
+  "en {0} d":
+    "in {0} d",
+  "{0} día":
+    "{0} day",
+  "Todo":
+    "All",
+  "Sin actividad en este periodo.":
+    "No activity in this period.",
+  // ── metrics/index.ts ──
+  "Trabajo general":
+    "General work",
+  // ── idioma de los documentos de cada cliente ──
+  "español":
+    "Spanish",
+  "inglés":
+    "English",
+  "\n  Sale en {0}, el idioma de tu terminal: a este cliente no se le fijó ninguno.":
+    "\n  It comes out in {0}, your terminal's language: no language was set for this client.",
+  "  Para fijarlo: {0}":
+    "  To set it: {0}",
+  "--language admite es, en o auto, y recibí \"{0}\".":
+    "--language accepts es, en or auto, and I got \"{0}\".",
+  "  Sus documentos salen en {0}.":
+    "  Its documents come out in {0}.",
 };

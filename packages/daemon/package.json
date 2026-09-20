@@ -1,6 +1,6 @@
 {
   "name": "estela",
-  "version": "0.1.28",
+  "version": "0.1.29",
   "description": "Time tracking you never fill in: rebuilds your billable hours from Claude Code transcripts and your Git history, and splits what the AI cost per project.",
   "keywords": [
     "time-tracking",

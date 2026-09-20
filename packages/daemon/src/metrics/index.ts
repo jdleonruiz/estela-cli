@@ -1,6 +1,9 @@
 import type { CommitRecord, TimeEntry } from "@estela/shared";
 import { localDate, WORK_KIND_LABELS } from "@estela/shared";
 
+import { tr } from "../i18n/index.js";
+import { kindLabel } from "../i18n/labels.js";
+
 /**
  * Métricas del panel compartido.
  *
@@ -114,7 +117,7 @@ function bucketFor(entry: TimeEntry): string {
 export function featureName(branch: string): string {
   if (branch.startsWith("kind:")) {
     const kind = branch.slice(5) as keyof typeof WORK_KIND_LABELS;
-    return WORK_KIND_LABELS[kind] ?? "Trabajo general";
+    return kind in WORK_KIND_LABELS ? kindLabel(kind) : tr`Trabajo general`;
   }
   return branch.replace(/^(feature|feat|fix|hotfix|chore|bugfix|release)\//i, "")
     .replace(/[-_]+/g, " ")

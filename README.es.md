@@ -93,6 +93,20 @@ estela report --project acme-web --cutoff 2026-08-31 --dry-run
 cliente casi nunca commiteas con tu correo global, y sin decirlo se capturan
 tres commits de mil setecientos.
 
+**El idioma es el del cliente, no el de tu terminal.** Lo que recibe tu cliente
+(el PDF, el CSV, el informe y el panel publicado) sale en el idioma que le fijes
+a ese cliente, así que puedes usar Estela en español y facturarle a una empresa
+en inglés:
+
+```sh
+estela client add --id acme --name "ACME" --currency EUR --language en
+```
+
+Sin eso Estela usa el idioma de tu terminal, y te avisa cuando lo hace. Volver a
+ejecutar `client add` conserva el idioma que fijaste (`--language auto` lo
+quita), y un `--lang en` suelto en un comando manda sobre todo. Un panel
+publicado es un fichero estático: para cambiarle el idioma, se vuelve a publicar.
+
 El informe respalda tu trabajo con horas y commits. No es una factura: Estela
 no emite documentos fiscales, así que adjúntalo a la tuya.
 

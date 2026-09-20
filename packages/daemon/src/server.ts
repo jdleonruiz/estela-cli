@@ -24,7 +24,8 @@ import { teamView } from "./metrics/team.js";
 import { resolveScratchpads, scanClaudeCode } from "./watchers/claude.js";
 import { gitUserEmail, mergedBranches, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
-import { tr, withLang } from "./i18n/index.js";
+import { documentLang, tr, withLang } from "./i18n/index.js";
+import { kindLabel } from "./i18n/labels.js";
 
 /**
  * Servidor local del dashboard.
@@ -1120,7 +1121,7 @@ function createManualEntry(db: Db, body: Record<string, unknown>): string {
 
   const seconds = Math.round(minutes * 60);
   const startedAt = new Date(`${date}T10:00:00`);
-  const description = String(body["description"] ?? "").trim() || WORK_KIND_LABELS[kind];
+  const description = String(body["description"] ?? "").trim() || kindLabel(kind);
 
   return store.saveTimeEntry(db, {
     projectId, startedAt,
@@ -1325,7 +1326,9 @@ function sendReport(
   const client = store.getClient(db, project.clientId)!;
   const rates = store.getRates(db, projectId);
 
-  const html = buildShareReport({
+  // El documento sale en el idioma del cliente, no en el del navegador de quien
+  // lo descarga: ese lo lee otra persona. Sin idioma fijado, el del navegador.
+  const html = withLang(documentLang({ clientLanguage: client.language }), () => buildShareReport({
     project, client,
     entries: store.getTimeEntries(db, projectId),
     from: from || `${to.slice(0, 8)}01`,
@@ -1339,7 +1342,7 @@ function sendReport(
           `SELECT hash, subject FROM commits WHERE hash IN (${hashes.map(() => "?").join(",")})`
         ).all(...hashes) as { hash: string; subject: string }[]
       : [],
-  });
+  }));
 
   const filename = `informe-${projectId}-${to}.html`;
   const body = Buffer.from(html, "utf8");
@@ -1398,10 +1401,11 @@ function sendInvoice(
     .map((e) => e.id);
   store.saveInvoice(db, invoice, billed);
 
-  const pdf = invoiceToPdf(invoice, client, project, {
-    ...(author ? { issuer: { name: author } } : {}),
-    ...(invoice.aiAmortized ? { amortizedAiCost: invoice.aiAmortized } : {}),
-  });
+  const pdf = withLang(documentLang({ clientLanguage: client.language }), () =>
+    invoiceToPdf(invoice, client, project, {
+      ...(author ? { issuer: { name: author } } : {}),
+      ...(invoice.aiAmortized ? { amortizedAiCost: invoice.aiAmortized } : {}),
+    }));
 
   const filename = `${invoice.number}.pdf`;
   res.writeHead(200, {

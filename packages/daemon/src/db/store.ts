@@ -17,13 +17,15 @@ const iso = (d: Date) => d.toISOString();
 
 export function upsertClient(db: DatabaseSync, client: Client): void {
   db.prepare(`
-    INSERT INTO clients (id, name, currency, tax_id, email, address)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO clients (id, name, currency, tax_id, email, address, language)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name, currency = excluded.currency,
-      tax_id = excluded.tax_id, email = excluded.email, address = excluded.address
+      tax_id = excluded.tax_id, email = excluded.email, address = excluded.address,
+      language = excluded.language
   `).run(client.id, client.name, client.currency,
-         client.taxId ?? null, client.email ?? null, client.address ?? null);
+         client.taxId ?? null, client.email ?? null, client.address ?? null,
+         client.language ?? null);
 }
 
 // closedAt no entra aquí a propósito: cerrar y reabrir son closeProject() y
@@ -84,6 +86,8 @@ export function getClient(db: DatabaseSync, id: string): Client | null {
     ...(row["tax_id"] ? { taxId: row["tax_id"] as string } : {}),
     ...(row["email"] ? { email: row["email"] as string } : {}),
     ...(row["address"] ? { address: row["address"] as string } : {}),
+    ...(row["language"] === "es" || row["language"] === "en"
+      ? { language: row["language"] } : {}),
   };
 }
 

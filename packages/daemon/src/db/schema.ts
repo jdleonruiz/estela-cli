@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS clients (
   currency  TEXT NOT NULL,
   tax_id    TEXT,
   email     TEXT,
-  address   TEXT
+  address   TEXT,
+  language  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -265,6 +266,15 @@ CREATE TABLE IF NOT EXISTS personal_sync_state (
  */
 const MIGRATIONS: readonly { version: number; describe: string; run: (db: DatabaseSync) => void }[] = [
   {
+    version: 13,
+    describe: "idioma de los documentos de cada cliente",
+    run: (db) => {
+      // NULL = sin decidir: el documento sale en el idioma de la terminal de
+      // quien lo genera, que es lo que pasaba antes de existir este campo.
+      addColumn(db, "clients", "language", "TEXT");
+    },
+  },
+  {
     version: 12,
     describe: "cierre de proyecto",
     run: (db) => {
@@ -424,7 +434,14 @@ export function openDatabase(path: string = DEFAULT_DB_PATH): DatabaseSync {
 
   // Cada migración va en su transacción: si una falla, la base queda en la
   // última versión que sí se aplicó entera, nunca a medias.
-  for (const migration of MIGRATIONS) {
+  //
+  // De la más vieja a la más nueva, siempre. El array se escribe al revés (la
+  // última migración arriba, para leerla sin bajar) y recorrerlo tal cual
+  // aplicaba las nuevas antes que las viejas, y anotaba como versión la ÚLTIMA
+  // que ejecutaba: una base v3 quedaba en "v4" con todo aplicado, y solo
+  // convergía tras abrirla varias veces, gracias a que cada migración es
+  // idempotente.
+  for (const migration of [...MIGRATIONS].sort((a, b) => a.version - b.version)) {
     if (migration.version <= row.version) continue;
     db.exec("BEGIN");
     try {

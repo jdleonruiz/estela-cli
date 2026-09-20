@@ -2,9 +2,12 @@ import { randomBytes } from "node:crypto";
 
 import type { AiPayer, Client, CommitRecord, Project, TimeEntry } from "@estela/shared";
 import {
-  formatDuration, formatMoney, localDate, WORK_KIND_LABELS, type Money,
+  formatDuration, formatMoney, localDate, type Money,
 } from "@estela/shared";
+import { getLang, moneyLocale, tr } from "../i18n/index.js";
+import { kindLabel } from "../i18n/labels.js";
 import { cadence, churn, effortByFeature, openWork } from "../metrics/index.js";
+import { DAYS, MONTHS } from "./dates.js";
 
 /**
  * Panel de solo lectura, publicable.
@@ -123,7 +126,7 @@ export function buildPanel(options: PanelOptions): string {
       if (rate) {
         const minor = Math.round((rate.amount * entry.seconds) / 3600);
         totalMinor += minor;
-        amount = formatMoney({ amount: minor, currency: rate.currency });
+        amount = formatMoney({ amount: minor, currency: rate.currency }, moneyLocale(getLang()));
       }
     }
 
@@ -132,7 +135,7 @@ export function buildPanel(options: PanelOptions): string {
     day.items.push({
       what: entry.description,
       seconds: entry.seconds,
-      kind: entry.kind === "development" ? "" : (WORK_KIND_LABELS[entry.kind] ?? ""),
+      kind: entry.kind === "development" ? "" : kindLabel(entry.kind),
       amount,
       commits: [...(options.commitsOf?.(entry.commitHashes) ?? [])]
         .map((c) => ({ hash: c.hash.slice(0, 7), subject: c.subject })),
@@ -170,7 +173,7 @@ export function buildPanel(options: PanelOptions): string {
     generatedAt: (options.generatedAt ?? new Date()).toISOString(),
     totalSeconds,
     totalAmount: showAmounts && totalMinor > 0
-      ? formatMoney({ amount: totalMinor, currency: client.currency }) : null,
+      ? formatMoney({ amount: totalMinor, currency: client.currency }, moneyLocale(getLang())) : null,
     days,
     features,
     rhythm: {
@@ -185,24 +188,114 @@ export function buildPanel(options: PanelOptions): string {
     site: (options.siteUrl ?? "https://getestela.dev").replace(/\/$/, ""),
   };
 
-  return render(data);
+  // El texto de interfaz va aparte de los datos, en su propio bloque: los datos
+  // son lo único que hay que vigilar de cerca (aquí no entra nada de IA ni de
+  // costes, y hay tests que lo comprueban), y mezclarlos con frases sueltas
+  // haría esa comprobación imposible de hacer sin falsos positivos.
+  const lang = getLang();
+  const ui: PanelUi = { lang, L: panelLabels(), monthNames: MONTHS[lang], dayNames: DAYS[lang] };
+
+  return render(data, ui);
 }
 
-function render(data: unknown): string {
+/** Un texto con su singular y su plural, ya traducidos. `{n}` lleva el número. */
+interface Pair { readonly one: string; readonly other: string }
+
+/**
+ * Todo el texto fijo del panel, en el idioma en curso (`getLang()`).
+ *
+ * El navegador del cliente no tiene catálogo de traducciones ni sabe qué idioma
+ * es el suyo: el panel es un fichero estático, así que el texto viaja ya
+ * traducido dentro del propio fichero. Los huecos que rellena el navegador
+ * (`{n}`, `{x}`...) se pasan como texto literal y no como valor real, porque
+ * cuando se genera el fichero aún no se sabe qué número saldrá.
+ */
+function panelLabels() {
+  const n = "{n}";
+  return {
+    title: tr`Avance del proyecto`,
+    readOnly: tr`Solo lectura`,
+    effortTitle: tr`En qué se fue el esfuerzo`,
+    detailTitle: tr`Detalle por día`,
+    ctaTitle: tr`Esto es una foto del proyecto`,
+    ctaBody: tr`Se genera de la actividad real de Git y del editor, y se actualiza cuando quien lo publica lo vuelve a publicar.`,
+    ctaMore: tr`Verlo para un equipo`,
+    backedByCommits: tr`Cada bloque está respaldado por sus commits.`,
+    measuredWith: tr`Horas medidas con ${"{link}"}.`,
+    leadTop: tr`El grueso del trabajo fue **${"{x}"}**`,
+    leadDeliveries: { one: tr`con **${n} entrega**`, other: tr`con **${n} entregas**` } as Pair,
+    leadOpen: { one: tr`y **${n} frente abierto**`, other: tr`y **${n} frentes abiertos**` } as Pair,
+    hoursWorked: tr`horas trabajadas`,
+    activeDays: { one: tr`día con actividad`, other: tr`días con actividad` } as Pair,
+    range: tr`del ${"{a}"} al ${"{b}"}`,
+    fronts: { one: tr`frente de trabajo`, other: tr`frentes de trabajo` } as Pair,
+    workValue: tr`valor del trabajo`,
+    merged: tr`integrado`,
+    inProgress: tr`en curso`,
+    moreDelivered: tr`y ${n} más`,
+    daysNoCommits: {
+      one: tr`${n} día de trabajo, sin commits asociados.`,
+      other: tr`${n} días de trabajo, sin commits asociados.`,
+    } as Pair,
+    commits: { one: tr`${n} commit`, other: tr`${n} commits` } as Pair,
+    branches: { one: tr`${n} rama`, other: tr`${n} ramas` } as Pair,
+    until: tr`hasta ${"{d}"}`,
+    measured: tr`medido`,
+    measuredByTeams: tr`Se mide con Teams`,
+    you: tr`tú`,
+    lockTitle: tr`Horas medidas de tu equipo`,
+    lockBody1: tr`Las de tu gente pueden estimarse desde sus commits, pero medirlas exige que instalen Estela. Con **Teams** se miden, y dejan de ser una suposición que alguien pueda discutir.`,
+    lockBody2: tr`El coste de IA se informa **por proyecto**, nunca por persona, y solo la que paga la empresa. Lo que cada cual gasta de su bolsillo es suyo.`,
+    lockCta: tr`Ver qué incluye Teams →`,
+    teamTitle: tr`Equipo del proyecto`,
+    teamSub: {
+      one: tr`${n} persona con actividad. Salen de los commits del repositorio, con sus identidades de git ya unificadas.`,
+      other: tr`${n} personas con actividad. Salen de los commits del repositorio, con sus identidades de git ya unificadas.`,
+    } as Pair,
+    rhythmTitle: tr`Ritmo`,
+    typicalDay: tr`jornada típica`,
+    longestGap: { one: tr`día la pausa más larga`, other: tr`días la pausa más larga` } as Pair,
+    openTitle: tr`Pendiente de integrar`,
+    openSub: tr`Trabajo terminado que aún no está en la rama principal.`,
+    today: tr`hoy`,
+    yesterday: tr`ayer`,
+    daysAgo: tr`hace ${n} d`,
+    reworkTitle: tr`Dónde costó más`,
+    reworkSub: tr`Ficheros retocados varias veces en pocos días. Suele señalar requisitos que se afinaron sobre la marcha.`,
+    inDays: tr`en ${n} d`,
+    days: { one: tr`${n} día`, other: tr`${n} días` } as Pair,
+    all: tr`Todo`,
+    noActivity: tr`Sin actividad en este periodo.`,
+  };
+}
+
+type PanelLabels = ReturnType<typeof panelLabels>;
+
+interface PanelUi {
+  readonly lang: string;
+  readonly L: PanelLabels;
+  readonly monthNames: readonly string[];
+  readonly dayNames: readonly string[];
+}
+
+function render(data: unknown, ui: PanelUi): string {
+  const L = ui.L;
   // JSON dentro de <script>: hay que romper cualquier "</script>" literal que
   // pudiera venir en un mensaje de commit, o cerraría la etiqueta.
-  const payload = JSON.stringify(data)
+  const inline = (value: unknown) => JSON.stringify(value)
     .replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
+  const payload = inline(data);
+  const uiPayload = inline(ui);
 
   return `<!doctype html>
-<html lang="es">
+<html lang="${ui.lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- Publicado con enlace no listado: que ningún buscador lo indexe. -->
 <meta name="robots" content="noindex, nofollow, noarchive">
 <meta name="referrer" content="no-referrer">
-<title>Avance del proyecto</title>
+<title>${esc(L.title)}</title>
 <style>
 /* Panel de avance.
    Rejilla, no columna: quien lo abre quiere saber cómo va en treinta segundos,
@@ -443,7 +536,7 @@ footer a{color:var(--jade2)}
     <span class="top-sep"></span>
     <span class="top-project" id="h-project"></span>
     <span class="top-client" id="h-client"></span>
-    <span class="ro">Solo lectura</span>
+    <span class="ro">${esc(L.readOnly)}</span>
   </div>
 </header>
 
@@ -454,7 +547,7 @@ footer a{color:var(--jade2)}
   <div class="grid">
     <div>
       <section class="card rise">
-        <div class="card-h"><div class="card-t">En qué se fue el esfuerzo</div></div>
+        <div class="card-h"><div class="card-t">${esc(L.effortTitle)}</div></div>
         <div class="feats" id="feats"></div>
       </section>
       <div id="team"></div>
@@ -466,7 +559,7 @@ footer a{color:var(--jade2)}
 
   <div class="detail" id="detail">
     <button class="detail-h" id="detail-toggle" aria-expanded="false">
-      <span class="card-t">Detalle por día</span>
+      <span class="card-t">${esc(L.detailTitle)}</span>
       <span class="card-s" id="detail-count" style="margin:0"></span>
       <span class="chev">›</span>
     </button>
@@ -478,36 +571,43 @@ footer a{color:var(--jade2)}
 
   <div class="cta">
     <div>
-      <b>Esto es una foto del proyecto</b>
-      <p>Se genera de la actividad real de Git y del editor, y se actualiza cuando
-         quien lo publica lo vuelve a publicar.</p>
+      <b>${esc(L.ctaTitle)}</b>
+      <p>${esc(L.ctaBody)}</p>
     </div>
-    <a id="cta-more" rel="noopener noreferrer">Verlo para un equipo</a>
+    <a id="cta-more" rel="noopener noreferrer">${esc(L.ctaMore)}</a>
   </div>
 
-  <footer>
-    Cada bloque está respaldado por sus commits. Horas medidas con
-    <a id="footer-site" rel="noopener noreferrer"></a>.
-  </footer>
+  <footer id="footer-text"></footer>
 </main>
 
 <script id="data" type="application/json">__DATA__</script>
+<script id="ui" type="application/json">__UI__</script>
 <script>
 "use strict";
 var D = JSON.parse(document.getElementById("data").textContent);
-var MONTHS = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto",
-              "septiembre","octubre","noviembre","diciembre"];
-var DAYS = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+// Los textos llegan ya traducidos, en el idioma del cliente, y aparte de los
+// datos. Con {n} para un número, {x}/{a}/{b}/{d} para otros huecos, y **así**
+// para lo que va en negrita.
+var UI = JSON.parse(document.getElementById("ui").textContent);
+var L = UI.L;
 var openDay = {}, openFeat = {}, filter = "all";
 
 function dur(s){var t=Math.round(s/60),h=Math.floor(t/60),m=t%60;
   return h===0?m+"m":(m===0?h+"h":h+"h "+String(m).padStart(2,"0")+"m");}
 function esc(t){return String(t).replace(/[&<>"']/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+// Sin expresiones regulares con barra invertida: este JS vive dentro de una
+// plantilla de TypeScript, y ahí "\*" pierde la barra sin avisar.
+function fill(t,k,v){return t.split(k).join(String(v));}
+function pl(pair,n){return fill(n===1?pair.one:pair.other,"{n}",n);}
+function md(t){var p=esc(t).split("**"),o="";
+  for(var i=0;i<p.length;i++){o+=(i%2?"<b>"+p[i]+"</b>":p[i]);}return o;}
 function longDate(iso){var d=new Date(iso+"T12:00:00Z");
-  return DAYS[d.getUTCDay()]+" "+d.getUTCDate()+" de "+MONTHS[d.getUTCMonth()];}
+  var dia=UI.dayNames[d.getUTCDay()], mes=UI.monthNames[d.getUTCMonth()];
+  return UI.lang==="en" ? dia+", "+mes+" "+d.getUTCDate() : dia+" "+d.getUTCDate()+" de "+mes;}
 function shortDate(iso){var d=new Date(iso+"T12:00:00Z");
-  return d.getUTCDate()+" "+MONTHS[d.getUTCMonth()].slice(0,3);}
+  var mes=UI.monthNames[d.getUTCMonth()].slice(0,3);
+  return UI.lang==="en" ? mes+" "+d.getUTCDate() : d.getUTCDate()+" "+mes;}
 function el(id){return document.getElementById(id);}
 
 function shown(){
@@ -522,10 +622,9 @@ function renderHead(){
   var top = D.features[0];
   var entregas = D.features.reduce(function(s,f){return s+f.delivered.length;},0);
   var frase = [];
-  if (top) frase.push("El grueso del trabajo fue <b>"+esc(top.name)+"</b>");
-  if (entregas) frase.push("con <b>"+entregas+(entregas===1?" entrega":" entregas")+"</b>");
-  if (D.open.length) frase.push("y <b>"+D.open.length+
-    (D.open.length===1?" frente abierto":" frentes abiertos")+"</b>");
+  if (top) frase.push(fill(md(L.leadTop),"{x}",esc(top.name)));
+  if (entregas) frase.push(md(pl(L.leadDeliveries,entregas)));
+  if (D.open.length) frase.push(md(pl(L.leadOpen,D.open.length)));
   el("lead").innerHTML = frase.length ? frase.join(" ")+"." : "";
 
   // "30 de 51" se lee como una fracción contra un objetivo ("cumplió 30 de
@@ -534,13 +633,12 @@ function renderHead(){
   // a ser solo los días con trabajo, y el rango de fechas explica el resto
   // sin necesitar pasar el ratón por encima.
   var rango = D.days.length
-    ? " · del "+shortDate(D.days[0].date)+" al "+shortDate(D.days[D.days.length-1].date)
+    ? " · "+fill(fill(L.range,"{a}",shortDate(D.days[0].date)),"{b}",shortDate(D.days[D.days.length-1].date))
     : "";
-  var k = [["", dur(D.totalSeconds), "horas trabajadas"],
-           ["", String(D.rhythm.activeDays),
-            (D.rhythm.activeDays===1?"día con actividad":"días con actividad")+rango],
-           ["", String(D.features.length), D.features.length===1?"frente de trabajo":"frentes de trabajo"]];
-  if (D.totalAmount) k.push(["accent", D.totalAmount, "valor del trabajo"]);
+  var k = [["", dur(D.totalSeconds), L.hoursWorked],
+           ["", String(D.rhythm.activeDays), pl(L.activeDays,D.rhythm.activeDays)+rango],
+           ["", String(D.features.length), pl(L.fronts,D.features.length)]];
+  if (D.totalAmount) k.push(["accent", D.totalAmount, L.workValue]);
   el("kpis").innerHTML = k.map(function(x){
     return '<div class="kpi '+x[0]+'"><b>'+esc(x[1])+'</b><span>'+esc(x[2])+'</span></div>';
   }).join("");
@@ -555,13 +653,12 @@ function renderHead(){
   // desde el CTA fuerte de arriba, también queda atribuido a este panel.
   var origen = "?d=" + encodeURIComponent(D.client || "");
   el("cta-more").setAttribute("href", site + "/teams" + origen);
-  var siteLink = el("footer-site");
-  siteLink.setAttribute("href", site + "/" + origen);
-  // Antes era solo el dominio a secas ("getestela.dev"), que no dice qué es
-  // ni por qué mirarlo — quien ve el panel no tiene por qué saber que un
-  // enlace suelto al pie es la herramienta que lo generó. "Estela" en negrita
-  // por CSS (footer a ya lleva el jade), el resto es texto plano alrededor.
-  siteLink.textContent = "Estela";
+  // El nombre de la herramienta va en un enlace, no el dominio a secas: quien
+  // ve el panel no tiene por qué saber que un enlace suelto al pie es lo que
+  // lo generó. El resto de la frase lo pone la traducción.
+  el("footer-text").innerHTML = esc(L.backedByCommits)+" "+
+    fill(esc(L.measuredWith),"{link}",'<a id="footer-site" rel="noopener noreferrer">Estela</a>');
+  el("footer-site").setAttribute("href", site + "/" + origen);
 }
 
 /* ── Esfuerzo, con proporción visible ───────────────────────── */
@@ -572,7 +669,7 @@ function renderFeats(){
   el("feats").innerHTML = D.features.map(function(f,i){
     var isOpen = !!openFeat[i];
     var pill = f.merged===null ? "" :
-      '<span class="pill '+(f.merged?"done":"open")+'">'+(f.merged?"integrado":"en curso")+'</span>';
+      '<span class="pill '+(f.merged?"done":"open")+'">'+esc(f.merged?L.merged:L.inProgress)+'</span>';
     return '<button class="feat'+(isOpen?" is-open":"")+(f.merged===null&&!f.delivered.length?" kindwork":"")+
       '" data-f="'+i+'" aria-expanded="'+isOpen+'">'+
       '<span class="feat-top">'+
@@ -585,9 +682,8 @@ function renderFeats(){
           ? '<ul class="commits">'+f.delivered.map(function(c){
               return '<li><code>'+esc(c.hash)+'</code><span>'+esc(c.subject)+'</span></li>';
             }).join("")+
-            (f.moreDelivered?'<li><span>y '+f.moreDelivered+' más</span></li>':"")+'</ul>'
-          : '<p class="card-s">'+f.days+(f.days===1?" día":" días")+
-            ' de trabajo, sin commits asociados.</p>')+
+            (f.moreDelivered?'<li><span>'+esc(fill(L.moreDelivered,"{n}",f.moreDelivered))+'</span></li>':"")+'</ul>'
+          : '<p class="card-s">'+esc(pl(L.daysNoCommits,f.days))+'</p>')+
       '</span></button>';
   }).join("");
 
@@ -613,19 +709,18 @@ function renderTeam(){
 
   var rows = t.map(function(p){
     var bar = '<span class="bar"><i data-w="'+(p.commits/max*100)+'"></i></span>';
-    var meta = p.commits+(p.commits===1?" commit":" commits")+
-      " · "+p.branches+(p.branches===1?" rama":" ramas")+
-      (p.lastDay?" · hasta "+p.lastDay:"");
+    var meta = pl(L.commits,p.commits)+" · "+pl(L.branches,p.branches)+
+      (p.lastDay?" · "+fill(L.until,"{d}",p.lastDay):"");
 
     // dur() solo se llama cuando seconds viene, y solo viene si measured:
     // quien publica, o un compañero que ya instaló Estela y aceptó Teams.
     var right = p.measured && p.seconds!=null
-      ? '<span class="mem-h">'+dur(p.seconds)+'</span><span class="pill done">medido</span>'
-      : '<span class="mem-lock" title="Se mide con Teams">Teams</span>';
+      ? '<span class="mem-h">'+dur(p.seconds)+'</span><span class="pill done">'+esc(L.measured)+'</span>'
+      : '<span class="mem-lock" title="'+esc(L.measuredByTeams)+'">Teams</span>';
 
     return '<div class="mem'+(p.isMe?" is-me":"")+'">'+
       '<span class="mem-top">'+
-        '<span class="mem-name">'+esc(p.name)+(p.isMe?' <span class="pill">tú</span>':"")+'</span>'+
+        '<span class="mem-name">'+esc(p.name)+(p.isMe?' <span class="pill">'+esc(L.you)+'</span>':"")+'</span>'+
         right+'</span>'+
       bar+
       '<span class="mem-meta">'+esc(meta)+'</span></div>';
@@ -633,24 +728,17 @@ function renderTeam(){
 
   var lock = others>0
     ? '<div class="lock">'+
-        '<div class="lock-t">Horas medidas de tu equipo</div>'+
-        '<div class="lock-d">Las de tu gente pueden estimarse desde sus commits, '+
-        'pero medirlas exige que instalen Estela. Con <b>Teams</b> se miden, y '+
-        'dejan de ser una suposición que alguien pueda discutir.'+
-        '<br><br>El coste de IA se informa <b>por proyecto</b>, nunca por '+
-        'persona, y solo la que paga la empresa. Lo que cada cual gasta de su '+
-        'bolsillo es suyo.</div>'+
+        '<div class="lock-t">'+esc(L.lockTitle)+'</div>'+
+        '<div class="lock-d">'+md(L.lockBody1)+'<br><br>'+md(L.lockBody2)+'</div>'+
         '<a class="lock-cta" href="'+D.site+'/teams?d='+
         encodeURIComponent(D.client||"")+'" target="_blank" rel="noopener">'+
-        'Ver qué incluye Teams →</a>'+
+        esc(L.lockCta)+'</a>'+
       '</div>'
     : "";
 
   el("team").innerHTML = '<section class="card rise">'+
-    '<div class="card-h"><div class="card-t">Equipo del proyecto</div>'+
-    '<div class="card-s">'+t.length+(t.length===1?" persona":" personas")+
-    ' con actividad. Salen de los commits del repositorio, con sus identidades '+
-    'de git ya unificadas.</div></div>'+
+    '<div class="card-h"><div class="card-t">'+esc(L.teamTitle)+'</div>'+
+    '<div class="card-s">'+esc(pl(L.teamSub,t.length))+'</div></div>'+
     '<div class="mems">'+rows+'</div>'+lock+'</section>';
 }
 
@@ -661,10 +749,10 @@ function renderSide(){
   var r = D.rhythm;
   var list = D.days;
   var max = list.reduce(function(m,d){return Math.max(m,d.seconds);},0) || 1;
-  out.push('<section class="card rise"><div class="card-h"><div class="card-t">Ritmo</div></div>'+
+  out.push('<section class="card rise"><div class="card-h"><div class="card-t">'+esc(L.rhythmTitle)+'</div></div>'+
     '<div class="rhythm"><div class="rhythm-n">'+
-      '<div><b>'+dur(r.medianSeconds)+'</b><span>jornada típica</span></div>'+
-      (r.longestGapDays>0?'<div><b>'+r.longestGapDays+'</b><span>días la pausa más larga</span></div>':"")+
+      '<div><b>'+dur(r.medianSeconds)+'</b><span>'+esc(L.typicalDay)+'</span></div>'+
+      (r.longestGapDays>0?'<div><b>'+r.longestGapDays+'</b><span>'+esc(pl(L.longestGap,r.longestGapDays))+'</span></div>':"")+
     '</div>'+
     (list.length>1
       ? '<div class="bars">'+list.map(function(d){
@@ -678,13 +766,13 @@ function renderSide(){
 
   if (D.open.length) {
     out.push('<section class="card rise"><div class="card-h">'+
-      '<div class="card-t">Pendiente de integrar</div>'+
-      '<p class="card-s">Trabajo terminado que aún no está en la rama principal.</p></div>'+
+      '<div class="card-t">'+esc(L.openTitle)+'</div>'+
+      '<p class="card-s">'+esc(L.openSub)+'</p></div>'+
       '<div class="rows">'+D.open.map(function(o){
+        var ago = o.ageDays===0 ? L.today : o.ageDays===1 ? L.yesterday : fill(L.daysAgo,"{n}",o.ageDays);
         return '<div class="row"><span class="row-a">'+esc(o.name)+'</span>'+
-          '<span class="row-b">'+o.commits+(o.commits===1?" commit":" commits")+'</span>'+
-          '<span class="row-c">'+(o.ageDays===0?"hoy":o.ageDays===1?"ayer":"hace "+o.ageDays+" d")+
-          '</span></div>';
+          '<span class="row-b">'+esc(pl(L.commits,o.commits))+'</span>'+
+          '<span class="row-c">'+esc(ago)+'</span></div>';
       }).join("")+'</div></section>');
   }
 
@@ -693,13 +781,12 @@ function renderSide(){
   var extra = [];
   if (D.rework.length) {
     extra.push('<section class="card rise"><div class="card-h">'+
-      '<div class="card-t">Dónde costó más</div>'+
-      '<p class="card-s">Ficheros retocados varias veces en pocos días. Suele señalar '+
-      'requisitos que se afinaron sobre la marcha.</p></div>'+
+      '<div class="card-t">'+esc(L.reworkTitle)+'</div>'+
+      '<p class="card-s">'+esc(L.reworkSub)+'</p></div>'+
       '<div class="rows">'+D.rework.map(function(f){
         return '<div class="row"><span class="row-a mono">'+esc(f.file)+'</span>'+
           '<span class="row-b">'+f.touches+'×</span>'+
-          '<span class="row-c">en '+f.spanDays+" d"+'</span></div>';
+          '<span class="row-c">'+esc(fill(L.inDays,"{n}",f.spanDays))+'</span></div>';
       }).join("")+'</div></section>');
   }
   el("main-extra").innerHTML = extra.join("");
@@ -708,21 +795,21 @@ function renderSide(){
 /* ── Detalle por día ────────────────────────────────────────── */
 function renderDays(){
   var list = shown();
-  el("detail-count").textContent = list.length + (list.length===1?" día":" días");
+  el("detail-count").textContent = pl(L.days,list.length);
 
   var ms = {};
   D.days.forEach(function(d){ ms[d.date.slice(0,7)] = true; });
   var months = Object.keys(ms).sort();
 
   el("filters").innerHTML = months.length<2 ? "" :
-    ['<button data-f="all" aria-pressed="'+(filter==="all")+'">Todo</button>']
+    ['<button data-f="all" aria-pressed="'+(filter==="all")+'">'+esc(L.all)+'</button>']
       .concat(months.map(function(m){
         return '<button data-f="'+m+'" aria-pressed="'+(filter===m)+'">'+
-          MONTHS[Number(m.slice(5,7))-1]+" "+m.slice(0,4)+'</button>';
+          esc(UI.monthNames[Number(m.slice(5,7))-1]+" "+m.slice(0,4))+'</button>';
       })).join("");
 
   el("days").innerHTML = list.length===0
-    ? '<p class="empty">Sin actividad en este periodo.</p>'
+    ? '<p class="empty">'+esc(L.noActivity)+'</p>'
     : list.map(function(d){
         var isOpen = !!openDay[d.date];
         return '<div class="day'+(isOpen?" is-open":"")+'">'+
@@ -786,17 +873,12 @@ requestAnimationFrame(function(){
 });
 </script>
 </body>
-</html>`.replace("__DATA__", payload);
-}
-
-/** Las dos últimas partes de la ruta: el fichero se reconoce, el árbol estorba. */
-const MONTHS_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio",
-                   "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
-const DAYS_ES = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
-
-function longDate(iso: string): string {
-  const d = new Date(`${iso}T12:00:00Z`);
-  return `${DAYS_ES[d.getUTCDay()]} ${d.getUTCDate()} de ${MONTHS_ES[d.getUTCMonth()]}`;
+</html>`
+    // Con una función, no con el texto: `String.replace` interpreta `$'`, `$&` y
+    // `$$` dentro de la cadena de reemplazo, y un mensaje de commit con "$'" o
+    // "$$" rompía el JSON — o cambiaba lo que decía sin que nadie lo notara.
+    .replace("__DATA__", () => payload)
+    .replace("__UI__", () => uiPayload);
 }
 
 function esc(text: string): string {

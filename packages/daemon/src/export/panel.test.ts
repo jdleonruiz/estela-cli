@@ -122,7 +122,7 @@ test("un commit con </script> no rompe la página", () => {
   });
 
   const scripts = html.match(/<\/script>/g) ?? [];
-  assert.equal(scripts.length, 2, "solo los dos cierres legítimos");
+  assert.equal(scripts.length, 3, "solo los tres cierres legítimos: datos, interfaz y programa");
   assert.ok(!html.includes("<img onerror"), "el HTML del commit va neutralizado");
 });
 
@@ -212,12 +212,21 @@ test("shortDate: el mismo cálculo que hace el navegador, ejecutado aquí", () =
     entries: [entry("2026-07-28", 3600), entry("2026-09-16", 3600)],
   });
   const src = /function shortDate\(iso\)\{[\s\S]*?\n\}/.exec(html)![0];
-  const MONTHS = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto",
-                  "septiembre","octubre","noviembre","diciembre"];
-  // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  const shortDate = new Function("MONTHS", `${src}\nreturn shortDate;`)(MONTHS) as (iso: string) => string;
-  assert.equal(shortDate("2026-07-28"), "28 jul");
-  assert.equal(shortDate("2026-09-16"), "16 sep");
+  // Lo mismo que el navegador lee del bloque de interfaz, en cada idioma.
+  const build = (UI: unknown) =>
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    new Function("UI", `${src}\nreturn shortDate;`)(UI) as (iso: string) => string;
+
+  const es = build({ lang: "es", monthNames: ["enero","febrero","marzo","abril","mayo","junio","julio",
+                     "agosto","septiembre","octubre","noviembre","diciembre"] });
+  assert.equal(es("2026-07-28"), "28 jul");
+  assert.equal(es("2026-09-16"), "16 sep");
+
+  // En inglés el mes va primero: "Sep 16", no "16 Sep".
+  const en = build({ lang: "en", monthNames: ["January","February","March","April","May","June","July",
+                     "August","September","October","November","December"] });
+  assert.equal(en("2026-07-28"), "Jul 28");
+  assert.equal(en("2026-09-16"), "Sep 16");
 });
 
 test("los hijos de la rejilla pueden encoger", () => {
@@ -403,9 +412,9 @@ test("el pie dice qué es, no solo el dominio a secas, y los dos enlaces de sali
   // lo generó. Y sin el mismo "d=" que ya usa el CTA fuerte, un clic desde el
   // pie no quedaba atribuido a este panel en el formulario de la landing.
   const html = buildPanel({ ...BASE, entries: [entry("2026-08-20", 3600)] });
-  assert.match(html, /siteLink\.textContent = "Estela"/);
+  assert.match(html, /<a id="footer-site" rel="noopener noreferrer">Estela<\/a>/);
   assert.match(html, /el\("cta-more"\)\.setAttribute\("href",\s*site \+ "\/teams" \+ origen\)/);
-  assert.match(html, /siteLink\.setAttribute\("href",\s*site \+ "\/" \+ origen\)/);
+  assert.match(html, /el\("footer-site"\)\.setAttribute\("href",\s*site \+ "\/" \+ origen\)/);
   assert.match(html, /var origen = "\?d=" \+ encodeURIComponent\(D\.client \|\| ""\)/);
 });
 

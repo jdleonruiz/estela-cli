@@ -8,7 +8,7 @@ process.on("warning", (w) => {
   if (w.name !== "ExperimentalWarning") console.warn(w);
 });
 
-import type { Currency, TimeEntry, WorkKind } from "@estela/shared";
+import type { Client, Currency, TimeEntry, WorkKind } from "@estela/shared";
 import {
   formatAiCost, formatDuration, formatMoney, localDate, parseMoney, setMoneyLocale,
   WORK_KIND_LABELS,
@@ -41,7 +41,8 @@ import { breakdownOfTurn } from "./pricing/cost.js";
 import { resolveScratchpads, scanClaudeCode } from "./watchers/claude.js";
 import { gitUserEmail, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
-import { detectLang, getLang, setLang, tr } from "./i18n/index.js";
+import { detectLang, documentLang, getLang, setLang, tr, withLang, type Lang } from "./i18n/index.js";
+import { kindLabel } from "./i18n/labels.js";
 
 const HELP_ES = `
 estela — registro de horas para desarrollo asistido por IA
@@ -55,10 +56,17 @@ estela — registro de horas para desarrollo asistido por IA
 
   estela client add --id <id> --name <nombre> --currency <EUR|USD|...>
                     [--tax-id <NIF/CIF>] [--email <a@b.com>]
+                    [--language es|en|auto]
         --tax-id y --email son los datos del cliente que saldrán impresos en
         el informe de "estela report". Repetir el comando con el mismo --id
         reescribe la ficha entera: vuelve a pasar todo lo que quieras
         conservar, lo que omitas se queda vacío.
+        --language es el idioma de lo que recibe ESE cliente: el PDF, el CSV,
+        el informe y el panel compartido. Es del cliente y no de tu terminal:
+        puedes usar Estela en español y facturarle a una empresa en inglés.
+        Sin --language se usa el de tu terminal (y se te avisa). Es lo único
+        que NO se borra al repetir el comando; "auto" lo quita a propósito.
+        Un "--lang en" suelto en cualquier comando manda sobre todo.
   estela project add --id <id> --client <id> --name <nombre> --repo <ruta>
                      [--rounding <min>] [--ai-cost absorbed|passthrough]
   estela project close --project <id>
@@ -183,10 +191,17 @@ estela — time tracking for AI-assisted development
 
   estela client add --id <id> --name <name> --currency <EUR|USD|...>
                     [--tax-id <tax ID>] [--email <a@b.com>]
+                    [--language es|en|auto]
         --tax-id and --email are the client details printed on the report
         from "estela report". Running the command again with the same --id
         rewrites the whole record: pass everything you want to keep again,
         anything you leave out is cleared.
+        --language is the language of what THAT client receives: the PDF, the
+        CSV, the report and the shared panel. It belongs to the client, not to
+        your terminal: you can use Estela in Spanish and bill a company in
+        English. Without --language your terminal's is used (and you're told).
+        It's the one thing that is NOT cleared when you run the command again;
+        "auto" removes it on purpose. A bare "--lang en" on any command wins.
   estela project add --id <id> --client <id> --name <name> --repo <path>
                      [--rounding <min>] [--ai-cost absorbed|passthrough]
   estela project close --project <id>
@@ -336,20 +351,35 @@ function required(args: Args, key: string): string {
 
 class UserError extends Error {}
 
+/** El `--lang` escrito en el comando, si es uno que existe. Distinto del de la terminal. */
+function explicitLang(args: Args): Lang | undefined {
+  const v = str(args, "lang");
+  return v === "es" || v === "en" ? v : undefined;
+}
+
 /**
- * Nombre de un tipo de trabajo en el idioma de la terminal. WORK_KIND_LABELS
- * vive en `shared` y está en español; aquí se traduce sin tocar ese paquete.
+ * En qué idioma sale el documento que recibe este cliente: `--lang`, luego el
+ * idioma que se le fijó, y solo si nada de eso, el de la terminal.
  */
-function kindLabel(kind: WorkKind): string {
-  switch (kind) {
-    case "development": return tr`Desarrollo`;
-    case "meeting":     return tr`Reunión`;
-    case "research":    return tr`Investigación`;
-    case "review":      return tr`Revisión`;
-    case "travel":      return tr`Desplazamiento`;
-    case "support":     return tr`Soporte`;
-    case "other":       return tr`Otro`;
-  }
+function docLangOf(args: Args, client: Client): Lang {
+  return documentLang({ explicit: explicitLang(args), clientLanguage: client.language });
+}
+
+/**
+ * Si el idioma salió de la terminal, y no de una decisión, se dice — con el
+ * comando ya escrito. `client add` reescribe la ficha entera, así que pedirle a
+ * alguien que lo teclee de memoria es pedirle que pierda el NIF sin querer.
+ */
+function hintDocLang(args: Args, client: Client, lang: Lang): void {
+  if (client.language || explicitLang(args)) return;
+  const dice = lang === "es" ? tr`español` : tr`inglés`;
+  const cmd = `estela client add --id ${client.id} --name ${JSON.stringify(client.name)} ` +
+    `--currency ${client.currency}` +
+    (client.taxId ? ` --tax-id ${JSON.stringify(client.taxId)}` : "") +
+    (client.email ? ` --email ${JSON.stringify(client.email)}` : "") +
+    ` --language <es|en>`;
+  console.log(tr`\n  Sale en ${dice}, el idioma de tu terminal: a este cliente no se le fijó ninguno.`);
+  console.log(tr`  Para fijarlo: ${cmd}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -658,14 +688,30 @@ function cmdClientAdd(args: Args, dbPath: string): void {
   const db = openDatabase(dbPath);
   try {
     const currency = required(args, "currency").toUpperCase() as Currency;
+    const id = required(args, "id");
+
+    // El idioma es la única parte de la ficha que NO se borra al repetir el
+    // comando sin ella: quien vuelve a ejecutar `client add` solo para cambiar un
+    // correo no espera que los PDFs de ese cliente cambien de idioma sin avisar.
+    // "auto" es la forma de quitarlo a propósito.
+    const asked = str(args, "language");
+    if (asked !== undefined && asked !== "es" && asked !== "en" && asked !== "auto") {
+      throw new UserError(tr`--language admite es, en o auto, y recibí "${asked}".`);
+    }
+    const language = asked === "auto" ? undefined : (asked ?? store.getClient(db, id)?.language);
+
     store.upsertClient(db, {
-      id: required(args, "id"),
+      id,
       name: required(args, "name"),
       currency,
       ...(str(args, "tax-id") ? { taxId: str(args, "tax-id")! } : {}),
       ...(str(args, "email") ? { email: str(args, "email")! } : {}),
+      ...(language ? { language } : {}),
     });
     console.log(tr`Cliente "${required(args, "name")}" guardado. Factura en ${currency}.`);
+    if (language) {
+      console.log(tr`  Sus documentos salen en ${language === "es" ? tr`español` : tr`inglés`}.`);
+    }
   } finally { db.close(); }
 }
 
@@ -904,7 +950,8 @@ function cmdShare(args: Args, dbPath: string): void {
     const from = str(args, "from") ?? to.slice(0, 8) + "01";
     const rates = store.getRates(db, projectId);
 
-    const html = buildShareReport({
+    const lang = docLangOf(args, client);
+    const html = withLang(lang, () => buildShareReport({
       project, client,
       entries: store.getTimeEntries(db, projectId),
       from, to,
@@ -919,7 +966,7 @@ function cmdShare(args: Args, dbPath: string): void {
             `SELECT hash, subject FROM commits WHERE hash IN (${hashes.map(() => "?").join(",")})`
           ).all(...hashes) as { hash: string; subject: string }[]
         : [],
-    });
+    }));
 
     const out = str(args, "out") ?? `informe-${projectId}-${to}.html`;
     writeFileSync(out, html, "utf8");
@@ -931,6 +978,7 @@ function cmdShare(args: Args, dbPath: string): void {
       console.log(tr`\n  Incluye horas y commits. Sin importes (añade --with-amounts) y sin`);
       console.log(tr`  consumo de IA, que es tuyo mientras la pagues tú.`);
     }
+    hintDocLang(args, client, lang);
   } finally { db.close(); }
 }
 
@@ -1043,6 +1091,7 @@ async function cmdPublish(args: Args, dbPath: string): Promise<void> {
         ...(clientes?.length ? { clients: clientes } : {}),
         withAmounts: args.flags["with-amounts"] === true,
         includeTeam: args.flags["no-team"] !== true,
+        ...(explicitLang(args) ? { language: explicitLang(args)! } : {}),
       });
     } catch (error) {
       if (error instanceof NoAccountError) throw new UserError(error.message);
@@ -1061,6 +1110,9 @@ async function cmdPublish(args: Args, dbPath: string): Promise<void> {
     console.log(tr`  El token es lo único que protege la página: quien tenga el enlace, entra.`);
     console.log(tr`  Al volver a publicar desde esta máquina, este enlace se reusa solo.`);
     console.log(tr`  Desde otra máquina, pasa --token ${result.token} o el cliente perderá su enlace.`);
+
+    const owner = store.getClient(db, store.getProject(db, projectId)!.clientId)!;
+    hintDocLang(args, owner, docLangOf(args, owner));
   } finally { db.close(); }
 }
 
@@ -1393,14 +1445,18 @@ function cmdExport(args: Args, dbPath: string): void {
     const client = store.getClient(db, project.clientId)!;
     const rates = store.getRates(db, projectId);
 
-    const csv = timeEntriesToCsv(
+    const lang = docLangOf(args, client);
+    const csv = withLang(lang, () => timeEntriesToCsv(
       store.getTimeEntries(db, projectId), project, client,
-      (at) => rateAt(rates, projectId, at));
+      (at) => rateAt(rates, projectId, at)));
 
     const out = str(args, "out");
     if (out) {
       writeFileSync(out, csv, "utf8");
       console.log(tr`CSV: ${out}`);
+      // Solo si va a un fichero: por la salida estándar el aviso se colaría
+      // dentro del propio CSV.
+      hintDocLang(args, client, lang);
     } else {
       process.stdout.write(csv);
     }
@@ -1524,10 +1580,11 @@ function cmdInvoice(args: Args, dbPath: string): void {
     }
 
     // --- Exportables ---------------------------------------------------------
+    const lang = docLangOf(args, client);
     const pdfPath = str(args, "pdf");
     if (pdfPath) {
       const issuerName = str(args, "from-name");
-      const pdf = invoiceToPdf(invoice, client, project, {
+      const pdf = withLang(lang, () => invoiceToPdf(invoice, client, project, {
         ...(issuerName ? {
           issuer: {
             name: issuerName,
@@ -1536,16 +1593,17 @@ function cmdInvoice(args: Args, dbPath: string): void {
           },
         } : {}),
         ...(invoice.aiAmortized ? { amortizedAiCost: invoice.aiAmortized } : {}),
-      });
+      }));
       writeFileSync(pdfPath, pdf);
       console.log(tr`\nPDF: ${pdfPath}  (${(pdf.length / 1024).toFixed(1)} KB, ${invoice.lines.length} conceptos)`);
     }
 
     const csvPath = str(args, "csv");
     if (csvPath) {
-      writeFileSync(csvPath, invoiceToCsv(invoice, client, project), "utf8");
+      writeFileSync(csvPath, withLang(lang, () => invoiceToCsv(invoice, client, project)), "utf8");
       console.log(tr`CSV: ${csvPath}`);
     }
+    if (pdfPath || csvPath) hintDocLang(args, client, lang);
 
     if (dryRun) {
       console.log(tr`\n[--dry-run] No se guardó nada. Repite sin --dry-run para emitirlo.`);
