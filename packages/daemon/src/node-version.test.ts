@@ -42,3 +42,14 @@ test("upgradeCommand: en Windows no aconseja nvm, que allí no existe", () => {
   assert.equal(upgradeCommand("darwin"), "nvm install --lts");
   assert.equal(upgradeCommand("linux"), "nvm install --lts");
 });
+
+test("upgradeCommand: con nvm-windows no aconseja winget, chocaría con su Node", () => {
+  // El fallo real: alguien con nvm-windows instaló Node con winget, los dos
+  // escribieron en la misma carpeta y npx murió con "Class extends value
+  // undefined is not a constructor or null".
+  const conNvm = upgradeCommand("win32", { NVM_HOME: "C:\\Users\\x\\AppData\\Roaming\\nvm" });
+  assert.match(conNvm, /^nvm install lts/);
+  assert.doesNotMatch(conNvm, /winget/);
+  assert.match(upgradeCommand("win32", {}), /^winget install /, "sin nvm-windows, winget");
+  assert.equal(upgradeCommand("darwin", { NVM_HOME: "x" }), "nvm install --lts", "solo cuenta en Windows");
+});
