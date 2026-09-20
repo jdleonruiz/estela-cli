@@ -8,6 +8,20 @@ Before setting Estela up for real, someone can see the full dashboard
 filled with invented data — a few fake clients, weeks of activity, AI
 cost, a team view — without touching anything of their own.
 
+## Before anything else: check Node
+
+Estela needs Node 22.5 or later (it uses the built-in `node:sqlite`). Run
+`node --version` first.
+
+- If the command isn't found, or the version is older than 22.5, **stop**
+  — don't try to work around it, and don't run any `estela` command yet.
+  Tell the user plainly what to do: on Windows, `winget install
+  OpenJS.NodeJS.LTS`; on macOS or Linux, `nvm install --lts`; or the
+  installer from https://nodejs.org. Then they need a **new terminal**
+  before trying again.
+- This isn't the user doing anything wrong: Claude Code itself doesn't
+  require Node, so having Claude Code without a recent Node is normal.
+
 1. Run `npx estela demo` (add `--port <n>` only if the default port 4320
    is already taken; don't add it otherwise). This opens a dashboard at a
    local URL, backed by a separate database file — never the user's real

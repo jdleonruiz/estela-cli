@@ -8,6 +8,20 @@ Estela reconstructs billable hours from two things that already exist on disk:
 Claude Code's own session transcripts and git commit history — no timer, no
 hooks. This skill reads that reconstruction; it never sends anything anywhere.
 
+## Before anything else: check Node
+
+Estela needs Node 22.5 or later (it uses the built-in `node:sqlite`). Run
+`node --version` first.
+
+- If the command isn't found, or the version is older than 22.5, **stop**
+  — don't try to work around it, and don't run any `estela` command yet.
+  Tell the user plainly what to do: on Windows, `winget install
+  OpenJS.NodeJS.LTS`; on macOS or Linux, `nvm install --lts`; or the
+  installer from https://nodejs.org. Then they need a **new terminal**
+  before trying again.
+- This isn't the user doing anything wrong: Claude Code itself doesn't
+  require Node, so having Claude Code without a recent Node is normal.
+
 1. Run `estela status` in the repository root. If the command isn't found,
    run `npx estela status` instead — no need to ask the user to install
    anything first, `npx` fetches it transparently.

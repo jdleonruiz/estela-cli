@@ -76,8 +76,8 @@ export const EN: Record<string, string> = {
   // ── bin.ts ──
   "\nEstela necesita Node {0} o superior — tienes {1} instalado.\n":
     "\nEstela needs Node {0} or later — you have {1} installed.\n",
-  "Actualiza con nvm (nvm install --lts) o desde https://nodejs.org, y vuelve a intentarlo.\n":
-    "Upgrade with nvm (nvm install --lts) or from https://nodejs.org, then try again.\n",
+  "Actualiza con \"{0}\" o desde https://nodejs.org, y vuelve a intentarlo en una terminal nueva.\n":
+    "Upgrade with \"{0}\" or from https://nodejs.org, then try again in a new terminal.\n",
   // ── cli.ts ──
   "Falta --{0}":
     "Missing --{0}",

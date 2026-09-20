@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { tooOld, versionParts } from "./node-version.js";
+import { tooOld, upgradeCommand, versionParts } from "./node-version.js";
 
 /**
  * Esto decide si el programa arranca en absoluto. Un fallo aquí no rompe una
@@ -32,4 +32,13 @@ test("tooOld: en el mínimo exacto, o por encima, no está anticuado", () => {
   assert.equal(tooOld("v22.5.1", "22.5.0"), false);
   assert.equal(tooOld("v22.6.0", "22.5.0"), false);
   assert.equal(tooOld("v23.0.0", "22.5.0"), false);
+});
+
+test("upgradeCommand: en Windows no aconseja nvm, que allí no existe", () => {
+  // El fallo real: alguien en Windows con Node 18 vio "Actualiza con nvm (nvm
+  // install --lts)" y ese comando no existe en su sistema.
+  assert.match(upgradeCommand("win32"), /^winget install /);
+  assert.doesNotMatch(upgradeCommand("win32"), /nvm/);
+  assert.equal(upgradeCommand("darwin"), "nvm install --lts");
+  assert.equal(upgradeCommand("linux"), "nvm install --lts");
 });

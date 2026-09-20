@@ -19,3 +19,13 @@ export function tooOld(current: string, min: string): boolean {
   }
   return false;
 }
+
+/**
+ * El comando con el que actualizar Node, según el sistema. `nvm` no existe en
+ * Windows (allí hay un `nvm-windows` aparte, con otra sintaxis), así que
+ * aconsejarlo a alguien en Windows le da un segundo error justo después del
+ * primero. `winget` viene con Windows 10 (1709) y 11.
+ */
+export function upgradeCommand(platform: string): string {
+  return platform === "win32" ? "winget install OpenJS.NodeJS.LTS" : "nvm install --lts";
+}
