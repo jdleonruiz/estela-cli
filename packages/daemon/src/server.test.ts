@@ -206,3 +206,61 @@ test("un proyecto facturable sin tarifa vigente avisa en vez de facturar a cero"
     assert.match(body.error, /Sin tarifa vigente/);
   });
 });
+
+test("crear un proyecto con un cliente nuevo que se llama como uno existente no le pisa la ficha", async () => {
+  // El fallo real: el formulario de "proyecto nuevo" llamaba a upsertClient con
+  // solo nombre y moneda. Si el nombre daba el mismo id que un cliente que ya
+  // existía, su NIF, su correo y su idioma desaparecían sin ningún aviso.
+  let ruta = "";
+  await conServidor(
+    (dbPath) => {
+      ruta = dbPath;
+      const db = openDatabase(dbPath);
+      try {
+        store.upsertClient(db, {
+          id: "acme", name: "ACME", currency: "USD", taxId: "B-1",
+          email: "ap@acme.test", language: "en",
+        });
+      } finally { db.close(); }
+    },
+    async (base) => {
+      const r = await fetch(`${base}/api/projects`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Otro proyecto", clientName: "ACME", currency: "EUR" }),
+      });
+      assert.equal(r.status, 200);
+
+      const db = openDatabase(ruta);
+      try {
+        const cliente = store.getClient(db, "acme")!;
+        assert.equal(cliente.taxId, "B-1");
+        assert.equal(cliente.email, "ap@acme.test");
+        assert.equal(cliente.language, "en");
+        assert.equal(cliente.currency, "USD", "la moneda que ya tenía, no la que vino en el formulario");
+        assert.equal(store.getProject(db, "otro-proyecto")?.clientId, "acme",
+          "el proyecto se creó y quedó colgado de ese cliente");
+      } finally { db.close(); }
+    },
+  );
+});
+
+test("crear un proyecto con un cliente de verdad nuevo lo crea con su moneda", async () => {
+  let ruta = "";
+  await conServidor(
+    (dbPath) => { ruta = dbPath; },
+    async (base) => {
+      const r = await fetch(`${base}/api/projects`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "Web", clientName: "Northwind", currency: "gbp" }),
+      });
+      assert.equal(r.status, 200);
+      const db = openDatabase(ruta);
+      try {
+        const c = store.getClient(db, "northwind")!;
+        assert.equal(c.name, "Northwind");
+        assert.equal(c.currency, "GBP");
+        assert.equal(c.language, undefined, "sin idioma: sigue el del navegador");
+      } finally { db.close(); }
+    },
+  );
+});

@@ -1551,13 +1551,16 @@ function cmdInvoice(args: Args, dbPath: string): void {
           projectId, [...months])
       : null;
 
-    const invoice = issueInvoice({
+    // Las líneas de un informe se congelan al emitirlo, así que se emiten ya en
+    // el idioma del cliente: es el que verá en el PDF y en el CSV.
+    const lang = docLangOf(args, client);
+    const invoice = withLang(lang, () => issueInvoice({
       client, project,
       rates: store.getRates(db, projectId),
       entries, cutoffAt, number,
       ...(fx ? { usdFxRate: Number(fx) } : {}),
       ...(amortized ? { aiAmortized: amortized } : {}),
-    });
+    }));
 
     console.log(renderInvoice(invoice, client, project));
 
@@ -1580,7 +1583,6 @@ function cmdInvoice(args: Args, dbPath: string): void {
     }
 
     // --- Exportables ---------------------------------------------------------
-    const lang = docLangOf(args, client);
     const pdfPath = str(args, "pdf");
     if (pdfPath) {
       const issuerName = str(args, "from-name");

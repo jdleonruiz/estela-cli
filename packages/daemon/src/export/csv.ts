@@ -1,6 +1,7 @@
 import type { Client, Invoice, Project, TimeEntry } from "@estela/shared";
 import { billableAmount, formatMoney } from "@estela/shared";
 
+import { localizeDescription } from "../billing/localize.js";
 import { getLang } from "../i18n/index.js";
 
 /**
@@ -72,7 +73,7 @@ export function timeEntriesToCsv(
       e.startedAt.toISOString().slice(11, 16),
       e.endedAt.toISOString().slice(11, 16),
       (e.seconds / 3600).toFixed(4),
-      e.description,
+      localizeDescription(e),
       project.name,
       client.name,
       e.billable ? c.yes : c.no,

@@ -6,6 +6,7 @@ import {
   formatMoney, money, roundSeconds, sumAiCost, sumMoney,
 } from "@estela/shared";
 import { tr } from "../i18n/index.js";
+import { localizeDescription } from "./localize.js";
 
 /**
  * Emisión de facturas.
@@ -83,7 +84,7 @@ export function issueInvoice(input: IssueInvoiceInput): Invoice {
 
     totalSeconds += seconds;
     lines.push({
-      description: entry.description,
+      description: localizeDescription(entry),
       seconds,
       hourlyRate: rate,
       amount: billableAmount(seconds, rate),

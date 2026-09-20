@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 
-import type { WorkKind } from "@estela/shared";
+import type { TimeEntry, WorkKind } from "@estela/shared";
 import { billableAmount, localDate, roundSeconds, WORK_KIND_LABELS } from "@estela/shared";
 
 import { amortize, monthOf, shareForProject } from "./billing/amortize.js";
@@ -25,6 +25,7 @@ import { resolveScratchpads, scanClaudeCode } from "./watchers/claude.js";
 import { gitUserEmail, mergedBranches, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
 import { documentLang, tr, withLang } from "./i18n/index.js";
+import { localizeDescription } from "./billing/localize.js";
 import { kindLabel } from "./i18n/labels.js";
 
 /**
@@ -984,7 +985,14 @@ function buildDay(db: Db, date: string) {
       startedAt,
       endedAt: r["ended_at"] as string,
       seconds,
-      description: r["description"] as string,
+      // Se guardó en el idioma de la terminal de aquel momento; aquí se lee en el
+      // del navegador que la pide.
+      description: localizeDescription({
+        description: r["description"] as string,
+        source: ((r["source"] as string) ?? "agent") as TimeEntry["source"],
+        kind: ((r["kind"] as string) ?? "development") as TimeEntry["kind"],
+        commitHashes: hashes,
+      }),
       billable: Boolean(r["billable"]),
       approved: Boolean(r["approved"]),
       invoiced: r["invoice_id"] !== null,
@@ -1224,10 +1232,16 @@ function createProject(db: Db, body: Record<string, unknown>): string {
   if (!clientId) {
     if (!clientName) throw new Error(tr`Elige un cliente o escribe uno nuevo`);
     clientId = slug(clientName);
-    store.upsertClient(db, {
-      id: clientId, name: clientName,
-      currency: (String(body["currency"] ?? "EUR").toUpperCase()) as never,
-    });
+    // Escribir "ACME" cuando ya existe `acme` no es crear un cliente: es elegir
+    // ese. `upsertClient` reescribe la ficha entera, y aquí solo viene un nombre
+    // y una moneda, así que pisarla borraba su NIF, su correo y su idioma sin
+    // decir nada. Con el cliente existente no se toca.
+    if (!store.getClient(db, clientId)) {
+      store.upsertClient(db, {
+        id: clientId, name: clientName,
+        currency: (String(body["currency"] ?? "EUR").toUpperCase()) as never,
+      });
+    }
   }
 
   const id = String(body["id"] ?? "").trim() || slug(name);
@@ -1386,11 +1400,12 @@ function sendInvoice(
 
   let invoice;
   try {
-    invoice = issueInvoice({
+    // Las líneas se congelan al emitir: en el idioma del cliente, no en el del navegador.
+    invoice = withLang(documentLang({ clientLanguage: client.language }), () => issueInvoice({
       client, project, rates: store.getRates(db, projectId),
       entries, cutoffAt, number: store.nextInvoiceNumber(db, "INF"),
       ...(amortized ? { aiAmortized: amortized } : {}),
-    });
+    }));
   } catch (error) {
     if (error instanceof InvoiceError) return json(res, 400, { error: error.message });
     throw error;

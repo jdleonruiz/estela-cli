@@ -1,5 +1,6 @@
 import type { AiPayer, Client, Project, TimeEntry } from "@estela/shared";
 import { formatDuration, formatMoney, localDate, type Money } from "@estela/shared";
+import { localizeDescription } from "../billing/localize.js";
 import { getLang, moneyLocale, tr } from "../i18n/index.js";
 import { longDate } from "./dates.js";
 
@@ -121,7 +122,7 @@ function renderDay(day: DayGroup, options: ShareOptions, showAmounts: boolean): 
     }
 
     return `<tr>
-  <td class="task"><span class="desc">${esc(entry.description)}</span>${commitHtml}</td>
+  <td class="task"><span class="desc">${esc(localizeDescription(entry))}</span>${commitHtml}</td>
   <td class="time">${esc(formatDuration(entry.seconds))}</td>
   ${amount}
 </tr>`;

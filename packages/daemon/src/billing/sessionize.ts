@@ -1,7 +1,7 @@
 import type { AgentTurn, AiCost, CommitRecord } from "@estela/shared";
 import { localDate } from "@estela/shared";
 import { costOfTurn } from "../pricing/cost.js";
-import { tr } from "../i18n/index.js";
+import { developmentOn, moreCommits } from "./localize.js";
 
 /**
  * Agrupa turnos sueltos en bloques de trabajo continuo.
@@ -221,13 +221,10 @@ export function describeBlock(block: WorkBlock): string {
 
   if (subjects.length === 1) return subjects[0]!;
   // "+1 commits más" salía en la descripción de cualquier bloque con dos asuntos.
-  if (subjects.length === 2) return tr`${subjects[0]} (+1 commit más)`;
-  if (subjects.length > 2) {
-    return tr`${subjects[0]} (+${subjects.length - 1} commits más)`;
-  }
+  if (subjects.length >= 2) return moreCommits(subjects[0]!, subjects.length - 1);
 
   const branch = block.branch?.replace(/^(feature|feat|fix|chore)\//, "") ?? null;
-  return branch ? tr`Desarrollo en ${branch}` : tr`Desarrollo`;
+  return developmentOn(branch);
 }
 
 /**

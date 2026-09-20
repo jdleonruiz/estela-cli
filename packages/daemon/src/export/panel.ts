@@ -4,6 +4,7 @@ import type { AiPayer, Client, CommitRecord, Project, TimeEntry } from "@estela/
 import {
   formatDuration, formatMoney, localDate, type Money,
 } from "@estela/shared";
+import { localizeDescription } from "../billing/localize.js";
 import { getLang, moneyLocale, tr } from "../i18n/index.js";
 import { kindLabel } from "../i18n/labels.js";
 import { cadence, churn, effortByFeature, openWork } from "../metrics/index.js";
@@ -133,7 +134,7 @@ export function buildPanel(options: PanelOptions): string {
     day.seconds += entry.seconds;
     totalSeconds += entry.seconds;
     day.items.push({
-      what: entry.description,
+      what: localizeDescription(entry),
       seconds: entry.seconds,
       kind: entry.kind === "development" ? "" : kindLabel(entry.kind),
       amount,
