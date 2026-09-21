@@ -47,6 +47,24 @@ npx estela doctor    # checks your data and flags anything wrong
 npx estela --version
 ```
 
+### From inside Claude Code
+
+If that's where you already are, Estela installs without leaving it:
+
+```
+/plugin marketplace add jdleonruiz/estela-cli
+/plugin install estela@estela-cli
+```
+
+Then ask in plain words — *"how many hours have I put into this?"*, *"what can
+I bill for this month?"*, *"show me an example first"* — and Claude Code reaches
+for the right command on its own. The explicit forms are `/estela:setup`,
+`/estela:status` and `/estela:demo`.
+
+The demo fills a whole dashboard with made-up data and touches nothing of
+yours, which is the honest way to look at a program that wants to read your
+transcripts: see what it does before you let it near your own history.
+
 No Claude Code? It still works: without transcripts, Estela rebuilds your time
 from your commits alone, and marks it as estimated.
 

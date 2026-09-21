@@ -46,6 +46,24 @@ npx estela doctor    # revisa los datos y avisa de lo que está mal
 npx estela --version
 ```
 
+### Desde dentro de Claude Code
+
+Si ya estás ahí, Estela se instala sin salir:
+
+```
+/plugin marketplace add jdleonruiz/estela-cli
+/plugin install estela@estela-cli
+```
+
+Luego se pide con palabras normales —*"¿cuántas horas llevo en esto?"*, *"¿qué
+puedo facturar este mes?"*, *"enséñame antes un ejemplo"*— y Claude Code busca
+el comando por su cuenta. Las formas explícitas son `/estela:setup`,
+`/estela:status` y `/estela:demo`.
+
+La demo llena un panel entero con datos inventados y no toca nada tuyo, que es
+la manera honesta de mirar un programa que quiere leerte los transcripts: ver
+qué hace antes de dejarlo cerca de tu historial.
+
 ¿Sin Claude Code? Funciona igual: sin transcripts, Estela reconstruye tu tiempo
 solo desde tus commits, y lo marca como estimado.
 
