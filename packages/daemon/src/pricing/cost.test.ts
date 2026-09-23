@@ -83,3 +83,34 @@ test("precios distintos por familia de modelo", () => {
   assert.equal(costOfTurn(usage, "claude-sonnet-5", AT)!.microUsd, 2_000_000);
   assert.equal(costOfTurn(usage, "claude-haiku-4-5", AT)!.microUsd, 1_000_000);
 });
+
+/**
+ * Codex. Tarifas de la página oficial de OpenAI, consultadas el 23/09/2026:
+ * gpt-5.6-terra a $2.00 de entrada y $12.00 de salida por millón, con la caché
+ * a $0.20 (0.1x) y la escritura a $2.50 (1.25x) — los mismos multiplicadores
+ * que Anthropic, así que STANDARD_CACHE vale para los dos.
+ */
+test("coste de un turno de Codex con gpt-5.6-terra", () => {
+  const uso: TokenUsage = {
+    input: 1_000_000, output: 1_000_000,
+    cacheRead: 1_000_000, cacheWrite5m: 1_000_000, cacheWrite1h: 0,
+  };
+
+  const cost = costOfTurn(uso, "gpt-5.6-terra", AT);
+
+  assert.ok(cost, "gpt-5.6-terra tiene que estar en el catálogo");
+  // input   1M * $2/1M          = $ 2.00
+  // output  1M * $12/1M         = $12.00
+  // caché   1M * $2/1M * 0.1    = $ 0.20
+  // escrit. 1M * $2/1M * 1.25   = $ 2.50
+  assert.equal(cost.microUsd, 16_700_000);
+});
+
+test("los modelos de OpenAI que no están en el catálogo no se inventan", () => {
+  // La regla del fichero: un coste ausente se ve, uno inventado no. Sin
+  // comodín por familia, porque entre sol, terra y luna hay 20x de diferencia
+  // y un prefijo corto los mal-tarifaría en silencio.
+  assert.equal(resolvePrice("gpt-5.6-inventado", AT), null);
+  assert.equal(costOfTurn({ input: 1, output: 1, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
+    "gpt-5.6-inventado", AT), null);
+});

@@ -38,7 +38,7 @@ import { openBillingPortal, upgradeCheckout } from "./billing.js";
 import { login, logout } from "./cloud/auth.js";
 import { CloudError, cloudGet, cloudPost, setClientVersion } from "./cloud/client.js";
 import { breakdownOfTurn } from "./pricing/cost.js";
-import { resolveScratchpads, scanClaudeCode } from "./watchers/claude.js";
+import { type AgentScan, allTurns, scanAgents } from "./watchers/agents.js";
 import { gitUserEmail, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
 import { detectLang, documentLang, getLang, setLang, tr, withLang, type Lang } from "./i18n/index.js";
@@ -449,14 +449,47 @@ async function cmdLogout(dbPath: string): Promise<void> {
  * Dos minutos, sin preguntas y sin cuenta. Si al terminar esa persona no ve
  * algo cierto sobre su propio trabajo, no habrá una segunda ejecución.
  */
+/** Nombre del agente tal y como lo llama quien lo usa, no como lo llamamos aquí. */
+function agentName(agent: AgentScan["agent"]): string {
+  switch (agent) {
+    case "claude-code": return "Claude Code";
+    case "codex": return "Codex";
+    case "cursor": return "Cursor";
+    case "gemini-cli": return "Gemini CLI";
+  }
+}
+
+/**
+ * El parte de un escaneo.
+ *
+ * Se imprime por agente y no sumado: si Codex cambia de formato y empieza a
+ * dar registros malformados, un total conjunto lo diluye con la salud de
+ * Claude Code y el canario deja de avisar de nada.
+ */
+function printScanReport(scan: AgentScan): void {
+  const r = scan.report;
+  console.log(`  ${agentName(scan.agent)}`);
+  console.log(tr`    ${r.filesRead} archivos · ${r.recordsSeen} registros`);
+  console.log(tr`    ${r.turnsAccepted} turnos aceptados`);
+  console.log(tr`    ${r.duplicatesDropped} duplicados descartados` +
+    (r.turnsAccepted > 0
+      ? tr` (${(r.duplicatesDropped / (r.turnsAccepted + r.duplicatesDropped) * 100).toFixed(0)}% de las filas)`
+      : ""));
+  console.log(tr`    ${r.unknownRecords} registros internos ignorados · ${r.malformedRecords} malformados`);
+  if (r.producerVersions.length) {
+    console.log(tr`    versiones: ${r.producerVersions.join(", ")}`);
+  }
+  for (const warning of r.warnings) console.warn(`  ⚠ ${agentName(scan.agent)}: ${warning}`);
+}
+
 async function cmdSetup(args: Args, dbPath: string): Promise<void> {
   const db = openDatabase(dbPath);
   try {
     console.log(tr`\nEstela\n`);
     console.log(tr`Leyendo lo que tus agentes ya guardaron en disco…`);
 
-    const scan = await scanClaudeCode({});
-    const turns = resolveScratchpads(scan.turns);
+    const scans = await scanAgents({});
+    const turns = allTurns(scans);
 
     // Los repos no pueden salir solo de los transcripts: quien programa sin
     // IA, o con un agente que no deja rastro en ~/.claude (Cursor, Copilot),
@@ -471,19 +504,21 @@ async function cmdSetup(args: Args, dbPath: string): Promise<void> {
     if (cwdRoot) repos.add(cwdRoot);
 
     if (turns.length === 0 && repos.size === 0) {
-      console.log(tr`\n  No se han encontrado sesiones de Claude Code en ~/.claude, ni`);
-      console.log(tr`  un repositorio de Git en esta carpeta. Corre esto de nuevo desde`);
+      console.log(tr`\n  No se han encontrado sesiones de agentes en ~/.claude ni ~/.codex,`);
+      console.log(tr`  ni un repositorio de Git en esta carpeta. Corre esto de nuevo desde`);
       console.log(tr`  dentro de tu proyecto, o trabaja un rato con tu agente y vuelve.\n`);
       return;
     }
 
     if (turns.length > 0) {
       store.saveTurns(db, turns);
-      store.logScan(db, "claude-code", scan.report);
-      console.log(tr`  ${scan.report.turnsAccepted} turnos · ` +
-        tr`${scan.report.producerVersions.length} versiones de Claude Code`);
+      for (const scan of scans) store.logScan(db, scan.agent, scan.report);
+      // Nombrar los agentes encontrados, en vez de contar versiones: es lo
+      // que quien acaba de instalar quiere confirmar —que ha visto lo suyo—.
+      const vistos = scans.filter((s) => s.report.turnsAccepted > 0).map((s) => agentName(s.agent));
+      console.log(tr`  ${turns.length} turnos · ${vistos.join(", ")}`);
     } else {
-      console.log(tr`  No se han encontrado sesiones de Claude Code en ~/.claude —`);
+      console.log(tr`  No se han encontrado sesiones de agentes en ~/.claude ni ~/.codex —`);
       console.log(tr`  sin problema, se reconstruye igual desde tus commits de Git.`);
     }
 
@@ -541,30 +576,25 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
     const repoPaths = repoFilter ? [resolve(repoFilter)] : undefined;
 
     console.log(tr`Leyendo transcripts de agentes…`);
-    const scan = await scanClaudeCode({
+    const scans = await scanAgents({
       ...(since ? { since } : {}),
       ...(repoPaths ? { repoPaths } : {}),
     });
-    const report = scan.report;
     // Devolver al repositorio el trabajo hecho en scratchpads, o esas horas
     // quedan sin proyecto y desaparecen del parte.
-    const turns = resolveScratchpads(scan.turns);
-    const rescued = turns.filter((t, i) => t.repoPath !== scan.turns[i]!.repoPath).length;
+    const turns = allTurns(scans);
+    const rescued = scans.reduce((n, s) => n + s.scratchpadsResolved, 0);
 
     const savedTurns = store.saveTurns(db, turns);
-    store.logScan(db, "claude-code", report);
+    for (const scan of scans) store.logScan(db, scan.agent, scan.report);
 
-    console.log(tr`  ${report.filesRead} archivos · ${report.recordsSeen} registros`);
-    console.log(tr`  ${report.turnsAccepted} turnos aceptados · ${savedTurns} nuevos`);
-    console.log(tr`  ${report.duplicatesDropped} duplicados descartados` +
-      (report.turnsAccepted > 0
-        ? tr` (${(report.duplicatesDropped / (report.turnsAccepted + report.duplicatesDropped) * 100).toFixed(0)}% de las filas)`
-        : ""));
-    console.log(tr`  ${report.unknownRecords} registros internos ignorados · ${report.malformedRecords} malformados`);
-    if (report.producerVersions.length) {
-      console.log(tr`  versiones de Claude Code: ${report.producerVersions.join(", ")}`);
+    // Un bloque por agente, y solo de los que tienen algo. Quien no use Codex
+    // no debe leer cuatro líneas de ceros para enterarse de eso.
+    console.log(tr`  ${savedTurns} turnos nuevos guardados`);
+    for (const scan of scans) {
+      if (scan.report.filesRead === 0) continue;
+      printScanReport(scan);
     }
-    for (const warning of report.warnings) console.warn(`  ⚠ ${warning}`);
 
     // Commits de cada repositorio que aparece en los transcripts, MÁS todo
     // repo ya vinculado a un proyecto aunque ningún transcript lo mencione

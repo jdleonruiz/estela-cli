@@ -22,8 +22,14 @@ de IA el tiempo ya no se mide tecleando: se va en escribir el prompt, leer lo
 que devuelve y probarlo.
 
 Pero ese trabajo **deja rastro**. Claude Code guarda cada sesión en
-`~/.claude/projects/` con su modelo y sus tokens exactos. Git guarda cuándo
-commiteaste y qué. Estela lee ambas cosas y las cruza.
+`~/.claude/projects/` y Codex en `~/.codex/sessions/`, las dos con su modelo y
+sus tokens exactos. Git guarda cuándo commiteaste y qué. Estela lee las tres
+cosas y las cruza.
+
+De Codex salen las horas **medidas** y el coste de IA real, igual que de
+Claude Code. Un modelo que no esté en el catálogo de precios entra con coste
+vacío en vez de con uno inventado, y `estela doctor` te dice cuántos turnos
+están en ese caso.
 
 Lo que no hace:
 
@@ -64,8 +70,8 @@ La demo llena un panel entero con datos inventados y no toca nada tuyo, que es
 la manera honesta de mirar un programa que quiere leerte los transcripts: ver
 qué hace antes de dejarlo cerca de tu historial.
 
-¿Sin Claude Code? Funciona igual: sin transcripts, Estela reconstruye tu tiempo
-solo desde tus commits, y lo marca como estimado.
+¿Sin Claude Code ni Codex? Funciona igual: sin transcripts, Estela reconstruye
+tu tiempo solo desde tus commits, y lo marca como estimado.
 
 `npm` no actualiza instalaciones globales por su cuenta. Si la instalaste con
 `npm install -g estela`, Estela avisa sola cuando hay una versión más nueva

@@ -22,8 +22,14 @@ isn't measured in keystrokes anymore: it goes into writing the prompt, reading
 what comes back, and trying it out.
 
 But that work **leaves a trail**. Claude Code saves every session in
-`~/.claude/projects/` with its exact model and tokens. Git records when you
-committed and what. Estela reads both and lines them up.
+`~/.claude/projects/` and Codex in `~/.codex/sessions/`, both with their exact
+model and tokens. Git records when you committed and what. Estela reads all
+three and lines them up.
+
+Codex gives you **measured** hours and real AI cost, same as Claude Code. A
+model that isn't in the price catalog gets an empty cost rather than an
+invented one, and `estela doctor` tells you how many turns are in that
+state.
 
 What it doesn't do:
 
@@ -65,8 +71,8 @@ The demo fills a whole dashboard with made-up data and touches nothing of
 yours, which is the honest way to look at a program that wants to read your
 transcripts: see what it does before you let it near your own history.
 
-No Claude Code? It still works: without transcripts, Estela rebuilds your time
-from your commits alone, and marks it as estimated.
+No Claude Code or Codex? It still works: without transcripts, Estela rebuilds
+your time from your commits alone, and marks it as estimated.
 
 `npm` doesn't update global installs on its own. If you installed with
 `npm install -g estela`, Estela tells you when there's a newer version (it asks

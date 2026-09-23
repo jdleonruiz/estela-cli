@@ -7,6 +7,30 @@
  * español, cambia la clave: hay que actualizarla también.
  */
 export const EN: Record<string, string> = {
+  // ── watchers/agents.ts, watchers/codex.ts, cli.ts (escaneo por agente) ──
+  "    {0} archivos · {1} registros":
+    "    {0} files · {1} records",
+  "    {0} turnos aceptados":
+    "    {0} turns accepted",
+  "    {0} duplicados descartados":
+    "    {0} duplicates dropped",
+  "    {0} registros internos ignorados · {1} malformados":
+    "    {0} internal records ignored · {1} malformed",
+  "    versiones: {0}":
+    "    versions: {0}",
+  "\n  No se han encontrado sesiones de agentes en ~/.claude ni ~/.codex,":
+    "\n  No agent sessions found in ~/.claude or ~/.codex, and no Git",
+  "  ni un repositorio de Git en esta carpeta. Corre esto de nuevo desde":
+    "  repository in this folder. Run this again from inside your project,",
+  "  {0} turnos · {1}":
+    "  {0} turns · {1}",
+  "  No se han encontrado sesiones de agentes en ~/.claude ni ~/.codex —":
+    "  No agent sessions found in ~/.claude or ~/.codex —",
+  "  {0} turnos nuevos guardados":
+    "  {0} new turns saved",
+  "Codex puede haber cambiado su formato: revisa los totales antes de facturar.":
+    "Codex may have changed its format: check the totals before billing.",
+
   // ── billing/amortize.ts ──
   "Suscripciones en monedas distintas en {0} ({1} y {2}). ":
     "Subscriptions in different currencies in {0} ({1} and {2}). ",
@@ -109,18 +133,8 @@ export const EN: Record<string, string> = {
     "\nEstela\n",
   "Leyendo lo que tus agentes ya guardaron en disco…":
     "Reading what your agents already saved to disk…",
-  "\n  No se han encontrado sesiones de Claude Code en ~/.claude, ni":
-    "\n  No Claude Code sessions found in ~/.claude, and no",
-  "  un repositorio de Git en esta carpeta. Corre esto de nuevo desde":
-    "  Git repository in this folder. Run this again from",
   "  dentro de tu proyecto, o trabaja un rato con tu agente y vuelve.\n":
     "  inside your project, or work with your agent for a while and come back.\n",
-  "  {0} turnos · ":
-    "  {0} turns · ",
-  "{0} versiones de Claude Code":
-    "{0} Claude Code versions",
-  "  No se han encontrado sesiones de Claude Code en ~/.claude —":
-    "  No Claude Code sessions found in ~/.claude —",
   "  sin problema, se reconstruye igual desde tus commits de Git.":
     "  no problem, your history is rebuilt from your Git commits instead.",
   "\nBuscando repositorios… ({0})":
@@ -157,18 +171,8 @@ export const EN: Record<string, string> = {
     "Invalid date: {0}",
   "Leyendo transcripts de agentes…":
     "Reading agent transcripts…",
-  "  {0} archivos · {1} registros":
-    "  {0} files · {1} records",
-  "  {0} turnos aceptados · {1} nuevos":
-    "  {0} turns accepted · {1} new",
-  "  {0} duplicados descartados":
-    "  {0} duplicates dropped",
   " ({0}% de las filas)":
     " ({0}% of rows)",
-  "  {0} registros internos ignorados · {1} malformados":
-    "  {0} internal records ignored · {1} malformed",
-  "  versiones de Claude Code: {0}":
-    "  Claude Code versions: {0}",
   "  {0} turnos de scratchpad devueltos a su repositorio":
     "  {0} scratchpad turns returned to their repository",
   "Git: 1 repositorio · {0} commits nuevos":

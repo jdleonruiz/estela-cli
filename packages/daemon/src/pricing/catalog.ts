@@ -50,6 +50,30 @@ export const PRICE_CATALOG: readonly ModelPrice[] = [
   { modelPrefix: "claude-opus",      effectiveFrom: "2020-01-01", inputPerMTok: 5,  outputPerMTok: 25, ...STANDARD_CACHE },
   { modelPrefix: "claude-sonnet",    effectiveFrom: "2020-01-01", inputPerMTok: 3,  outputPerMTok: 15, ...STANDARD_CACHE },
   { modelPrefix: "claude-haiku",     effectiveFrom: "2020-01-01", inputPerMTok: 1,  outputPerMTok: 5,  ...STANDARD_CACHE },
+
+  // --- OpenAI (Codex) ---
+  //
+  // Tarifas estándar de developers.openai.com/api/docs/pricing, contexto
+  // corto, consultadas el 23/09/2026. Los multiplicadores de caché de OpenAI
+  // son los mismos que los de Anthropic —0.1x en lectura, 1.25x en escritura,
+  // comprobado en los seis modelos— así que STANDARD_CACHE vale igual. OpenAI
+  // no tiene caché con TTL de una hora, y el lector de Codex nunca rellena ese
+  // campo, así que su 2x no se usa aquí.
+  //
+  // Sin comodín por familia, a diferencia de Anthropic: entre luna y astra hay
+  // 100x, y un prefijo corto como "gpt-5.6" tarifaría mal en silencio. Un
+  // modelo que no esté aquí entra con coste NULL y `estela doctor` lo enumera,
+  // que es lo que debe pasar.
+  //
+  // Ojo: el precio de gpt-5.6-sol es promocional al menos hasta el 21/11/2026.
+  // Cuando suba, esto no se edita — se añade otra entrada con su effectiveFrom,
+  // o un informe de septiembre dejará de cuadrar.
+  { modelPrefix: "gpt-6-astra",   effectiveFrom: "2020-01-01", inputPerMTok: 10,  outputPerMTok: 50,  ...STANDARD_CACHE },
+  { modelPrefix: "gpt-6-sol",     effectiveFrom: "2020-01-01", inputPerMTok: 2,   outputPerMTok: 10,  ...STANDARD_CACHE },
+  { modelPrefix: "gpt-6-luna",    effectiveFrom: "2020-01-01", inputPerMTok: 0.1, outputPerMTok: 0.5, ...STANDARD_CACHE },
+  { modelPrefix: "gpt-5.6-sol",   effectiveFrom: "2020-01-01", inputPerMTok: 4,   outputPerMTok: 20,  ...STANDARD_CACHE },
+  { modelPrefix: "gpt-5.6-terra", effectiveFrom: "2020-01-01", inputPerMTok: 2,   outputPerMTok: 12,  ...STANDARD_CACHE },
+  { modelPrefix: "gpt-5.6-luna",  effectiveFrom: "2020-01-01", inputPerMTok: 0.2, outputPerMTok: 1.2, ...STANDARD_CACHE },
 ];
 
 /**

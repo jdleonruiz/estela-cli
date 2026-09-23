@@ -21,7 +21,7 @@ import { syncTeamProject } from "./sync/team.js";
 import { openBillingPortal, upgradeCheckout } from "./billing.js";
 import { cloudGet, cloudPost } from "./cloud/client.js";
 import { teamView } from "./metrics/team.js";
-import { resolveScratchpads, scanClaudeCode } from "./watchers/claude.js";
+import { allTurns, scanAgents } from "./watchers/agents.js";
 import { gitUserEmail, mergedBranches, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
 import { documentLang, tr, withLang } from "./i18n/index.js";
@@ -89,10 +89,10 @@ export interface ServerOptions {
 async function importOnce(dbPath: string): Promise<number> {
   const db = openDatabase(dbPath);
   try {
-    const scan = await scanClaudeCode({});
-    const turns = resolveScratchpads(scan.turns);
+    const scans = await scanAgents({});
+    const turns = allTurns(scans);
     store.saveTurns(db, turns);
-    store.logScan(db, "claude-code", scan.report);
+    for (const scan of scans) store.logScan(db, scan.agent, scan.report);
 
     const repos = new Set<string>();
     for (const turn of turns) if (turn.repoPath) repos.add(turn.repoPath);
