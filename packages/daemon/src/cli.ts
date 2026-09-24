@@ -390,9 +390,24 @@ function hintDocLang(args: Args, client: Client, lang: Lang): void {
  * Quien instala la CLI no tiene forma de arrancar el servidor: hasta ahora
  * vivía en un script del repositorio, que solo existe si te lo has clonado.
  */
+/**
+ * Arranca el panel convirtiendo el fallo en algo legible.
+ *
+ * `startServer` ya rechaza con una frase en vez de un errno, pero si llega
+ * como Error normal, el catch del final imprime el objeto entero con su
+ * traza. Como UserError, sale la frase sola.
+ */
+async function arrancarPanel(opciones: Parameters<typeof startServer>[0]): Promise<string> {
+  try {
+    return await startServer(opciones);
+  } catch (error) {
+    throw new UserError(error instanceof Error ? error.message : String(error));
+  }
+}
+
 async function cmdWeb(args: Args, dbPath: string): Promise<void> {
   const port = Number(str(args, "port") ?? 4319);
-  const url = await startServer({ port, dbPath });
+  const url = await arrancarPanel({ port, dbPath });
   console.log(tr`\n  Estela  ${url}`);
   console.log(tr`  Datos:  ${dbPath}`);
   console.log(tr`\n  Ctrl+C para parar.\n`);
@@ -416,7 +431,7 @@ async function cmdDemo(args: Args, dbPath: string): Promise<void> {
   try { seedDemo(db); } finally { db.close(); }
 
   const port = Number(str(args, "port") ?? 4320);
-  const url = await startServer({ port, dbPath: rutaDemo, autoImportMinutes: 0, demo: true });
+  const url = await arrancarPanel({ port, dbPath: rutaDemo, autoImportMinutes: 0, demo: true });
   console.log(tr`\n  Estela — demo con datos inventados  ${url}`);
   console.log(tr`  No es tu trabajo: no se ha tocado tu base ni se ha leído nada tuyo.`);
   console.log(tr`  Para el tuyo de verdad:  estela setup`);

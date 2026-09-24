@@ -481,3 +481,223 @@ test("un valor de idioma que no existe en la base se ignora en vez de propagarse
     assert.equal(store.getClient(db, "c")!.language, undefined);
   } finally { db.close(); }
 });
+
+/* ── Las facturas emitidas se pueden volver a ver ──────────────────────── */
+
+test("listInvoices devuelve lo emitido, de lo más nuevo a lo más viejo", () => {
+  // Reportado usándolo: al cortar y facturar, el proyecto desaparecía de la
+  // pestaña Informes —que solo lista lo PENDIENTE— y no había ningún sitio
+  // donde volver a ver el informe. La factura estaba guardada y era invisible.
+  const db = openDatabase(tempDb());
+  try {
+    store.upsertClient(db, { id: "acme", name: "ACME", currency: "EUR" });
+    store.upsertProject(db, {
+      id: "web", clientId: "acme", name: "Web de ACME", billable: true,
+      roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client", repoPaths: [],
+    });
+
+    for (const [num, corte] of [["INF-2026-001", "2026-08-31"], ["INF-2026-002", "2026-09-30"]] as const) {
+      db.prepare(`
+        INSERT INTO invoices (id, number, client_id, project_id, issued_at, cutoff_at,
+          period_start, currency, subtotal_minor, total_minor, total_seconds,
+          ai_micro_usd, lines_json)
+        VALUES (?, ?, 'acme', 'web', ?, ?, '2026-07-01T00:00:00.000Z', 'EUR',
+                170237, 170237, 471600, 0, '[]')
+      `).run(`inv_${num}`, num, `${corte}T12:00:00.000Z`, `${corte}T23:59:59.000Z`);
+    }
+
+    const facturas = store.listInvoices(db);
+
+    assert.equal(facturas.length, 2);
+    assert.equal(facturas[0]!.number, "INF-2026-002", "la más reciente primero");
+    assert.equal(facturas[0]!.projectName, "Web de ACME", "con el nombre, no solo el id");
+    assert.equal(facturas[0]!.clientName, "ACME");
+    assert.equal(facturas[0]!.totalSeconds, 471600);
+    assert.equal(facturas[0]!.totalMinor, 170237);
+    assert.equal(facturas[0]!.currency, "EUR");
+  } finally { db.close(); }
+});
+
+test("listInvoices puede filtrar por proyecto", () => {
+  const db = openDatabase(tempDb());
+  try {
+    store.upsertClient(db, { id: "acme", name: "ACME", currency: "EUR" });
+    for (const p of ["web", "api"]) {
+      store.upsertProject(db, {
+        id: p, clientId: "acme", name: p.toUpperCase(), billable: true,
+        roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client", repoPaths: [],
+      });
+      db.prepare(`
+        INSERT INTO invoices (id, number, client_id, project_id, issued_at, cutoff_at,
+          period_start, currency, subtotal_minor, total_minor, total_seconds,
+          ai_micro_usd, lines_json)
+        VALUES (?, ?, 'acme', ?, '2026-09-30T12:00:00.000Z', '2026-09-30T23:59:59.000Z',
+                '2026-07-01T00:00:00.000Z', 'EUR', 100, 100, 3600, 0, '[]')
+      `).run(`inv_${p}`, `INF-${p}`, p);
+    }
+
+    assert.equal(store.listInvoices(db, "web").length, 1);
+    assert.equal(store.listInvoices(db, "web")[0]!.projectId, "web");
+    assert.equal(store.listInvoices(db).length, 2);
+  } finally { db.close(); }
+});
+
+test("sin facturas emitidas devuelve una lista vacía, no explota", () => {
+  const db = openDatabase(tempDb());
+  try {
+    assert.deepEqual(store.listInvoices(db), []);
+  } finally { db.close(); }
+});
+
+test("getInvoice reconstruye la factura entera para poder reimprimirla", () => {
+  // El tipo Invoice congela importes y reparto de IA al emitir, con este
+  // motivo escrito: "un documento que cambia solo no es un documento".
+  // Faltaba poder leerlo de vuelta.
+  const db = openDatabase(tempDb());
+  try {
+    store.upsertClient(db, { id: "acme", name: "ACME", currency: "EUR" });
+    store.upsertProject(db, {
+      id: "web", clientId: "acme", name: "Web", billable: true, repoPaths: [],
+      roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client",
+    });
+    db.prepare(`
+      INSERT INTO invoices (id, number, client_id, project_id, issued_at, cutoff_at,
+        period_start, currency, subtotal_minor, total_minor, total_seconds,
+        ai_micro_usd, usd_fx_rate, ai_amort_minor, ai_amort_cur, notes, lines_json)
+      VALUES ('inv_1', 'INF-2026-001', 'acme', 'web', '2026-09-23T12:00:00.000Z',
+              '2026-09-23T23:59:59.000Z', '2026-07-29T03:21:05.036Z', 'EUR',
+              170237, 170237, 471600, 4200000, 0.92, 1500, 'EUR', 'agosto',
+              '[{"description":"Desarrollo","seconds":471600,"amount":{"amount":170237,"currency":"EUR"}}]')
+    `).run();
+
+    const f = store.getInvoice(db, "INF-2026-001");
+
+    assert.ok(f, "la factura tiene que aparecer por su número");
+    assert.equal(f!.number, "INF-2026-001");
+    assert.equal(f!.total.amount, 170237);
+    assert.equal(f!.total.currency, "EUR");
+    assert.equal(f!.totalSeconds, 471600);
+    assert.equal(f!.lines.length, 1, "las líneas congeladas, no recalculadas");
+    assert.equal(f!.lines[0]!.description, "Desarrollo");
+    assert.equal(f!.aiCost.microUsd, 4200000);
+    assert.equal(f!.usdFxRate, 0.92);
+    assert.equal(f!.aiAmortized?.amount, 1500, "el reparto de IA, tal y como se congeló");
+    assert.equal(f!.notes, "agosto");
+    assert.ok(f!.cutoffAt instanceof Date, "las fechas vuelven como Date, no como texto");
+  } finally { db.close(); }
+});
+
+test("getInvoice con un número que no existe devuelve null", () => {
+  const db = openDatabase(tempDb());
+  try {
+    assert.equal(store.getInvoice(db, "INF-2099-999"), null);
+  } finally { db.close(); }
+});
+
+/* ── Un ajuste a mano sobrevive al reimport ────────────────────────────── */
+
+function entradaDeAgente(dbPath: string, seconds: number) {
+  const db = openDatabase(dbPath);
+  try {
+    store.upsertClient(db, { id: "acme", name: "ACME", currency: "EUR" });
+    store.upsertProject(db, {
+      id: "web", clientId: "acme", name: "Web", billable: true, repoPaths: [],
+      roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client",
+    });
+    return store.saveTimeEntry(db, {
+      id: "te_fija", projectId: "web",
+      startedAt: new Date("2026-09-23T09:00:00.000Z"),
+      endedAt: new Date("2026-09-23T10:00:00.000Z"),
+      seconds, description: "feat: cartera de servicios", billable: true,
+      invoiceId: null, aiCost: { microUsd: 0 }, agentSeconds: seconds,
+      commitHashes: [], agents: [], source: "agent", kind: "development", branch: "main",
+    });
+  } finally { db.close(); }
+}
+
+test("un ajuste a mano no se pierde al reimportar", () => {
+  // Reportado con datos reales: se editaba un bloque a 5h 50m, el auto-import
+  // corría a los cinco minutos y volvía a dejarlo en lo que midió el agente.
+  const path = tempDb();
+  entradaDeAgente(path, 9504); // 2h 38m medidas
+
+  const db = openDatabase(path);
+  try {
+    store.adjustEntrySeconds(db, "te_fija", 21000, "Reunión con el cliente e investigación");
+
+    // El reimport vuelve a traer lo que mide el agente, como siempre.
+    store.saveTimeEntry(db, {
+      id: "te_fija", projectId: "web",
+      startedAt: new Date("2026-09-23T09:00:00.000Z"),
+      endedAt: new Date("2026-09-23T10:00:00.000Z"),
+      seconds: 9504, description: "feat: cartera de servicios", billable: true,
+      invoiceId: null, aiCost: { microUsd: 0 }, agentSeconds: 9504,
+      commitHashes: [], agents: [], source: "agent", kind: "development", branch: "main",
+    });
+
+    const r = db.prepare("SELECT seconds, measured_seconds, adjust_reason FROM time_entries WHERE id = 'te_fija'")
+      .get() as { seconds: number; measured_seconds: number | null; adjust_reason: string | null };
+
+    assert.equal(r.seconds, 21000, "lo ajustado manda: es lo que se factura");
+    assert.equal(r.measured_seconds, 9504, "y lo medido se guarda, para poder enseñar la diferencia");
+    assert.match(r.adjust_reason!, /Reunión con el cliente/);
+  } finally { db.close(); }
+});
+
+test("sin ajuste, el reimport sigue mandando", () => {
+  const path = tempDb();
+  entradaDeAgente(path, 3600);
+  const db = openDatabase(path);
+  try {
+    store.saveTimeEntry(db, {
+      id: "te_fija", projectId: "web",
+      startedAt: new Date("2026-09-23T09:00:00.000Z"),
+      endedAt: new Date("2026-09-23T10:00:00.000Z"),
+      seconds: 7200, description: "feat: cartera de servicios", billable: true,
+      invoiceId: null, aiCost: { microUsd: 0 }, agentSeconds: 7200,
+      commitHashes: [], agents: [], source: "agent", kind: "development", branch: "main",
+    });
+    const r = db.prepare("SELECT seconds FROM time_entries WHERE id = 'te_fija'").get() as { seconds: number };
+    assert.equal(r.seconds, 7200, "corregir la medición es justo para lo que sirve reimportar");
+  } finally { db.close(); }
+});
+
+test("un ajuste exige un motivo", () => {
+  const path = tempDb();
+  entradaDeAgente(path, 3600);
+  const db = openDatabase(path);
+  try {
+    // Cambiar horas que alguien paga sin decir por qué es lo contrario de lo
+    // que promete el producto.
+    assert.throws(() => store.adjustEntrySeconds(db, "te_fija", 7200, ""));
+    assert.throws(() => store.adjustEntrySeconds(db, "te_fija", 7200, "   "));
+    const r = db.prepare("SELECT seconds FROM time_entries WHERE id = 'te_fija'").get() as { seconds: number };
+    assert.equal(r.seconds, 3600, "y no se guarda nada a medias");
+  } finally { db.close(); }
+});
+
+test("reimportar no toca una imputación ya facturada", () => {
+  // La fila detrás de una factura emitida es historia. Pisarla deja el panel
+  // diciendo una cosa y el PDF entregado otra.
+  const path = tempDb();
+  entradaDeAgente(path, 9504);
+  const db = openDatabase(path);
+  try {
+    db.prepare("INSERT INTO invoices (id, number, client_id, project_id, issued_at, cutoff_at, period_start, currency, subtotal_minor, total_minor, total_seconds, ai_micro_usd, lines_json) VALUES ('inv_1','INF-1','acme','web','2026-09-24T04:01:39.000Z','2026-09-23T23:59:59.000Z','2026-07-01T00:00:00.000Z','EUR',0,0,9504,0,'[]')").run();
+    db.prepare("UPDATE time_entries SET invoice_id = 'inv_1' WHERE id = 'te_fija'").run();
+
+    store.saveTimeEntry(db, {
+      id: "te_fija", projectId: "web",
+      startedAt: new Date("2026-09-23T09:00:00.000Z"),
+      endedAt: new Date("2026-09-23T10:00:00.000Z"),
+      seconds: 123, description: "otra cosa", billable: true,
+      invoiceId: null, aiCost: { microUsd: 0 }, agentSeconds: 123,
+      commitHashes: [], agents: [], source: "agent", kind: "development", branch: "main",
+    });
+
+    const r = db.prepare("SELECT seconds, description FROM time_entries WHERE id = 'te_fija'")
+      .get() as { seconds: number; description: string };
+    assert.equal(r.seconds, 9504, "lo facturado no se recalcula");
+    assert.equal(r.description, "feat: cartera de servicios");
+  } finally { db.close(); }
+});

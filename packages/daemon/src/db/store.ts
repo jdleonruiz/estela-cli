@@ -388,6 +388,60 @@ export function logScan(db: DatabaseSync, source: string, report: ParseReport): 
  * tests no dependan del reloj: publicar y escribir en el mismo milisegundo hace
  * que la comparación de desfase falle por empate.
  */
+export class AdjustError extends Error {}
+
+/**
+ * Ajusta a mano los segundos de una imputación, con su motivo.
+ *
+ * El motivo es obligatorio y no es burocracia: un bloque puede haber costado
+ * 58 minutos de commits y cinco horas de verdad, porque hubo que investigar o
+ * reunirse con el cliente. Sin esa frase, el ajuste es un número cambiado a
+ * mano en algo que alguien paga, que es justo lo que este producto promete no
+ * hacer.
+ *
+ * Lo medido se conserva en `measured_seconds` para poder enseñar las dos
+ * cifras. Corregir no es falsear, pero solo si se ve lo que se corrigió.
+ */
+export function adjustEntrySeconds(
+  db: DatabaseSync, id: string, seconds: number, reason: string, at: Date = new Date(),
+): void {
+  const motivo = reason.trim();
+  if (!motivo) throw new AdjustError("Un ajuste de horas necesita un motivo.");
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    throw new AdjustError("Los segundos ajustados no pueden ser negativos.");
+  }
+
+  const row = db.prepare("SELECT seconds, measured_seconds, invoice_id FROM time_entries WHERE id = ?")
+    .get(id) as { seconds: number; measured_seconds: number | null; invoice_id: string | null } | undefined;
+  if (!row) throw new AdjustError(`No existe la imputación ${id}`);
+  if (row.invoice_id) throw new AdjustError("Esta imputación ya está facturada y no se puede ajustar.");
+
+  // La primera vez, lo que había era lo medido. Después ya está guardado y no
+  // se pisa: si no, un segundo ajuste convertiría el primero en "lo medido".
+  const medido = row.measured_seconds ?? row.seconds;
+
+  db.prepare(`
+    UPDATE time_entries
+    SET seconds = ?, measured_seconds = ?, adjust_reason = ?, adjusted_at = ?, updated_at = ?
+    WHERE id = ?
+  `).run(Math.round(seconds), medido, motivo, iso(at), iso(at), id);
+}
+
+/** Quita el ajuste y devuelve el bloque a lo que mide el agente. */
+export function clearEntryAdjustment(db: DatabaseSync, id: string, at: Date = new Date()): void {
+  const row = db.prepare("SELECT measured_seconds, invoice_id FROM time_entries WHERE id = ?")
+    .get(id) as { measured_seconds: number | null; invoice_id: string | null } | undefined;
+  if (!row) throw new AdjustError(`No existe la imputación ${id}`);
+  if (row.invoice_id) throw new AdjustError("Esta imputación ya está facturada y no se puede ajustar.");
+
+  db.prepare(`
+    UPDATE time_entries
+    SET seconds = COALESCE(measured_seconds, seconds),
+        adjust_reason = NULL, adjusted_at = NULL, updated_at = ?
+    WHERE id = ?
+  `).run(iso(at), id);
+}
+
 export function saveTimeEntry(
   db: DatabaseSync,
   entry: Omit<TimeEntry, "id"> & { id?: string },
@@ -403,7 +457,15 @@ export function saveTimeEntry(
     ON CONFLICT(id) DO UPDATE SET
       started_at = excluded.started_at, local_date = excluded.local_date,
       ended_at = excluded.ended_at,
-      seconds = excluded.seconds, description = excluded.description,
+      -- Un ajuste a mano manda sobre la medición. Antes se pisaba, así que
+      -- editar los minutos duraba hasta el siguiente import — cinco minutos
+      -- con el panel abierto.
+      seconds = CASE WHEN time_entries.adjust_reason IS NULL
+                     THEN excluded.seconds ELSE time_entries.seconds END,
+      -- Pero lo medido se refresca igual: es la referencia contra la que se
+      -- enseña el ajuste, y tiene que seguir siendo verdad.
+      measured_seconds = excluded.seconds,
+      description = excluded.description,
       billable = excluded.billable, ai_micro_usd = excluded.ai_micro_usd,
       -- Los commits también se rehacen. Sin esto, un bloque creado cuando
       -- todavía no se capturaban los commits del proyecto se quedaba sin
@@ -426,7 +488,12 @@ export function saveTimeEntry(
         THEN excluded.updated_at ELSE time_entries.updated_at END
     -- Reimportar rehace lo deducido de los agentes. Lo escrito a mano es tuyo:
     -- un import no puede borrarte una reunión de dos horas que apuntaste ayer.
+    --
+    -- Y lo ya facturado es historia. Sin esta condición, un reimport
+    -- recalculaba filas que respaldan una factura emitida y dejaba el panel
+    -- diciendo una cosa y el PDF del cliente otra.
     WHERE time_entries.source IN ('agent', 'commit')
+      AND time_entries.invoice_id IS NULL
   `).run(id, entry.projectId, iso(entry.startedAt), localDate(entry.startedAt),
          iso(entry.endedAt), entry.seconds,
          entry.description, entry.billable ? 1 : 0, entry.invoiceId,
@@ -534,6 +601,97 @@ export function saveInvoice(db: DatabaseSync, invoice: Invoice, entryIds: readon
     db.exec("ROLLBACK");
     throw error;
   }
+}
+
+export interface IssuedInvoice {
+  readonly id: string;
+  readonly number: string;
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly clientName: string;
+  readonly issuedAt: string;
+  readonly cutoffAt: string;
+  readonly periodStart: string;
+  readonly currency: string;
+  readonly totalMinor: number;
+  readonly totalSeconds: number;
+  readonly aiMicroUsd: number;
+}
+
+/**
+ * Las facturas ya emitidas.
+ *
+ * Existe porque faltaba: el panel listaba solo lo PENDIENTE de facturar, así
+ * que al cortar y facturar el proyecto desaparecía de la pantalla y no había
+ * dónde volver a mirar. La factura estaba guardada —con sus líneas congeladas
+ * en `lines_json`— y era invisible, que para un número que alguien paga es lo
+ * peor de los dos mundos: ni se ve ni se puede rehacer.
+ */
+export function listInvoices(db: DatabaseSync, projectId?: string): IssuedInvoice[] {
+  return (db.prepare(`
+    SELECT i.id, i.number, i.project_id, i.issued_at, i.cutoff_at, i.period_start,
+           i.currency, i.total_minor, i.total_seconds, i.ai_micro_usd,
+           p.name AS project_name, c.name AS client_name
+    FROM invoices i
+    LEFT JOIN projects p ON p.id = i.project_id
+    LEFT JOIN clients  c ON c.id = i.client_id
+    ${projectId ? "WHERE i.project_id = ?" : ""}
+    ORDER BY i.issued_at DESC, i.number DESC
+  `).all(...(projectId ? [projectId] : [])) as Record<string, unknown>[]).map((r) => ({
+    id: r["id"] as string,
+    number: r["number"] as string,
+    projectId: r["project_id"] as string,
+    projectName: (r["project_name"] as string | null) ?? (r["project_id"] as string),
+    clientName: (r["client_name"] as string | null) ?? "—",
+    issuedAt: r["issued_at"] as string,
+    cutoffAt: r["cutoff_at"] as string,
+    periodStart: r["period_start"] as string,
+    currency: r["currency"] as string,
+    totalMinor: r["total_minor"] as number,
+    totalSeconds: r["total_seconds"] as number,
+    aiMicroUsd: (r["ai_micro_usd"] as number) ?? 0,
+  }));
+}
+
+/**
+ * Una factura emitida, entera y tal y como se emitió.
+ *
+ * Todo sale de la fila guardada, nada se recalcula: el propio tipo `Invoice`
+ * congela importes y reparto de IA al emitir, y su comentario lo explica —"un
+ * documento que cambia solo no es un documento"—. Reimprimir en diciembre un
+ * informe de agosto tiene que dar el mismo papel que dio en agosto.
+ */
+export function getInvoice(db: DatabaseSync, number: string): Invoice | null {
+  const r = db.prepare("SELECT * FROM invoices WHERE number = ?")
+    .get(number) as Record<string, unknown> | undefined;
+  if (!r) return null;
+
+  const currency = r["currency"] as Invoice["currency"];
+  const amortMinor = r["ai_amort_minor"] as number | null;
+  const billedMinor = r["ai_billed_minor"] as number | null;
+  const notes = r["notes"] as string | null;
+
+  return {
+    id: r["id"] as string,
+    number: r["number"] as string,
+    clientId: r["client_id"] as string,
+    projectId: r["project_id"] as string,
+    issuedAt: new Date(r["issued_at"] as string),
+    cutoffAt: new Date(r["cutoff_at"] as string),
+    periodStart: new Date(r["period_start"] as string),
+    currency,
+    lines: JSON.parse(r["lines_json"] as string) as Invoice["lines"],
+    subtotal: { amount: r["subtotal_minor"] as number, currency },
+    total: { amount: r["total_minor"] as number, currency },
+    totalSeconds: r["total_seconds"] as number,
+    aiCost: { microUsd: (r["ai_micro_usd"] as number) ?? 0 },
+    usdFxRate: (r["usd_fx_rate"] as number | null) ?? null,
+    aiCostBilled: billedMinor === null ? null : { amount: billedMinor, currency },
+    aiAmortized: amortMinor === null
+      ? null
+      : { amount: amortMinor, currency: (r["ai_amort_cur"] as Invoice["currency"]) ?? currency },
+    ...(notes ? { notes } : {}),
+  };
 }
 
 export function nextInvoiceNumber(db: DatabaseSync, prefix: string): string {

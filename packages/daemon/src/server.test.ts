@@ -23,6 +23,8 @@ import { startServer } from "./server.js";
  */
 
 let puerto = 4700;
+// Puertos aparte para el test del puerto ocupado: no debe pisar a los demás.
+let puertoOcupado = 5200;
 
 async function conServidor(
   preparar: (dbPath: string) => void,
@@ -263,4 +265,36 @@ test("crear un proyecto con un cliente de verdad nuevo lo crea con su moneda", a
       } finally { db.close(); }
     },
   );
+});
+
+test("un puerto ocupado da un error explicado, no una traza de Node", async () => {
+  // Reportado con la traza entera en pantalla: "Unhandled 'error' event …
+  // EADDRINUSE". Pasaba porque startServer resolvía la promesa en listen() y
+  // no escuchaba el evento 'error', así que el fallo salía por el canal que
+  // mata el proceso. Un puerto ocupado es previsible —casi siempre otro
+  // `estela web` abierto— y se avisa, no se vuelca.
+  const dir = mkdtempSync(join(tmpdir(), "estela-puerto-"));
+  const dbPath = join(dir, "estela.db");
+  openDatabase(dbPath).close();
+
+  const puerto = puertoOcupado++;
+  let primero: Server | undefined;
+  await startServer({ port: puerto, dbPath, autoImportMinutes: 0, onServer: (s) => { primero = s; } });
+
+  try {
+    await assert.rejects(
+      () => startServer({ port: puerto, dbPath, autoImportMinutes: 0 }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        const texto = (error as Error).message;
+        // Tiene que decir el puerto y qué hacer, no "EADDRINUSE" a secas.
+        assert.match(texto, new RegExp(String(puerto)), "debe nombrar el puerto");
+        assert.match(texto, /--port/, "debe ofrecer la salida");
+        assert.doesNotMatch(texto, /EADDRINUSE/, "el código de errno no le dice nada a nadie");
+        return true;
+      });
+  } finally {
+    await new Promise<void>((resolve) => primero!.close(() => resolve()));
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

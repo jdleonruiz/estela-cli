@@ -213,10 +213,18 @@ these hours end up in a report someone pays for.
 | Hosted dashboards at once | 1 | unlimited | unlimited |
 | **Measured** team hours | — | — | ✓ |
 | AI budget per project | — | — | ✓ |
+| Projects | unlimited | unlimited | unlimited |
 
-Pro is one person on several machines; Teams is several people. AI cost is
-reported **per project, never per person**: what each person spends out of their
-own pocket is theirs.
+Pro is one person on several machines; Teams is several people.
+
+Teams is billed **per measured person** — $10/month, €10 in the eurozone,
+three-person minimum — not per
+project. Projects are unlimited on purpose: if each one cost money you'd end up
+measuring only two or three, which is the opposite of what this is for. Someone
+on several projects is paid for once.
+
+AI cost is reported **per project, never per person**: what each person spends
+out of their own pocket is theirs. Paying per seat doesn't change that.
 
 More at [getestela.dev](https://getestela.dev/en/).
 

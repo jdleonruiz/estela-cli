@@ -843,3 +843,35 @@ main.wide { max-width: 1180px; }
 .row-inline .repo-pick { flex: 1; min-width: 220px; font: inherit; font-size: .85rem;
   padding: 7px 10px; border: 1px solid var(--line-2); border-radius: 8px;
   background: var(--paper); color: var(--ink); }
+
+/* Lo ya facturado. Misma rejilla que una fila de informe para que se lean
+   como lo que son: dos estados del mismo trabajo. */
+.invoice-list{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.invoice-row{display:flex;align-items:center;gap:14px;padding:14px 16px;
+  background:var(--card);border:1px solid var(--line);border-radius:12px}
+.invoice-main{flex:1;min-width:0}
+.invoice-num{font-weight:660;letter-spacing:-.01em}
+.invoice-sub{font-size:.84rem;color:var(--ink3);margin-top:2px}
+.invoice-row .report-figs{flex:0 0 auto;text-align:right}
+/* Un <a> no hereda el aspecto de <button>: hay que decirle que no se
+   subraye y que se centre como el resto. */
+.invoice-dl{flex:0 0 auto;text-decoration:none;display:inline-flex;
+  align-items:center;padding:9px 18px;font-size:.9rem}
+@media(max-width:620px){
+  .invoice-row{flex-wrap:wrap}
+  .invoice-main{flex:1 1 100%}
+  .invoice-row .report-figs{flex:1 1 auto;text-align:left}
+}
+
+/* Ajuste a mano de los minutos. Va bajo la fila que se edita, no en un modal:
+   el motivo tiene que escribirse al lado del número que se cambia. */
+.adjust-ask{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  margin-top:10px;padding:12px 14px;background:var(--amber-tint);border-radius:10px}
+/* La etiqueta en su propia línea: con ella al lado, el campo y los dos
+   botones no caben y "Cancelar" se caía solo a una tercera fila. */
+.adjust-ask label{font-size:.82rem;color:var(--amber-deep);font-weight:650;flex:1 0 100%}
+.adjust-ask input{flex:1 1 200px;min-width:0}
+.adjust-shown{margin-top:10px;padding:10px 14px;background:var(--card-2);
+  border-left:3px solid var(--jade);border-radius:0 8px 8px 0;font-size:.85rem}
+.adjust-why{color:var(--ink-2);margin-top:3px}
+.adjust-shown .chip{margin-top:8px}

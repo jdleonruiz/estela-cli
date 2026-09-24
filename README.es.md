@@ -212,10 +212,18 @@ estas horas acaban en un informe que alguien paga.
 | Paneles alojados a la vez | 1 | ilimitados | ilimitados |
 | Horas del equipo **medidas** | — | — | ✓ |
 | Presupuesto de IA por proyecto | — | — | ✓ |
+| Proyectos | ilimitados | ilimitados | ilimitados |
 
-Pro es una persona en varias máquinas; Teams son varias personas. El coste de
-IA se informa **por proyecto, nunca por persona**: lo que cada cual gasta de su
-bolsillo es suyo.
+Pro es una persona en varias máquinas; Teams son varias personas.
+
+Teams se paga **por persona medida** —10 $/mes, 10 € en la zona euro, con un
+mínimo de tres—, no por
+proyecto. Los proyectos son ilimitados a propósito: si cada uno costara dinero
+acabarías midiendo solo dos o tres, que es justo lo contrario de para lo que
+sirve. Alguien que está en varios proyectos se paga una vez.
+
+El coste de IA se informa **por proyecto, nunca por persona**: lo que cada cual
+gasta de su bolsillo es suyo. Pagar por asiento no cambia eso.
 
 Más en [getestela.dev](https://getestela.dev).
 

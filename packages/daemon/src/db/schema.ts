@@ -142,6 +142,15 @@ CREATE TABLE IF NOT EXISTS time_entries (
   -- no en días: sin esta columna no se puede decir "18h en el informe de
   -- servicios", que es la frase que él entiende.
   branch          TEXT,
+  -- Lo que midió el último import, guardado aparte cuando hay un ajuste a
+  -- mano. Sin esto no se puede enseñar "2h 38m medidas, ajustado a 5h 50m",
+  -- que es la diferencia entre corregir y falsear.
+  measured_seconds INTEGER,
+  -- Por qué la columna seconds no es lo medido. NULL = no hay ajuste. Es
+  -- obligatorio al ajustar: unas horas que alguien paga, cambiadas sin decir
+  -- por qué, son exactamente lo que este producto promete no hacer.
+  adjust_reason   TEXT,
+  adjusted_at     TEXT,
   -- Cuándo se escribió esta fila, no cuándo ocurrió el trabajo. Es lo que
   -- decide si un panel publicado se ha quedado atrás: lo que envejece es que
   -- los datos cambien, y una reunión anotada hoy lleva fecha de esta mañana.
@@ -265,6 +274,18 @@ CREATE TABLE IF NOT EXISTS personal_sync_state (
  * empezar no es una opción de mantenimiento.
  */
 const MIGRATIONS: readonly { version: number; describe: string; run: (db: DatabaseSync) => void }[] = [
+  {
+    version: 14,
+    describe: "ajustes a mano con su motivo, que el reimport no pisa",
+    run: (db) => {
+      // Hasta aquí, editar los minutos de un bloque de agente duraba hasta el
+      // siguiente import: el ON CONFLICT reescribía `seconds` y la corrección
+      // se perdía sola. En `estela web` eso son cinco minutos.
+      addColumn(db, "time_entries", "measured_seconds", "INTEGER");
+      addColumn(db, "time_entries", "adjust_reason", "TEXT");
+      addColumn(db, "time_entries", "adjusted_at", "TEXT");
+    },
+  },
   {
     version: 13,
     describe: "idioma de los documentos de cada cliente",

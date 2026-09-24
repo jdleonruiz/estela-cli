@@ -214,6 +214,21 @@ function renderRowBody(entry) {
              value="${Math.round(entry.seconds / 60)}" data-field="minutes">
     </div>
   </div>
+  <div class="adjust-ask" data-adjust-ask hidden>
+    <label for="r-${esc(entry.id)}">${tr("adjust.reasonLabel")}</label>
+    <input id="r-${esc(entry.id)}" type="text" data-adjust-reason
+           placeholder="${tr("adjust.reasonPlaceholder")}">
+    <button type="button" class="btn-main" data-adjust-save>${tr("adjust.save")}</button>
+    <button type="button" class="chip" data-adjust-cancel>${tr("adjust.cancel")}</button>
+  </div>
+  ${entry.adjustReason ? `<div class="adjust-shown">
+    ${tr("adjust.shown", {
+      measured: fmtDuration(entry.measuredSeconds ?? entry.seconds),
+      adjusted: fmtDuration(entry.seconds),
+    })}
+    <div class="adjust-why">${esc(entry.adjustReason)}</div>
+    <button type="button" class="chip" data-adjust-clear>${tr("adjust.clear")}</button>
+  </div>` : ""}
   ${commits}${ai}
   <div class="row-actions">
     <button type="button" class="chip ${entry.billable ? "is-on" : ""}" data-billable>
@@ -311,15 +326,47 @@ function wireRows() {
       renderDay();
     });
 
+    const pedirMotivo = row.querySelector("[data-adjust-ask]");
+
     row.querySelectorAll("[data-field]").forEach((input) => {
       input.addEventListener("change", async () => {
         const field = input.dataset.field;
-        const patch = field === "minutes"
-          ? { seconds: Math.max(0, Math.round(Number(input.value) * 60)) }
-          : { [field]: input.value };
-        await save(id, patch);
+        if (field === "minutes") {
+          // No se guarda todavía: cambiar horas que alguien paga lleva motivo,
+          // y pedirlo después de haber guardado sería pedirlo por educación.
+          pedirMotivo.hidden = false;
+          pedirMotivo.querySelector("[data-adjust-reason]").focus();
+          return;
+        }
+        await save(id, { [field]: input.value });
       });
     });
+
+    if (pedirMotivo) {
+      const minutos = row.querySelector('[data-field="minutes"]');
+      const motivo = pedirMotivo.querySelector("[data-adjust-reason]");
+
+      pedirMotivo.querySelector("[data-adjust-save]").addEventListener("click", async () => {
+        if (!motivo.value.trim()) { motivo.focus(); return; }
+        await save(id, {
+          seconds: Math.max(0, Math.round(Number(minutos.value) * 60)),
+          reason: motivo.value.trim(),
+        });
+      });
+
+      pedirMotivo.querySelector("[data-adjust-cancel]").addEventListener("click", () => {
+        pedirMotivo.hidden = true;
+        motivo.value = "";
+        renderDay();  // Devuelve el número a lo que hay guardado.
+      });
+
+      motivo.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") pedirMotivo.querySelector("[data-adjust-save]").click();
+      });
+    }
+
+    const quitar = row.querySelector("[data-adjust-clear]");
+    if (quitar) quitar.addEventListener("click", () => save(id, { clearAdjustment: true }));
 
     const billableBtn = row.querySelector("[data-billable]");
     if (billableBtn) {
@@ -1171,7 +1218,14 @@ async function loadReports() {
   // Mismo periodo que Resumen: si las dos pantallas contestan a la misma
   // pregunta, tienen que dar el mismo número.
   const { from, to } = periodRange(state.period);
-  state.reportsOverview = await api(`/api/overview?from=${from}&to=${to}`);
+  const [overview, facturado] = await Promise.all([
+    api(`/api/overview?from=${from}&to=${to}`),
+    // Lo emitido no depende del periodo elegido: una factura de agosto sigue
+    // existiendo aunque estés mirando septiembre.
+    api("/api/invoices").catch(() => ({ invoices: [] })),
+  ]);
+  state.reportsOverview = overview;
+  state.invoices = facturado.invoices || [];
   renderReports();
 }
 
@@ -1196,10 +1250,14 @@ function renderReports() {
   if (overview.warning) parts.push(`<div class="warn">${esc(overview.warning)}</div>`);
 
   if (overview.unbilled.length === 0) {
+    // Con facturas emitidas, "nada que informar" se lee como si el trabajo
+    // hubiera desaparecido. Lo que ha pasado es que ya está todo facturado, y
+    // eso es otra cosa y hay que decirla.
+    const yaHay = (state.invoices || []).length > 0;
     parts.push(`<div class="empty">
-      <h2>${tr("reports.empty.title")}</h2>
-      <p>${tr("reports.empty.body")}</p>
-      <code>estela status</code>
+      <h2>${yaHay ? tr("reports.allbilled.title") : tr("reports.empty.title")}</h2>
+      <p>${yaHay ? tr("reports.allbilled.body") : tr("reports.empty.body")}</p>
+      ${yaHay ? "" : "<code>estela status</code>"}
     </div>`);
   } else {
     // Filtra en el propio navegador: ya se tiene la lista entera cargada, y
@@ -1264,6 +1322,32 @@ function renderReports() {
     }
 
     parts.push(`<p class="note">${tr("reports.note")}</p>`);
+  }
+
+  // ── Ya facturado ─────────────────────────────────────────────────────
+  // Va siempre, tenga o no pendientes: sin esto, cortar y facturar hacía
+  // desaparecer el proyecto de la pantalla y no quedaba dónde mirar lo
+  // emitido ni cómo volver a descargarlo.
+  const emitidas = state.invoices || [];
+  if (emitidas.length) {
+    parts.push(`<h2 class="sec">${tr("invoices.title")}</h2>`);
+    parts.push(`<p class="note">${tr("invoices.note")}</p>`);
+    parts.push('<div class="invoice-list">' + emitidas.map((f) => {
+      const importe = f.totalMinor != null ? fmtMoney(f.totalMinor, f.currency) : "—";
+      return `<div class="invoice-row">
+        <div class="invoice-main">
+          <div class="invoice-num">${esc(f.number)}</div>
+          <div class="invoice-sub">${esc(f.projectName)} · ${esc(f.clientName)}</div>
+          <div class="invoice-sub">${tr("invoices.upto", { date: esc(f.cutoffAt.slice(0, 10)) })}</div>
+        </div>
+        <div class="report-figs">
+          <div class="report-hours">${fmtDuration(f.totalSeconds)}</div>
+          <div class="report-amount">${importe}</div>
+        </div>
+        <a class="btn-main invoice-dl" download
+           href="/api/invoices/${encodeURIComponent(f.number)}/pdf">${tr("invoices.download")}</a>
+      </div>`;
+    }).join("") + "</div>");
   }
 
   $("#reports-body").innerHTML = parts.join("");

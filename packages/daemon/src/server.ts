@@ -229,7 +229,6 @@ export function startServer(options: ServerOptions = {}): Promise<string> {
   // de quien la está mirando y los metería en la base de ejemplo. Un flag de
   // módulo basta: en un proceso solo hay un servidor.
   modoDemo = options.demo === true;
-  if (autoMinutes > 0) startAutoImport(dbPath, autoMinutes);
 
   const server = createServer((req, res) => {
     handle(req, res, dbPath).catch((error: unknown) => {
@@ -240,8 +239,32 @@ export function startServer(options: ServerOptions = {}): Promise<string> {
 
   options.onServer?.(server);
 
-  return new Promise((resolve) => {
-    server.listen(port, "127.0.0.1", () => resolve(`http://127.0.0.1:${port}`));
+  return new Promise((resolve, reject) => {
+    // Sin este manejador, un fallo al escuchar sale por el evento 'error' del
+    // Server, que nadie escucha: Node lo trata como excepción no capturada,
+    // vuelca la traza entera y mata el proceso. Para un puerto ocupado —que
+    // casi siempre es otro `estela web` abierto— eso es una pantalla de susto
+    // donde debería haber una frase.
+    server.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE") {
+        return reject(new Error(
+          tr`El puerto ${port} ya está ocupado. Suele ser otro "estela web" abierto: ` +
+          tr`ciérralo, o abre este en otro con --port ${port + 1}.`));
+      }
+      if (error.code === "EACCES") {
+        return reject(new Error(
+          tr`No hay permiso para usar el puerto ${port}. Prueba con --port ${port + 1}.`));
+      }
+      reject(error);
+    });
+    server.listen(port, "127.0.0.1", () => {
+      // Después de escuchar, no antes: si el puerto está ocupado, un
+      // temporizador ya arrancado mantiene vivo el proceso y sigue imprimiendo
+      // "N bloques actualizados" debajo del error, que da a entender que algo
+      // funcionó.
+      if (autoMinutes > 0) startAutoImport(dbPath, autoMinutes);
+      resolve(`http://127.0.0.1:${port}`);
+    });
   });
 }
 
@@ -328,7 +351,15 @@ async function api(
     if (path.startsWith("/api/entry/") && req.method === "PATCH") {
       const id = decodeURIComponent(path.slice("/api/entry/".length));
       const patch = await readJson(req);
-      applyEntryPatch(db, id, patch);
+      try {
+        applyEntryPatch(db, id, patch);
+      } catch (error) {
+        // Falta el motivo, o está facturada: es culpa de la petición, no del
+        // servidor. Con un 500 el panel enseñaría "algo ha fallado" en vez de
+        // la frase que dice qué hacer.
+        if (error instanceof store.AdjustError) return json(res, 400, { error: error.message });
+        throw error;
+      }
       return json(res, 200, { ok: true });
     }
 
@@ -551,6 +582,24 @@ async function api(
     // --cutoff", sin --dry-run. A diferencia de /api/report (arriba), esto SÍ
     // marca las horas como facturadas — es la única vía de la web que lo hace,
     // así que solo se llega aquí desde un botón con confirmación explícita.
+    // Lo ya facturado. Existe porque faltaba: la pestaña Informes lista lo
+    // PENDIENTE, así que al cortar y facturar el proyecto desaparecía de la
+    // pantalla y no había dónde volver a mirar lo emitido.
+    if (path === "/api/invoices" && req.method === "GET") {
+      const proyecto = url.searchParams.get("project");
+      return json(res, 200, {
+        invoices: store.listInvoices(db, proyecto ?? undefined),
+      });
+    }
+
+    // Reimprimir una factura ya emitida. Sale entera de lo guardado, sin
+    // recalcular nada: el mismo papel que salió el día que se emitió.
+    const reimpresion = /^\/api\/invoices\/([A-Za-z0-9-]+)\/pdf$/.exec(path);
+    if (reimpresion && req.method === "GET") {
+      return sendStoredInvoicePdf(db, res, reimpresion[1]!,
+        url.searchParams.get("author") ?? "");
+    }
+
     if (path === "/api/invoice" && req.method === "POST") {
       const body = await readJson(req);
       return sendInvoice(db, res, String(body["projectId"] ?? ""),
@@ -996,6 +1045,10 @@ function buildDay(db: Db, date: string) {
       billable: Boolean(r["billable"]),
       approved: Boolean(r["approved"]),
       invoiced: r["invoice_id"] !== null,
+      // El ajuste a mano y lo que se midió, para poder enseñar los dos y su
+      // motivo. Sin esto la corrección sería un número sin defensa.
+      adjustReason: (r["adjust_reason"] as string | null) ?? null,
+      measuredSeconds: (r["measured_seconds"] as number | null) ?? null,
       aiMicroUsd: r["ai_micro_usd"] as number,
       amountMinor: amount?.amount ?? null,
       hourlyMinor: rate?.amount ?? null,
@@ -1092,21 +1145,36 @@ function applyEntryPatch(db: Db, id: string, patch: Record<string, unknown>): vo
   if (typeof patch["approved"] === "boolean") {
     sets.push("approved = ?"); values.push(patch["approved"] ? 1 : 0);
   }
-  if (typeof patch["seconds"] === "number" && patch["seconds"] >= 0) {
-    sets.push("seconds = ?"); values.push(Math.round(patch["seconds"]));
-  }
 
-  if (sets.length === 0) return;
+  if (sets.length === 0 && patch["seconds"] === undefined && patch["clearAdjustment"] !== true) return;
 
   // Una imputación ya facturada es historia: la factura que la contiene ya
   // salió, y cambiarla la dejaría descuadrada.
   const row = db.prepare("SELECT invoice_id FROM time_entries WHERE id = ?")
     .get(id) as { invoice_id: string | null } | undefined;
-  if (!row) throw new Error(tr`No existe la imputación ${id}`);
-  if (row.invoice_id) throw new Error(tr`Esta imputación ya está facturada y no se puede editar.`);
+  // AdjustError y no Error: esto es culpa de la petición, no del servidor, y
+  // con un 500 el panel enseña "algo ha fallado" en vez de la frase que
+  // explica por qué no se puede.
+  if (!row) throw new store.AdjustError(tr`No existe la imputación ${id}`);
+  if (row.invoice_id) {
+    throw new store.AdjustError(tr`Esta imputación ya está facturada y no se puede editar.`);
+  }
 
-  values.push(id);
-  db.prepare(`UPDATE time_entries SET ${sets.join(", ")} WHERE id = ?`).run(...values);
+  if (sets.length > 0) {
+    values.push(id);
+    db.prepare(`UPDATE time_entries SET ${sets.join(", ")} WHERE id = ?`).run(...values);
+  }
+
+  // Los segundos van aparte porque no son un campo más: cambiarlos es ajustar
+  // horas que alguien paga, y eso lleva motivo obligatorio y conserva lo
+  // medido. Ver store.adjustEntrySeconds.
+  if (typeof patch["seconds"] === "number") {
+    const motivo = typeof patch["reason"] === "string" ? patch["reason"] : "";
+    store.adjustEntrySeconds(db, id, patch["seconds"], motivo);
+  }
+  if (patch["clearAdjustment"] === true) {
+    store.clearEntryAdjustment(db, id);
+  }
 }
 
 /**
@@ -1376,6 +1444,41 @@ function sendReport(
  * vista previa en la web todavía. Sin datos del emisor (--from-name en la
  * CLI) el PDF sale sin esa cabecera, igual que en la terminal.
  */
+/**
+ * Reimprime una factura ya emitida.
+ *
+ * No recalcula nada: importes, líneas y reparto de IA salen de lo que se
+ * congeló al emitirla. Es lo que hace que el papel de agosto siga siendo el
+ * papel de agosto cuando se pide en diciembre.
+ */
+function sendStoredInvoicePdf(
+  db: Db, res: ServerResponse, number: string, author: string,
+): void {
+  const invoice = store.getInvoice(db, number);
+  if (!invoice) return json(res, 404, { error: "Esa factura no existe." });
+
+  const client = store.getClient(db, invoice.clientId);
+  const project = store.getProject(db, invoice.projectId);
+  if (!client || !project) {
+    return json(res, 409, {
+      error: "La factura existe pero su cliente o su proyecto ya no. No se puede reimprimir.",
+    });
+  }
+
+  const pdf = withLang(documentLang({ clientLanguage: client.language }), () =>
+    invoiceToPdf(invoice, client, project, {
+      ...(author ? { issuer: { name: author } } : {}),
+      ...(invoice.aiAmortized ? { amortizedAiCost: invoice.aiAmortized } : {}),
+    }));
+
+  res.writeHead(200, {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="${invoice.number}.pdf"`,
+    "Content-Length": pdf.length,
+  });
+  res.end(pdf);
+}
+
 function sendInvoice(
   db: Db, res: ServerResponse, projectId: string, cutoffRaw: string, author: string,
 ): void {

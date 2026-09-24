@@ -7,6 +7,14 @@
  * español, cambia la clave: hay que actualizarla también.
  */
 export const EN: Record<string, string> = {
+  // ── server.ts (arranque del panel) ──
+  "El puerto {0} ya está ocupado. Suele ser otro \"estela web\" abierto: ":
+    "Port {0} is already in use. It's usually another \"estela web\" still open: ",
+  "ciérralo, o abre este en otro con --port {0}.":
+    "close it, or open this one elsewhere with --port {0}.",
+  "No hay permiso para usar el puerto {0}. Prueba con --port {1}.":
+    "No permission to use port {0}. Try --port {1}.",
+
   // ── watchers/agents.ts, watchers/codex.ts, cli.ts (escaneo por agente) ──
   "    {0} archivos · {1} registros":
     "    {0} files · {1} records",
