@@ -180,11 +180,34 @@ test("una descripción larga no invade la columna de tiempo", () => {
     `la descripción acaba en ${descEnd.toFixed(1)} y el tiempo empieza en ${time![1]}`);
 });
 
-test("el coste de IA aparece como nota interna y nunca se comparte", () => {
+test("el coste de IA no aparece en el informe, ni siquiera como nota", () => {
+  // Estaba como "NOTA INTERNA (no se comparte)" al pie. Pero esa frase era un
+  // deseo, no un mecanismo: este PDF es justo el que se adjunta a la factura
+  // del cliente, así que en cuanto se envía, se comparte.
+  //
+  // Y contradice lo que promete la web: "nunca tu tarifa ni tu consumo de IA,
+  // porque un cliente que sabe qué parte generó una IA tiene un argumento
+  // nuevo para negociar tu tarifa". Tu gasto de IA sigue estando en
+  // `estela ai-cost` y en el panel local, que son tuyos.
   const inv = invoice(2);
   const text = invoiceToPdf(inv, CLIENT, PROJECT).toString("latin1");
 
-  assert.ok(text.includes("NOTA INTERNA"));
-  assert.ok(text.includes("no se comparte"));
+  assert.ok(!text.includes("NOTA INTERNA"), "no puede quedar rastro de la nota");
+  assert.ok(!text.includes("no se comparte"));
+  assert.ok(!text.includes("Consumo de IA"));
+  assert.ok(!text.includes("tarifa API"));
   assert.equal(inv.total.amount, 2600, "el valor sigue siendo solo las horas");
+});
+
+test("tampoco cuando el coste de IA se repercute al cliente", () => {
+  // Si se repercute, aparece como una línea de la factura, que es otra cosa:
+  // ahí el cliente lo paga y tiene derecho a verlo. Lo que no puede salir es
+  // la nota con tu consumo cuando lo pagas tú.
+  const inv = invoice(2);
+  const text = invoiceToPdf(inv, CLIENT, PROJECT, {
+    amortizedAiCost: { amount: 13205, currency: "EUR" },
+  }).toString("latin1");
+
+  assert.ok(!text.includes("NOTA INTERNA"));
+  assert.ok(!text.includes("Coste real imputado"));
 });

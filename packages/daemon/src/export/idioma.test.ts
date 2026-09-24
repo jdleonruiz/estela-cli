@@ -251,7 +251,7 @@ test("el PDF en inglés no deja ninguna etiqueta en español", () => {
   const t = pdfDe("en");
   // En el PDF los paréntesis van escapados con barra invertida.
   for (const etiqueta of ["HOURS REPORT", "FROM", "TO", "PROJECT", "PERIOD", "DESCRIPTION",
-                          "TIME", "RATE", "AMOUNT", "VALUE", "3 items", "INTERNAL NOTE \\(not shared\\)",
+                          "TIME", "RATE", "AMOUNT", "VALUE", "3 items",
                           "Issued 2026-08-26", "2026-07-29  to  2026-08-26"]) {
     assert.ok(t.includes(`(${etiqueta})`), `falta "${etiqueta}"`);
   }
@@ -264,7 +264,7 @@ test("el PDF en inglés no deja ninguna etiqueta en español", () => {
 test("el PDF en español sigue igual", () => {
   const t = pdfDe("es");
   for (const etiqueta of ["INFORME DE HORAS", "PARA", "PERIODO", "IMPORTE", "3 conceptos",
-                          "NOTA INTERNA \\(no se comparte\\)", "Emitido el 2026-08-26"]) {
+                          "Emitido el 2026-08-26"]) {
     assert.ok(t.includes(`(${etiqueta})`), `falta "${etiqueta}"`);
   }
 });

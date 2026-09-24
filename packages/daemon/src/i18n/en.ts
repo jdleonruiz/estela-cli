@@ -706,12 +706,6 @@ export const EN: Record<string, string> = {
     "1 item",
   "VALOR":
     "VALUE",
-  "NOTA INTERNA (no se comparte)":
-    "INTERNAL NOTE (not shared)",
-  "Consumo de IA del periodo: {0} en tarifa API equivalente.":
-    "AI usage for the period: {0} at equivalent API rates.",
-  "Coste real imputado desde tu suscripción: {0}.":
-    "Actual cost allocated from your subscription: {0}.",
   // ── export/panel.ts (lo que recibe el cliente) ──
   "Avance del proyecto":
     "Project progress",

@@ -150,26 +150,14 @@ export function invoiceToPdf(
   doc.textRight(COL_AMOUNT - 8, y + 3, money(invoice.total), "Helvetica-Bold", 14);
   y += 46;
 
-  // --- Nota interna ---------------------------------------------------------
-  // Lo que costó la IA es tuyo, no del cliente: va en gris, al pie, y nunca
-  // dentro del bloque de totales.
-  if (invoice.aiCost.microUsd > 0 && !invoice.aiCostBilled) {
-    doc.line(M, y, COL_AMOUNT, y, 0.4, 0.85);
-    y += 14;
-    doc.text(M, y, tr`NOTA INTERNA (no se comparte)`, "Helvetica-Bold", 7, 0.55);
-    y += 12;
-
-    const consumption = tr`Consumo de IA del periodo: ${formatAiCost(invoice.aiCost)} en tarifa API equivalente.`;
-    doc.text(M, y, consumption, "Helvetica", 8, 0.5);
-    y += 11;
-
-    if (options.amortizedAiCost) {
-      doc.text(M, y,
-        tr`Coste real imputado desde tu suscripción: ${money(options.amortizedAiCost)}.`,
-        "Helvetica", 8, 0.5);
-      y += 11;
-    }
-  }
+  // Aquí había una "NOTA INTERNA (no se comparte)" con el consumo de IA del
+  // periodo. Se quitó: esa frase era un deseo, no un mecanismo. Este PDF es
+  // justamente el que se adjunta a la factura del cliente, así que en cuanto
+  // se envía, se comparte — y entonces el cliente sabe qué parte del trabajo
+  // hizo una IA, que es un argumento nuevo para negociar la tarifa.
+  //
+  // Es lo que promete la web y no se estaba cumpliendo aquí. Tu consumo de IA
+  // sigue estando donde es tuyo: `estela ai-cost` y el panel local.
 
   if (invoice.notes) {
     y += 6;
