@@ -996,9 +996,11 @@ function rowToCommit(r: Record<string, unknown>) {
 
 function buildDay(db: Db, date: string) {
   const rows = db.prepare(`
-    SELECT * FROM time_entries
-    WHERE local_date = ?
-    ORDER BY started_at
+    SELECT t.*, i.number AS invoice_number
+    FROM time_entries t
+    LEFT JOIN invoices i ON i.id = t.invoice_id
+    WHERE t.local_date = ?
+    ORDER BY t.started_at
   `).all(date) as Record<string, unknown>[];
 
   const projects = new Map(store.listProjects(db).map((p) => [p.id, p]));
@@ -1045,6 +1047,9 @@ function buildDay(db: Db, date: string) {
       billable: Boolean(r["billable"]),
       approved: Boolean(r["approved"]),
       invoiced: r["invoice_id"] !== null,
+      // El número, no solo el sí/no: sirve para saber en qué corte entró un
+      // bloque sin tener que desplegarlo ni buscarlo en otra pantalla.
+      invoiceNumber: (r["invoice_number"] as string | null) ?? null,
       // El ajuste a mano y lo que se midió, para poder enseñar los dos y su
       // motivo. Sin esto la corrección sería un número sin defensa.
       adjustReason: (r["adjust_reason"] as string | null) ?? null,
@@ -1061,15 +1066,30 @@ function buildDay(db: Db, date: string) {
   const billable = entries.filter((e) => e.billable);
   const totalSeconds = entries.reduce((s, e) => s + e.seconds, 0);
 
+  // Facturado y pendiente son cosas distintas y no se suman en un número con
+  // una sola etiqueta. Antes la cabecera decía "por facturar" contando horas
+  // ya cobradas: tras un corte, en un día mixto, ese número no era ni una
+  // cosa ni la otra. Es el mismo criterio que con medido y estimado.
+  const invoicedSeconds = entries.reduce((s, e) => s + (e.invoiced ? e.seconds : 0), 0);
+  const pendingSeconds = totalSeconds - invoicedSeconds;
+
   // Un subtotal por moneda, igual que en el resumen. Sumar euros con dólares
   // exigiría un tipo de cambio que nadie ha declarado, pero con monedas
   // mezcladas el total salía nulo y la pantalla decía "sin tarifa definida"
   // aunque todas las tarifas estuvieran puestas: una explicación falsa es peor
   // que no dar ninguna.
+  // Solo lo pendiente: este importe se enseña bajo la etiqueta "por facturar".
   const perCurrency = new Map<string, number>();
   for (const entry of billable) {
-    if (entry.amountMinor === null) continue;
+    if (entry.amountMinor === null || entry.invoiced) continue;
     perCurrency.set(entry.currency, (perCurrency.get(entry.currency) ?? 0) + entry.amountMinor);
+  }
+  // Y lo ya cobrado ese día, aparte, para poder decirlo sin mezclarlo.
+  const invoicedByCurrency = new Map<string, number>();
+  for (const entry of billable) {
+    if (entry.amountMinor === null || !entry.invoiced) continue;
+    invoicedByCurrency.set(entry.currency,
+      (invoicedByCurrency.get(entry.currency) ?? 0) + entry.amountMinor);
   }
   const totals = [...perCurrency.entries()]
     .map(([currency, amountMinor]) => ({ currency, amountMinor }))
@@ -1085,9 +1105,14 @@ function buildDay(db: Db, date: string) {
     date,
     entries,
     totalSeconds,
+    invoicedSeconds,
+    pendingSeconds,
     totalAmountMinor: totalAmount,
     currency,
     totals,
+    invoicedTotals: [...invoicedByCurrency.entries()]
+      .map(([currency, amountMinor]) => ({ currency, amountMinor }))
+      .sort((a, b) => b.amountMinor - a.amountMinor),
     missingRate,
     aiMicroUsd: entries.reduce((s, e) => s + e.aiMicroUsd, 0),
     pendingApproval: entries.filter((e) => !e.approved && !e.invoiced).length,

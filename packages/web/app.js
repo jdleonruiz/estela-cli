@@ -81,8 +81,16 @@ function renderDay() {
 
   if (hasEntries) {
     $("#day-hours").textContent = fmtDuration(day.totalSeconds);
-    $("#day-blocks").textContent =
-      tr("day.inBlocks", { n: day.entries.length });
+    // Con horas ya facturadas, el reparto va debajo del total: un número
+    // solo, etiquetado "por facturar", contaba dinero ya cobrado.
+    $("#day-blocks").innerHTML = day.invoicedSeconds > 0
+      ? tr("day.inBlocks", { n: day.entries.length }) +
+        ' · <span class="day-split">' +
+        tr("day.split", {
+          invoiced: fmtDuration(day.invoicedSeconds),
+          pending: fmtDuration(day.pendingSeconds),
+        }) + "</span>"
+      : tr("day.inBlocks", { n: day.entries.length });
 
     // Con varias monedas se enseñan todas. Decir "sin tarifa" cuando las hay
     // manda a revisar una configuración que está bien.
@@ -92,11 +100,23 @@ function renderDay() {
       : null;
 
     $("#day-amount").textContent = money || "—";
-    $("#day-amount").parentElement.querySelector(".hero-label").textContent =
+    const etiqueta = $("#day-amount").parentElement.querySelector(".hero-label");
+    etiqueta.textContent =
       totals.length > 1 ? tr("day.toInvoiceByCurrency")
       : totals.length === 1 ? tr("day.toInvoice")
       : day.missingRate ? tr("day.noRate")
       : tr("day.noBillable");
+
+    const yaCobrado = day.invoicedTotals || [];
+    const nota = $("#day-invoiced-note");
+    if (nota) {
+      nota.textContent = yaCobrado.length
+        ? tr("day.alreadyInvoiced", {
+            amount: yaCobrado.map((t) => fmtMoney(t.amountMinor, t.currency)).join(" + "),
+          })
+        : "";
+      nota.hidden = yaCobrado.length === 0;
+    }
   } else {
     // Vaciar aunque esté oculto: una cifra vieja esperando en el DOM es un
     // número equivocado a la espera de que algo la muestre por accidente.
@@ -192,7 +212,9 @@ function renderRowBody(entry) {
 
   if (entry.invoiced) {
     return `<div class="row-body">
-      <p class="detail-line">${tr("row.invoiced")}</p>
+      <p class="detail-line">${entry.invoiceNumber
+        ? tr("row.invoicedIn", { number: esc(entry.invoiceNumber) })
+        : tr("row.invoiced")}</p>
       ${commits}${ai}
     </div>`;
   }

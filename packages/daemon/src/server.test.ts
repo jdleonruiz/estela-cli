@@ -298,3 +298,59 @@ test("un puerto ocupado da un error explicado, no una traza de Node", async () =
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("el día separa lo ya facturado de lo que queda por facturar", async () => {
+  // Hasta aquí la cabecera sumaba todo y lo etiquetaba "por facturar", así
+  // que tras un corte contaba como pendiente dinero ya cobrado. En un día
+  // mixto ese número no era ni una cosa ni la otra.
+  await conServidor(
+    (dbPath) => {
+      sembrar(dbPath);
+      const db = openDatabase(dbPath);
+      try {
+        // Dos horas más el mismo día, y las primeras ya facturadas.
+        store.saveTimeEntry(db, {
+          id: "te_web_2", projectId: "web",
+          startedAt: new Date("2026-09-10T14:00:00Z"), endedAt: new Date("2026-09-10T15:00:00Z"),
+          seconds: 3600, description: "Trabajo nuevo", billable: true, invoiceId: null,
+          aiCost: { microUsd: 0 }, agentSeconds: 0, commitHashes: [], agents: [],
+          source: "agent", kind: "development", branch: "main",
+        });
+        db.prepare(`
+          INSERT INTO invoices (id, number, client_id, project_id, issued_at, cutoff_at,
+            period_start, currency, subtotal_minor, total_minor, total_seconds, ai_micro_usd, lines_json)
+          VALUES ('inv_1','INF-2026-007','acme','web','2026-09-10T13:00:00.000Z',
+                  '2026-09-10T12:59:59.000Z','2026-09-01T00:00:00.000Z','EUR',9000,9000,7200,0,'[]')
+        `).run();
+        db.prepare("UPDATE time_entries SET invoice_id = 'inv_1' WHERE id = 'te_web_1'").run();
+      } finally { db.close(); }
+    },
+    async (base) => {
+      const day = await (await fetch(`${base}/api/day?date=2026-09-10`)).json() as {
+        totalSeconds: number; invoicedSeconds: number; pendingSeconds: number;
+        totals: { currency: string; amountMinor: number }[];
+        entries: { id: string; invoiced: boolean; invoiceNumber: string | null }[];
+      };
+
+      // El sembrado ya trae 2h en "web" y 1h en "sin-tarifa" ese día; el test
+      // añade 1h más. Total 4h, de las que solo las 2h de "web" se facturaron.
+      assert.equal(day.totalSeconds, 14400, "el total sigue siendo todo lo del día");
+      assert.equal(day.invoicedSeconds, 7200, "2h ya facturadas");
+      assert.equal(day.pendingSeconds, 7200, "2h por facturar");
+
+      // El importe etiquetado "por facturar" solo puede contar lo pendiente:
+      // 1h a 45 €/h son 45,00 €, no las 3h.
+      assert.equal(day.totals.length, 1);
+      // 1h a 45 €/h. La hora de "sin-tarifa" no suma importe porque no tiene
+      // tarifa, y las 2h facturadas ya no cuentan aquí.
+      assert.equal(day.totals[0]!.amountMinor, 4500, "solo la hora pendiente con tarifa");
+
+      // Y cada bloque dice en qué corte entró, sin tener que desplegarlo.
+      const facturada = day.entries.find((e) => e.id === "te_web_1")!;
+      assert.equal(facturada.invoiced, true);
+      assert.equal(facturada.invoiceNumber, "INF-2026-007");
+      const nueva = day.entries.find((e) => e.id === "te_web_2")!;
+      assert.equal(nueva.invoiced, false);
+      assert.equal(nueva.invoiceNumber, null);
+    });
+});

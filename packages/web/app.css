@@ -875,3 +875,8 @@ main.wide { max-width: 1180px; }
   border-left:3px solid var(--jade);border-radius:0 8px 8px 0;font-size:.85rem}
 .adjust-why{color:var(--ink-2);margin-top:3px}
 .adjust-shown .chip{margin-top:8px}
+
+/* El reparto facturado/pendiente. Va en gris y pequeño: acompaña al total,
+   no compite con él. */
+.day-split{color:var(--ink-3)}
+.day-invoiced{font-size:.62em;font-weight:500;color:var(--ink-3);white-space:nowrap}
