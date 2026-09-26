@@ -26,14 +26,19 @@ de IA el tiempo ya no se mide tecleando: se va en escribir el prompt, leer lo
 que devuelve y probarlo.
 
 Pero ese trabajo **deja rastro**. Claude Code guarda cada sesión en
-`~/.claude/projects/` y Codex en `~/.codex/sessions/`, las dos con su modelo y
-sus tokens exactos. Git guarda cuándo commiteaste y qué. Estela lee las tres
-cosas y las cruza.
+`~/.claude/projects/`, Codex en `~/.codex/sessions/` y GitHub Copilot en el
+`workspaceStorage` de VS Code, con su modelo y sus tokens. Git guarda cuándo
+commiteaste y qué. Estela lo lee todo y lo cruza.
 
 De Codex salen las horas **medidas** y el coste de IA real, igual que de
 Claude Code. Un modelo que no esté en el catálogo de precios entra con coste
 vacío en vez de con uno inventado, y `estela doctor` te dice cuántos turnos
 están en ese caso.
+
+GitHub Copilot en VS Code (chat y modo agente, en Windows, macOS y Linux) da
+también horas medidas: cuándo empieza y cuándo acaba cada petición. No trae
+coste de IA, porque Copilot se paga por suscripción, y el autocompletado en
+línea no deja nada en disco, así que ese tiempo sale de tus commits.
 
 Lo que no hace:
 
@@ -74,7 +79,7 @@ La demo llena un panel entero con datos inventados y no toca nada tuyo, que es
 la manera honesta de mirar un programa que quiere leerte los transcripts: ver
 qué hace antes de dejarlo cerca de tu historial.
 
-¿Sin Claude Code ni Codex? Funciona igual: sin transcripts, Estela reconstruye
+¿Sin Claude Code, Codex ni Copilot? Funciona igual: sin transcripts, Estela reconstruye
 tu tiempo solo desde tus commits, y lo marca como estimado.
 
 `npm` no actualiza instalaciones globales por su cuenta. Si la instalaste con

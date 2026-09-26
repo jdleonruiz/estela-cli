@@ -6,7 +6,7 @@ import type { AgentTurn, CommitRecord } from "@estela/shared";
 import { setLang } from "../i18n/index.js";
 
 import {
-  groupByBranchAndDay, sessionize, sessionizeCommits, withoutOverlap, type WorkBlock, describeBlock,
+  attachCommits, groupByBranchAndDay, sessionize, sessionizeCommits, withoutOverlap, type WorkBlock, describeBlock,
 } from "./sessionize.js";
 
 // --- Trabajo sin agente ------------------------------------------------------
@@ -189,4 +189,33 @@ test("describeBlock: un commit más va en singular, en los dos idiomas", () => {
     assert.equal(describeBlock(bloqueCon(["a", "b", "c"])), "a (+2 more commits)");
     assert.equal(describeBlock(bloqueCon([], null)), "Development", "sin asuntos ni rama, también traducido");
   } finally { setLang("es"); }
+});
+
+// --- Copilot: agentes del bloque y rama que no viene en la sesión ------------
+
+function copilotTurn(id: string, iso: string, agent: AgentTurn["agent"] = "copilot"): AgentTurn {
+  return {
+    agent, turnId: id, sessionId: "s", at: new Date(iso), model: "copilot/claude-sonnet-4.5",
+    repoPath: "/r", branch: null, producerVersion: null,
+    tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
+  };
+}
+
+test("un bloque sabe qué agentes trabajaron en él", () => {
+  const [bloque] = sessionize([
+    copilotTurn("a", "2026-09-20T10:00:00Z"),
+    copilotTurn("b", "2026-09-20T10:10:00Z", "claude-code"),
+  ]);
+  assert.deepEqual(bloque!.agents, ["claude-code", "copilot"]);
+});
+
+test("sin rama en la sesión, la toma del commit más reciente de ese rato", () => {
+  const [bloque] = attachCommits(sessionize([
+    copilotTurn("a", "2026-09-20T10:00:00Z"),
+    copilotTurn("b", "2026-09-20T10:30:00Z"),
+  ]), [
+    commit("x", "2026-09-20T10:05:00Z", "/r", "main"),
+    commit("y", "2026-09-20T10:25:00Z", "/r", "feature/1234-login"),
+  ]);
+  assert.equal(bloque!.branch, "feature/1234-login");
 });

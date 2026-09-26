@@ -40,7 +40,7 @@ const rolloutCodex = [
                info: { last_token_usage: { input_tokens: 7, output_tokens: 3 } } } },
 ];
 
-test("escanea los dos agentes y los devuelve por separado", async () => {
+test("escanea todos los agentes y los devuelve por separado", async () => {
   const scans = await scanAgents({
     roots: { claudeCode: claudeRoot([asistente("m1")]), codex: codexRoot(rolloutCodex) },
   });
@@ -48,7 +48,9 @@ test("escanea los dos agentes y los devuelve por separado", async () => {
   // Por separado y no mezclados: `logScan` guarda un informe por agente, y un
   // cambio de formato en uno no debe quedar tapado por la salud del otro.
   const porAgente = new Map<string, AgentScan>(scans.map((s) => [s.agent, s]));
-  assert.deepEqual([...porAgente.keys()].sort(), ["claude-code", "codex"]);
+  assert.deepEqual([...porAgente.keys()].sort(), ["claude-code", "codex", "copilot"]);
+  // Con roots propios y sin el de Copilot, no se leen las sesiones reales de VS Code.
+  assert.equal(porAgente.get("copilot")!.report.filesRead, 0);
   assert.equal(porAgente.get("claude-code")!.turns.length, 1);
   assert.equal(porAgente.get("codex")!.turns.length, 1);
   assert.equal(porAgente.get("codex")!.turns[0]!.agent, "codex");
@@ -74,7 +76,7 @@ test("un agente sin nada instalado no impide escanear el otro", async () => {
     roots: { claudeCode: claudeRoot([asistente("m1")]), codex: "/no/existe" },
   });
 
-  assert.equal(scans.length, 2);
+  assert.equal(scans.length, 3);
   assert.equal(scans.find((s) => s.agent === "codex")!.turns.length, 0);
   assert.equal(scans.find((s) => s.agent === "claude-code")!.turns.length, 1);
 });

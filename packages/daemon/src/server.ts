@@ -144,7 +144,7 @@ async function importOnce(dbPath: string): Promise<number> {
         // Sin agente no hay segundos de agente que atribuir.
         agentSeconds: block.turnCount > 0 ? block.seconds : 0,
         commitHashes: block.commits.map((c) => c.hash),
-        agents: block.turnCount > 0 ? ["claude-code"] : [],
+        agents: block.turnCount > 0 ? [...(block.agents ?? ["claude-code"])] : [],
         source: block.turnCount > 0 ? "agent" : "commit", kind: "development",
         branch: block.branch,
         workItems: extractWorkItems(block.branch, block.commits.map((c) => c.subject), project.tracker),

@@ -2,6 +2,7 @@ import type { AgentKind, AgentTurn, ParseReport } from "@estela/shared";
 
 import { resolveScratchpads, scanClaudeCode } from "./claude.js";
 import { scanCodex } from "./codex.js";
+import { defaultCopilotRoots, scanCopilot } from "./copilot.js";
 
 /**
  * Escaneo de todos los agentes que Estela sabe leer.
@@ -35,6 +36,12 @@ export interface AgentScanOptions {
   readonly roots?: {
     readonly claudeCode?: string;
     readonly codex?: string;
+    /**
+     * Carpetas `workspaceStorage` de VS Code. Si se pasan `roots` sin esta, no
+     * se lee Copilot: un test que prepara sus propios Claude y Codex no puede
+     * acabar leyendo las sesiones reales de VS Code de quien lo corre.
+     */
+    readonly copilot?: readonly string[];
   };
 }
 
@@ -46,9 +53,10 @@ export async function scanAgents(options: AgentScanOptions = {}): Promise<AgentS
 
   // En paralelo: son dos lecturas de disco independientes, y en un portátil con
   // meses de historial la diferencia se nota en `estela setup`.
-  const [claude, codex] = await Promise.all([
+  const [claude, codex, copilot] = await Promise.all([
     scanClaudeCode({ ...comunes, ...(options.roots?.claudeCode ? { root: options.roots.claudeCode } : {}) }),
     scanCodex({ ...comunes, ...(options.roots?.codex ? { root: options.roots.codex } : {}) }),
+    scanCopilot({ ...comunes, roots: options.roots ? (options.roots.copilot ?? []) : defaultCopilotRoots() }),
   ]);
 
   // El scratchpad solo lo tiene Claude Code; Codex trabaja en el repositorio.
@@ -58,6 +66,7 @@ export async function scanAgents(options: AgentScanOptions = {}): Promise<AgentS
   return [
     { agent: "claude-code", turns: rescatados, report: claude.report, scratchpadsResolved: movidos },
     { agent: "codex", turns: codex.turns, report: codex.report, scratchpadsResolved: 0 },
+    { agent: "copilot", turns: copilot.turns, report: copilot.report, scratchpadsResolved: 0 },
   ];
 }
 

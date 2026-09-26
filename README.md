@@ -26,14 +26,19 @@ isn't measured in keystrokes anymore: it goes into writing the prompt, reading
 what comes back, and trying it out.
 
 But that work **leaves a trail**. Claude Code saves every session in
-`~/.claude/projects/` and Codex in `~/.codex/sessions/`, both with their exact
-model and tokens. Git records when you committed and what. Estela reads all
-three and lines them up.
+`~/.claude/projects/`, Codex in `~/.codex/sessions/` and GitHub Copilot in VS
+Code's `workspaceStorage`, with their model and tokens. Git records when you
+committed and what. Estela reads all of it and lines it up.
 
 Codex gives you **measured** hours and real AI cost, same as Claude Code. A
 model that isn't in the price catalog gets an empty cost rather than an
 invented one, and `estela doctor` tells you how many turns are in that
 state.
+
+GitHub Copilot in VS Code (chat and agent mode, on Windows, macOS and Linux)
+gives measured hours too: when each request starts and when it finishes. It
+has no AI cost, because Copilot is a flat subscription, and inline completions
+leave nothing on disk, so that time comes from your commits.
 
 What it doesn't do:
 
@@ -75,7 +80,7 @@ The demo fills a whole dashboard with made-up data and touches nothing of
 yours, which is the honest way to look at a program that wants to read your
 transcripts: see what it does before you let it near your own history.
 
-No Claude Code or Codex? It still works: without transcripts, Estela rebuilds
+No Claude Code, Codex or Copilot? It still works: without transcripts, Estela rebuilds
 your time from your commits alone, and marks it as estimated.
 
 `npm` doesn't update global installs on its own. If you installed with

@@ -6,7 +6,7 @@ import type { WorkItemTracker } from "./workitems.js";
 // ---------------------------------------------------------------------------
 
 /** Agentes de los que sabemos leer. */
-export type AgentKind = "claude-code" | "codex" | "cursor" | "gemini-cli";
+export type AgentKind = "claude-code" | "codex" | "copilot" | "cursor" | "gemini-cli";
 
 /**
  * Un turno de agente ya normalizado.

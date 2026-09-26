@@ -1,11 +1,14 @@
 {
   "name": "estela",
-  "version": "0.1.36",
-  "description": "Time tracking you never fill in: rebuilds your billable hours from Claude Code transcripts and your Git history, and splits what the AI cost per project.",
+  "version": "0.1.37",
+  "description": "Time tracking you never fill in: rebuilds your billable hours from Claude Code, Codex and GitHub Copilot sessions and your Git history, and splits what the AI cost per project.",
   "keywords": [
     "time-tracking",
     "claude-code",
     "claude",
+    "codex",
+    "github-copilot",
+    "vscode",
     "ai-cost",
     "billable-hours",
     "timesheet",

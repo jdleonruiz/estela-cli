@@ -499,6 +499,7 @@ function agentName(agent: AgentScan["agent"]): string {
   switch (agent) {
     case "claude-code": return "Claude Code";
     case "codex": return "Codex";
+    case "copilot": return "GitHub Copilot";
     case "cursor": return "Cursor";
     case "gemini-cli": return "Gemini CLI";
   }
@@ -549,7 +550,7 @@ async function cmdSetup(args: Args, dbPath: string): Promise<void> {
     if (cwdRoot) repos.add(cwdRoot);
 
     if (turns.length === 0 && repos.size === 0) {
-      console.log(tr`\n  No se han encontrado sesiones de agentes en ~/.claude ni ~/.codex,`);
+      console.log(tr`\n  No se han encontrado sesiones de Claude Code, Codex ni Copilot (VS Code),`);
       console.log(tr`  ni un repositorio de Git en esta carpeta. Corre esto de nuevo desde`);
       console.log(tr`  dentro de tu proyecto, o trabaja un rato con tu agente y vuelve.\n`);
       return;
@@ -563,7 +564,7 @@ async function cmdSetup(args: Args, dbPath: string): Promise<void> {
       const vistos = scans.filter((s) => s.report.turnsAccepted > 0).map((s) => agentName(s.agent));
       console.log(tr`  ${turns.length} turnos · ${vistos.join(", ")}`);
     } else {
-      console.log(tr`  No se han encontrado sesiones de agentes en ~/.claude ni ~/.codex —`);
+      console.log(tr`  No se han encontrado sesiones de Claude Code, Codex ni Copilot (VS Code) —`);
       console.log(tr`  sin problema, se reconstruye igual desde tus commits de Git.`);
     }
 
@@ -716,7 +717,7 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
         // agente ni agente al que atribuirlos.
         agentSeconds: block.turnCount > 0 ? block.seconds : 0,
         commitHashes: block.commits.map((c) => c.hash),
-        agents: block.turnCount > 0 ? ["claude-code"] : [],
+        agents: block.turnCount > 0 ? [...(block.agents ?? ["claude-code"])] : [],
         source: block.turnCount > 0 ? "agent" : "commit",
         kind: "development",
         branch: block.branch,

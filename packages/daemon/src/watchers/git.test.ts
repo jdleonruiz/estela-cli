@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { baseName } from "../paths.js";
 import { readCommits, repoRoot } from "./git.js";
 
 /** Repo de verdad: lo que falla aquí falla contra git real, no contra un mock. */
@@ -79,5 +80,6 @@ test("repoRoot funciona donde la comprobación de un .git como directorio fallar
   const dir = makeRepo();
   const root = await repoRoot(dir);
   assert.ok(root);
-  assert.ok(root.endsWith(dir.split("/").pop()!));
+  // baseName y no split("/"): en Windows la ruta del test va con \\ y la de git con /.
+  assert.equal(baseName(root), baseName(dir));
 });

@@ -26,14 +26,14 @@ export const EN: Record<string, string> = {
     "    {0} internal records ignored · {1} malformed",
   "    versiones: {0}":
     "    versions: {0}",
-  "\n  No se han encontrado sesiones de agentes en ~/.claude ni ~/.codex,":
-    "\n  No agent sessions found in ~/.claude or ~/.codex, and no Git",
+  "\n  No se han encontrado sesiones de Claude Code, Codex ni Copilot (VS Code),":
+    "\n  No Claude Code, Codex or Copilot (VS Code) sessions found, and no Git",
   "  ni un repositorio de Git en esta carpeta. Corre esto de nuevo desde":
     "  repository in this folder. Run this again from inside your project,",
   "  {0} turnos · {1}":
     "  {0} turns · {1}",
-  "  No se han encontrado sesiones de agentes en ~/.claude ni ~/.codex —":
-    "  No agent sessions found in ~/.claude or ~/.codex —",
+  "  No se han encontrado sesiones de Claude Code, Codex ni Copilot (VS Code) —":
+    "  No Claude Code, Codex or Copilot (VS Code) sessions found —",
   "  {0} turnos nuevos guardados":
     "  {0} new turns saved",
   "Codex puede haber cambiado su formato: revisa los totales antes de facturar.":
@@ -868,4 +868,10 @@ export const EN: Record<string, string> = {
     "{0} is a Pro feature. Link your account with: estela login --email you@email.com",
   "{0} es de Pro. Actualiza con: estela upgrade --plan pro":
     "{0} is a Pro feature. Upgrade with: estela upgrade --plan pro",
+
+  // ── watchers/copilot.ts ──
+  "{0} de {1} peticiones de Copilot venían malformadas ":
+    "{0} of {1} Copilot requests were malformed ",
+  "VS Code puede haber cambiado su formato: revisa los totales antes de facturar.":
+    "VS Code may have changed its format: check the totals before billing.",
 };

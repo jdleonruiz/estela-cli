@@ -1,4 +1,4 @@
-import type { AgentTurn, AiCost, CommitRecord } from "@estela/shared";
+import type { AgentKind, AgentTurn, AiCost, CommitRecord } from "@estela/shared";
 import { localDate } from "@estela/shared";
 import { costOfTurn } from "../pricing/cost.js";
 import { isSameOrInside } from "../paths.js";
@@ -42,6 +42,11 @@ export interface WorkBlock {
   readonly commits: readonly CommitRecord[];
   /** Modelos sin precio en el catálogo. Si no está vacío, el coste es parcial. */
   readonly unpricedModels: readonly string[];
+  /**
+   * Qué agentes trabajaron en el bloque. Opcional para no obligar a cada
+   * bloque construido a mano; los de `sessionize` siempre lo traen.
+   */
+  readonly agents?: readonly AgentKind[];
 }
 
 const DEFAULT_GAP_MINUTES = 30;
@@ -97,10 +102,12 @@ function buildBlock(turns: readonly AgentTurn[], tailMs: number): WorkBlock {
   const models = new Set<string>();
   const unpriced = new Set<string>();
   const sessionIds = new Set<string>();
+  const agents = new Set<AgentKind>();
 
   for (const turn of turns) {
     models.add(turn.model);
     sessionIds.add(turn.sessionId);
+    agents.add(turn.agent);
     const cost = costOfTurn(turn.tokens, turn.model, turn.at);
     if (cost) microUsd += cost.microUsd;
     else unpriced.add(turn.model);
@@ -118,6 +125,7 @@ function buildBlock(turns: readonly AgentTurn[], tailMs: number): WorkBlock {
     sessionIds: [...sessionIds],
     commits: [],
     unpricedModels: [...unpriced].sort(),
+    agents: [...agents].sort(),
   };
 }
 
@@ -187,10 +195,12 @@ export function groupByBranchAndDay(
     const models = new Set<string>();
     const sessionIds = new Set<string>();
     const unpriced = new Set<string>();
+    const agents = new Set<AgentKind>();
     for (const b of bucket) {
       for (const m of b.models) models.add(m);
       for (const s of b.sessionIds) sessionIds.add(s);
       for (const u of b.unpricedModels) unpriced.add(u);
+      for (const a of b.agents ?? []) agents.add(a);
     }
 
     merged.push({
@@ -205,6 +215,7 @@ export function groupByBranchAndDay(
       sessionIds: [...sessionIds],
       commits,
       unpricedModels: [...unpriced].sort(),
+      agents: [...agents].sort(),
     });
   }
 
@@ -254,7 +265,14 @@ export function attachCommits(
       const t = commit.at.getTime();
       return t >= block.startedAt.getTime() && t <= block.endedAt.getTime() + graceMs;
     });
-    return matched.length ? { ...block, commits: matched } : block;
+    if (!matched.length) return block;
+    // Copilot no escribe la rama en sus sesiones. Si el bloque no la trae, la
+    // del commit más reciente de ese rato dice en qué se estaba trabajando, y
+    // sin ella no hay funcionalidad ni ticket (feature/1234-login).
+    const branch = block.branch
+      ?? [...matched].sort((a, b) => b.at.getTime() - a.at.getTime()).find((c) => c.branch)?.branch
+      ?? null;
+    return { ...block, commits: matched, branch };
   });
 }
 
