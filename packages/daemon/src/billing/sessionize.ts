@@ -1,6 +1,7 @@
 import type { AgentTurn, AiCost, CommitRecord } from "@estela/shared";
 import { localDate } from "@estela/shared";
 import { costOfTurn } from "../pricing/cost.js";
+import { isSameOrInside } from "../paths.js";
 import { developmentOn, moreCommits } from "./localize.js";
 
 /**
@@ -246,8 +247,8 @@ export function attachCommits(
 
   return blocks.map((block) => {
     const matched = commits.filter((commit) => {
-      if (block.repoPath && !commit.repoPath.startsWith(block.repoPath) &&
-          !block.repoPath.startsWith(commit.repoPath)) {
+      if (block.repoPath && !isSameOrInside(commit.repoPath, block.repoPath) &&
+          !isSameOrInside(block.repoPath, commit.repoPath)) {
         return false;
       }
       const t = commit.at.getTime();

@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 
 import type { AgentTurn, ParseReport, TokenUsage } from "@estela/shared";
 import { tr } from "../i18n/index.js";
+import { isSameOrInside, normalizePath } from "../paths.js";
 import type { ScanOptions, ScanResult } from "./claude.js";
 
 /**
@@ -182,7 +183,7 @@ function toTurn(
     sessionId,
     at,
     model: state.model,
-    repoPath: state.cwd,
+    repoPath: state.cwd ? normalizePath(state.cwd) : null,
     branch: state.branch,
     tokens: readUsage(last as Record<string, unknown>),
     producerVersion: state.cliVersion,
@@ -234,7 +235,7 @@ function num(value: unknown): number {
 
 function matchesRepo(repoPath: string | null, roots: readonly string[]): boolean {
   if (!repoPath) return false;
-  return roots.some((root) => repoPath === root || repoPath.startsWith(root + "/"));
+  return roots.some((root) => isSameOrInside(repoPath, root));
 }
 
 /**

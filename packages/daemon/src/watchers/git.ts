@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import type { CommitRecord } from "@estela/shared";
+import { normalizePath } from "../paths.js";
 
 const run = promisify(execFile);
 
@@ -113,7 +114,7 @@ export async function readCommits(
 export async function repoRoot(path: string): Promise<string | null> {
   try {
     const { stdout } = await run("git", ["rev-parse", "--show-toplevel"], { cwd: path });
-    return stdout.trim() || null;
+    return stdout.trim() ? normalizePath(stdout.trim()) : null;
   } catch {
     return null;
   }

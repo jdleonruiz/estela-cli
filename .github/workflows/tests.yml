@@ -1,0 +1,28 @@
+# Los tests del CLI en los tres sistemas, en cada push.
+#
+# "Estela funciona en Windows" era una promesa probada a mano en una sola
+# máquina, y justo ahí se escondía que las sesiones del agente no caían en
+# ningún proyecto (las rutas C:\ frente a C:/). Esto la convierte en algo que
+# se comprueba solo.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Algunos tests crean repositorios de git de verdad.
+      - run: git config --global user.email "ci@getestela.dev" && git config --global user.name "CI"
+      - run: npm ci
+      - run: npm test

@@ -757,3 +757,51 @@ test("el gestor de tareas de un proyecto se guarda y se quita sin tocar el resto
     assert.throws(() => store.setProjectTracker(db, "no-existe", null));
   } finally { db.close(); }
 });
+
+// ── Windows ───────────────────────────────────────────────────────────
+
+test("en Windows, una sesión del agente cae en el proyecto que dio de alta git", () => {
+  const db = openDatabase(tempDb());
+  try {
+    store.upsertClient(db, { id: "acme", name: "ACME", currency: "EUR" });
+    // setup guarda la ruta de git (C:/...) y el agente trae la de Windows (C:\...).
+    store.upsertProject(db, {
+      id: "web", clientId: "acme", name: "Web", billable: true, repoPaths: ["C:/Users/ana/web"],
+      roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client",
+    });
+    assert.equal(store.projectForRepo(db, "C:\\Users\\ana\\web"), "web");
+    assert.equal(store.projectForRepo(db, "c:\\users\\ana\\web\\src\\UI"), "web");
+    assert.equal(store.projectForRepo(db, "C:\\Users\\ana\\web2"), null);
+  } finally { db.close(); }
+});
+
+test("la migración 16 deja iguales las rutas de Windows ya guardadas, sin duplicar", () => {
+  const path = tempDb();
+  const db = openDatabase(path);
+  store.upsertClient(db, { id: "acme", name: "ACME", currency: "EUR" });
+  store.upsertProject(db, {
+    id: "web", clientId: "acme", name: "Web", billable: true, repoPaths: [],
+    roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client",
+  });
+  // Como las dejaba una versión anterior: mezcladas, y un commit guardado dos veces.
+  db.exec(`
+    INSERT INTO project_repos (project_id, repo_path) VALUES ('web', 'C:\\Users\\ana\\web');
+    INSERT INTO commits (repo_path, hash, at, author_email, subject) VALUES
+      ('C:/Users/ana/web', 'abc', '2026-09-01T10:00:00Z', 'a@b.com', 'uno'),
+      ('c:\\Users\\ana\\web', 'abc', '2026-09-01T10:00:00Z', 'a@b.com', 'uno'),
+      ('c:\\Users\\ana\\web', 'def', '2026-09-01T11:00:00Z', 'a@b.com', 'dos');
+    INSERT INTO agent_turns (turn_id, agent, session_id, at, model, repo_path)
+      VALUES ('t1', 'claude-code', 's', '2026-09-01T10:00:00Z', 'm', 'C:\\Users\\ana\\web\\src');
+    UPDATE schema_version SET version = 15;
+  `);
+  db.close();
+
+  const migrada = openDatabase(path);
+  try {
+    const col = (sql: string) => (migrada.prepare(sql).all() as { p: string }[]).map((r) => r.p);
+    assert.deepEqual(col("SELECT repo_path AS p FROM project_repos"), ["C:/Users/ana/web"]);
+    assert.deepEqual(col("SELECT repo_path || ' ' || hash AS p FROM commits ORDER BY hash"),
+      ["C:/Users/ana/web abc", "C:/Users/ana/web def"]);
+    assert.deepEqual(col("SELECT repo_path AS p FROM agent_turns"), ["C:/Users/ana/web/src"]);
+  } finally { migrada.close(); }
+});

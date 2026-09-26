@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { tr } from "../i18n/index.js";
+import { normalizePath } from "../paths.js";
 
 /**
  * Esquema local. Todo vive en `~/.estela/estela.db`, en el disco del usuario.
@@ -281,6 +282,30 @@ CREATE TABLE IF NOT EXISTS personal_sync_state (
  * empezar no es una opción de mantenimiento.
  */
 const MIGRATIONS: readonly { version: number; describe: string; run: (db: DatabaseSync) => void }[] = [
+  {
+    version: 16,
+    describe: "rutas de Windows iguales vengan de donde vengan",
+    run: (db) => {
+      // En Windows el agente guardaba C:\Users\ana\repo y git C:/Users/ana/repo:
+      // la misma carpeta, dos textos, y las sesiones del agente sin proyecto.
+      // Se reescriben a la forma de paths.ts. En macOS y Linux no hay nada
+      // que cambiar y esto no toca ninguna fila.
+      //
+      // UPDATE OR IGNORE y luego DELETE: si una carpeta ya estaba guardada de
+      // las dos formas, la fila normalizada gana y la otra sobra (mismo commit,
+      // mismo enlace de proyecto).
+      for (const table of ["project_repos", "commits", "agent_turns"]) {
+        const paths = db.prepare(`SELECT DISTINCT repo_path FROM ${table} WHERE repo_path IS NOT NULL`)
+          .all() as { repo_path: string }[];
+        for (const { repo_path } of paths) {
+          const normal = normalizePath(repo_path);
+          if (normal === repo_path) continue;
+          db.prepare(`UPDATE OR IGNORE ${table} SET repo_path = ? WHERE repo_path = ?`).run(normal, repo_path);
+          db.prepare(`DELETE FROM ${table} WHERE repo_path = ?`).run(repo_path);
+        }
+      }
+    },
+  },
   {
     version: 15,
     describe: "a qué ticket pertenece cada bloque, y el gestor de cada proyecto",

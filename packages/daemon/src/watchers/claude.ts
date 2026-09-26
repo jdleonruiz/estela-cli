@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 
 import type { AgentTurn, ParseReport, TokenUsage } from "@estela/shared";
 import { tr } from "../i18n/index.js";
+import { isSameOrInside, normalizePath } from "../paths.js";
 
 /**
  * Adaptador de Claude Code.
@@ -151,7 +152,7 @@ function toTurn(raw: RawAssistantRecord): AgentTurn | null {
     sessionId: typeof raw.sessionId === "string" ? raw.sessionId : id,
     at,
     model,
-    repoPath: typeof raw.cwd === "string" ? raw.cwd : null,
+    repoPath: typeof raw.cwd === "string" ? normalizePath(raw.cwd) : null,
     branch: typeof raw.gitBranch === "string" && raw.gitBranch ? raw.gitBranch : null,
     tokens: readUsage(raw.message?.usage),
     producerVersion: typeof raw.version === "string" ? raw.version : null,
@@ -245,7 +246,7 @@ function slugOfPath(path: string): string {
 
 function matchesRepo(repoPath: string | null, roots: readonly string[]): boolean {
   if (!repoPath) return false;
-  return roots.some((root) => repoPath === root || repoPath.startsWith(root + "/"));
+  return roots.some((root) => isSameOrInside(repoPath, root));
 }
 
 async function listTranscripts(root: string): Promise<string[]> {

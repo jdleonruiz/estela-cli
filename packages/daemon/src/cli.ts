@@ -26,6 +26,7 @@ import { seedDemo } from "./demo.js";
 import { diagnose, renderFindings } from "./doctor.js";
 import { applySetup, planSetup, summarize, summaryLine } from "./setup.js";
 import { invoiceToCsv, timeEntriesToCsv } from "./export/csv.js";
+import { normalizePath } from "./paths.js";
 import { CLOCKIFY_DATE_FORMATS, type ClockifyDateFormat, timeEntriesToClockifyCsv } from "./export/clockify.js";
 import { invoiceToPdf } from "./export/invoice-pdf.js";
 import { buildShareReport } from "./export/share.js";
@@ -617,7 +618,7 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
     if (since && Number.isNaN(since.getTime())) throw new UserError(tr`Fecha inválida: ${sinceRaw}`);
 
     const repoFilter = str(args, "repo");
-    const repoPaths = repoFilter ? [resolve(repoFilter)] : undefined;
+    const repoPaths = repoFilter ? [normalizePath(resolve(repoFilter))] : undefined;
 
     console.log(tr`Leyendo transcripts de agentes…`);
     const scans = await scanAgents({
@@ -804,14 +805,14 @@ function cmdProjectAdd(args: Args, dbPath: string): void {
       id: required(args, "id"),
       clientId,
       name: required(args, "name"),
-      repoPaths: repo ? [resolve(repo)] : [],
+      repoPaths: repo ? [normalizePath(resolve(repo))] : [],
       billable: str(args, "billable") !== "false",
       roundingMinutes: Number(str(args, "rounding") ?? 0),
       aiCostPolicy: (str(args, "ai-cost") ?? "absorbed") as "absorbed" | "passthrough",
       kind: (str(args, "kind") ?? "client") as "client" | "employment" | "internal",
     });
     console.log(tr`Proyecto "${required(args, "name")}" guardado.`);
-    if (repo) console.log(tr`  repositorio: ${resolve(repo)}`);
+    if (repo) console.log(tr`  repositorio: ${normalizePath(resolve(repo))}`);
   } finally { db.close(); }
 }
 
@@ -1437,7 +1438,7 @@ function cmdTeamRepo(args: Args, dbPath: string): void {
     const repo = required(args, "add");
     if (!store.getProject(db, projectId)) throw new UserError(tr`No existe el proyecto "${projectId}".`);
     store.addProjectRepo(db, projectId, resolve(repo));
-    console.log(tr`Repositorio vinculado a "${projectId}": ${resolve(repo)}`);
+    console.log(tr`Repositorio vinculado a "${projectId}": ${normalizePath(resolve(repo))}`);
   } finally { db.close(); }
 }
 

@@ -10,6 +10,7 @@ import type { ConsumptionRow } from "../billing/amortize.js";
 import { localDate } from "@estela/shared";
 import { costOfTurn } from "../pricing/cost.js";
 import { tr } from "../i18n/index.js";
+import { isSameOrInside, normalizePath } from "../paths.js";
 
 const iso = (d: Date) => d.toISOString();
 
@@ -47,7 +48,7 @@ export function upsertProject(db: DatabaseSync, project: Omit<Project, "closedAt
 
   const link = db.prepare(
     "INSERT OR IGNORE INTO project_repos (project_id, repo_path) VALUES (?, ?)");
-  for (const repo of project.repoPaths) link.run(project.id, repo);
+  for (const repo of project.repoPaths) link.run(project.id, normalizePath(repo));
 }
 
 /**
@@ -61,7 +62,7 @@ export function upsertProject(db: DatabaseSync, project: Omit<Project, "closedAt
  */
 export function addProjectRepo(db: DatabaseSync, projectId: string, repoPath: string): void {
   db.prepare("INSERT OR IGNORE INTO project_repos (project_id, repo_path) VALUES (?, ?)")
-    .run(projectId, repoPath);
+    .run(projectId, normalizePath(repoPath));
 }
 
 export function addRatePeriod(db: DatabaseSync, rate: RatePeriod): void {
@@ -281,8 +282,10 @@ export function projectForRepo(db: DatabaseSync, repoPath: string): string | nul
   const rows = db.prepare("SELECT project_id, repo_path FROM project_repos")
     .all() as { project_id: string; repo_path: string }[];
   // El prefijo más largo gana: permite anidar un subproyecto dentro de un monorepo.
+  // isSameOrInside y no startsWith: en Windows la misma carpeta llega con \ o
+  // con /, y con la unidad en mayúscula o minúscula.
   const match = rows
-    .filter((r) => repoPath === r.repo_path || repoPath.startsWith(r.repo_path + "/"))
+    .filter((r) => isSameOrInside(repoPath, r.repo_path))
     .sort((a, b) => b.repo_path.length - a.repo_path.length)[0];
   return match?.project_id ?? null;
 }
@@ -321,7 +324,7 @@ export function saveTurns(db: DatabaseSync, turns: readonly AgentTurn[]): number
     for (const t of turns) {
       const cost = costOfTurn(t.tokens, t.model, t.at);
       const result = stmt.run(
-        t.turnId, t.agent, t.sessionId, iso(t.at), t.model, t.repoPath, t.branch,
+        t.turnId, t.agent, t.sessionId, iso(t.at), t.model, t.repoPath ? normalizePath(t.repoPath) : null, t.branch,
         t.tokens.input, t.tokens.output, t.tokens.cacheRead,
         t.tokens.cacheWrite5m, t.tokens.cacheWrite1h,
         cost ? cost.microUsd : null, t.producerVersion);
@@ -365,7 +368,7 @@ export function saveCommits(db: DatabaseSync, commits: readonly CommitRecord[]):
   db.exec("BEGIN");
   try {
     for (const c of commits) {
-      const result = stmt.run(c.repoPath, c.hash, iso(c.at), c.authorEmail,
+      const result = stmt.run(normalizePath(c.repoPath), c.hash, iso(c.at), c.authorEmail,
                               c.authorName, c.branch, c.subject,
                               c.linesAdded, c.linesDeleted, c.files.join("\n"));
       inserted += Number(result.changes);

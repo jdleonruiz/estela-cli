@@ -25,6 +25,7 @@ import { allTurns, scanAgents } from "./watchers/agents.js";
 import { gitUserEmail, mergedBranches, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
 import { documentLang, tr, withLang } from "./i18n/index.js";
+import { baseName } from "./paths.js";
 import { localizeDescription } from "./billing/localize.js";
 import { kindLabel } from "./i18n/labels.js";
 
@@ -835,7 +836,7 @@ function buildSummary(db: Db, from: string, to: string) {
       hash: c.hash.slice(0, 7),
       subject: c.subject,
       at: c.at,
-      repo: c.repo_path.split("/").pop() ?? c.repo_path,
+      repo: baseName(c.repo_path),
       linesAdded: c.lines_added,
       linesDeleted: c.lines_deleted,
     })),
@@ -1313,7 +1314,7 @@ function unassignedRepos(db: Db) {
     .slice(0, 40)
     .map((r) => ({
       path: r.repo_path,
-      name: r.repo_path.split("/").pop() ?? r.repo_path,
+      name: baseName(r.repo_path),
       turns: r.turns,
       lastAt: r.last_at.slice(0, 10),
     }));

@@ -5,6 +5,7 @@ import { formatDuration } from "@estela/shared";
 import * as store from "./db/store.js";
 import { gitUserEmail, repoAuthors, repoRoot } from "./watchers/git.js";
 import { tr } from "./i18n/index.js";
+import { baseName } from "./paths.js";
 
 /**
  * Primera ejecución.
@@ -40,7 +41,7 @@ export const DEFAULT_CLIENT = "sin-clasificar";
  * ruta entera: un desplegable con rutas absolutas no lo lee nadie.
  */
 export function projectFromRepo(repoPath: string): { id: string; name: string } {
-  const base = repoPath.split("/").filter(Boolean).pop() ?? "proyecto";
+  const base = baseName(repoPath) || "proyecto";
   const id = base.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
     || "proyecto";
   return { id, name: base };
