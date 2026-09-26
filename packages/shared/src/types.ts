@@ -1,4 +1,5 @@
 import type { AiCost, Currency, Money } from "./money.js";
+import type { WorkItemTracker } from "./workitems.js";
 
 // ---------------------------------------------------------------------------
 // Captura: lo que leemos de las herramientas
@@ -242,6 +243,12 @@ export interface Project {
    * — `estela doctor` avisa en vez de tragárselo en silencio.
    */
   readonly closedAt: Date | null;
+  /**
+   * El gestor de tareas del proyecto (Jira, Azure Boards, GitHub...), para
+   * reconocer sus tickets en ramas y commits. Sin él solo se reconoce lo
+   * inequívoco. Ver `workitems.ts`.
+   */
+  readonly tracker?: WorkItemTracker | null;
 }
 
 /**
@@ -323,6 +330,12 @@ export interface TimeEntry {
   readonly kind: WorkKind;
   /** Rama del trabajo. Permite agrupar el esfuerzo por funcionalidad. */
   readonly branch: string | null;
+  /**
+   * Tickets a los que pertenece (`jira:PROJ-12`, `azure:1234`), sacados de la
+   * rama y los commits o puestos a mano. Opcional al crear; al leer de la
+   * base siempre viene, aunque sea vacío.
+   */
+  readonly workItems?: readonly string[];
 }
 
 export interface InvoiceLine {

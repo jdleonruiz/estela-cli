@@ -168,6 +168,10 @@ function renderRow(entry) {
   const KIND_LABEL = Object.fromEntries(KINDS);
   const kindTag = entry.kind && entry.kind !== "development"
     ? `<span class="kindtag">${esc(KIND_LABEL[entry.kind] || entry.kind)}</span>` : "";
+  // El ticket del gestor de tareas (PROJ-12, AB#1234), para ver de un vistazo
+  // a qué trabajo del equipo corresponde cada bloque.
+  const ticketTags = (entry.workItems || [])
+    .map((t) => `<span class="tickettag">${esc(t)}</span>`).join("");
 
   const meta = [
     entry.projectName,
@@ -183,7 +187,7 @@ function renderRow(entry) {
   <button type="button" class="row-head" data-toggle aria-expanded="${open}">
     <span class="check" aria-hidden="true">✓</span>
     <span class="row-text">
-      <span class="row-title">${kindTag}${esc(entry.description)}</span>
+      <span class="row-title">${kindTag}${ticketTags}${esc(entry.description)}</span>
       <span class="row-meta">${esc(meta)}</span>
     </span>
     <span class="row-figs">
@@ -1752,6 +1756,9 @@ $("#banner-close").addEventListener("click", () => {
 
 // Cambiar de idioma recarga: todo lo ya pintado sale de nuevo en el otro.
 $("#lang-switch").addEventListener("click", () => switchLang());
+// Cambiar de idioma recarga la página, así que basta con fijarlo una vez.
+$("#help-link").href = getLang() === "en"
+  ? "https://getestela.dev/en/#contacto" : "https://getestela.dev/#contacto";
 
 // ── Arranque ───────────────────────────────────────────────────────────
 

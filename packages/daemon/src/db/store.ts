@@ -4,10 +4,12 @@ import { randomUUID } from "node:crypto";
 import type {
   AgentTurn, AiConsentDecision, AiConsentRecord, Client, CloudAccount, CommitRecord, Currency,
   Invoice, InvoiceLine, ParseReport, Project, ProjectSync, RatePeriod, Subscription, TimeEntry,
+  WorkItemTracker,
 } from "@estela/shared";
 import type { ConsumptionRow } from "../billing/amortize.js";
 import { localDate } from "@estela/shared";
 import { costOfTurn } from "../pricing/cost.js";
+import { tr } from "../i18n/index.js";
 
 const iso = (d: Date) => d.toISOString();
 
@@ -106,7 +108,19 @@ export function getProject(db: DatabaseSync, id: string): Project | null {
     aiCostPolicy: row["ai_cost_policy"] as Project["aiCostPolicy"],
     kind: (row["kind"] as Project["kind"]) ?? "client",
     closedAt: row["closed_at"] ? new Date(row["closed_at"] as string) : null,
+    tracker: row["tracker"] ? JSON.parse(row["tracker"] as string) as WorkItemTracker : null,
   };
+}
+
+/**
+ * Configura el gestor de tareas de un proyecto, o lo quita con `null`. Aparte
+ * de `upsertProject` por lo mismo que `addProjectRepo`: volver a guardar el
+ * proyecto entero para esto resetearía el resto de sus campos.
+ */
+export function setProjectTracker(db: DatabaseSync, projectId: string, tracker: WorkItemTracker | null): void {
+  const changes = db.prepare("UPDATE projects SET tracker = ? WHERE id = ?")
+    .run(tracker ? JSON.stringify({ system: tracker.system, prefixes: tracker.prefixes }) : null, projectId).changes;
+  if (changes === 0) throw new Error(tr`No existe el proyecto "${projectId}"`);
 }
 
 /**
@@ -452,8 +466,8 @@ export function saveTimeEntry(
     INSERT INTO time_entries (
       id, project_id, started_at, local_date, ended_at, seconds, description,
       billable, approved, invoice_id, ai_micro_usd, agent_seconds,
-      commit_hashes, agents, source, kind, branch, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      commit_hashes, agents, source, kind, branch, work_items, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       started_at = excluded.started_at, local_date = excluded.local_date,
       ended_at = excluded.ended_at,
@@ -479,12 +493,17 @@ export function saveTimeEntry(
       -- esto, una fila mal etiquetada lo seguiría estando para siempre.
       source = excluded.source,
       branch = excluded.branch,
+      -- Los tickets se rehacen como los commits, salvo que alguien los haya
+      -- puesto a mano: esos son suyos, igual que un ajuste de horas.
+      work_items = CASE WHEN time_entries.work_items_manual = 0
+                        THEN excluded.work_items ELSE time_entries.work_items END,
       -- Solo se marca como tocada si algo cambió de verdad: un reimport que
       -- reescribe los mismos valores no debería envejecer un panel publicado.
       updated_at = CASE
         WHEN time_entries.seconds <> excluded.seconds
           OR time_entries.description <> excluded.description
           OR time_entries.commit_hashes <> excluded.commit_hashes
+          OR (time_entries.work_items_manual = 0 AND time_entries.work_items <> excluded.work_items)
         THEN excluded.updated_at ELSE time_entries.updated_at END
     -- Reimportar rehace lo deducido de los agentes. Lo escrito a mano es tuyo:
     -- un import no puede borrarte una reunión de dos horas que apuntaste ayer.
@@ -499,8 +518,21 @@ export function saveTimeEntry(
          entry.description, entry.billable ? 1 : 0, entry.invoiceId,
          entry.aiCost.microUsd, entry.agentSeconds,
          entry.commitHashes.join(","), entry.agents.join(","),
-         entry.source, entry.kind, entry.branch, iso(at));
+         entry.source, entry.kind, entry.branch, (entry.workItems ?? []).join(","), iso(at));
   return id;
+}
+
+/**
+ * Pone a mano los tickets de un bloque. Desde aquí el reimport ya no los
+ * cambia; `null` devuelve el bloque a lo que se detecte solo.
+ */
+export function setEntryWorkItems(
+  db: DatabaseSync, id: string, keys: readonly string[] | null, at: Date = new Date(),
+): void {
+  const changes = db.prepare(`
+    UPDATE time_entries SET work_items = ?, work_items_manual = ?, updated_at = ? WHERE id = ?
+  `).run(keys ? keys.join(",") : "", keys ? 1 : 0, iso(at), id).changes;
+  if (changes === 0) throw new AdjustError(`No existe la imputación ${id}`);
 }
 
 export function getTimeEntries(db: DatabaseSync, projectId: string): TimeEntry[] {
@@ -572,6 +604,7 @@ function rowToEntry(r: Record<string, unknown>): TimeEntry {
     source: (r["source"] as TimeEntry["source"]) ?? "agent",
     kind: (r["kind"] as TimeEntry["kind"]) ?? "development",
     branch: (r["branch"] as string | null) ?? null,
+    workItems: String(r["work_items"] || "").split(",").filter(Boolean),
   });
 }
 

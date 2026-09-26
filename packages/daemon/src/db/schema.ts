@@ -44,7 +44,10 @@ CREATE TABLE IF NOT EXISTS projects (
   -- mismo que un presupuesto de cero.
   ai_budget_micro_usd INTEGER,
   -- NULL = activo. Ver la migración 12 para por qué cerrar no bloquea nada.
-  closed_at         TEXT
+  closed_at         TEXT,
+  -- Gestor de tareas en JSON ({"system":"jira","prefixes":["PROJ"]}). NULL =
+  -- sin configurar: solo se reconocen los tickets inequívocos.
+  tracker           TEXT
 );
 
 -- Con qué identidad commiteas en cada proyecto.
@@ -151,6 +154,10 @@ CREATE TABLE IF NOT EXISTS time_entries (
   -- por qué, son exactamente lo que este producto promete no hacer.
   adjust_reason   TEXT,
   adjusted_at     TEXT,
+  -- Tickets de este bloque, separados por comas (jira:PROJ-12,azure:1234).
+  -- Se rehacen al reimportar salvo que se pusieran a mano (work_items_manual).
+  work_items      TEXT NOT NULL DEFAULT '',
+  work_items_manual INTEGER NOT NULL DEFAULT 0,
   -- Cuándo se escribió esta fila, no cuándo ocurrió el trabajo. Es lo que
   -- decide si un panel publicado se ha quedado atrás: lo que envejece es que
   -- los datos cambien, y una reunión anotada hoy lleva fecha de esta mañana.
@@ -274,6 +281,19 @@ CREATE TABLE IF NOT EXISTS personal_sync_state (
  * empezar no es una opción de mantenimiento.
  */
 const MIGRATIONS: readonly { version: number; describe: string; run: (db: DatabaseSync) => void }[] = [
+  {
+    version: 15,
+    describe: "a qué ticket pertenece cada bloque, y el gestor de cada proyecto",
+    run: (db) => {
+      // Base de las integraciones con Jira, Azure Boards y GitHub: sin saber
+      // el ticket, las horas pueden ir a un CSV pero no a donde el equipo las
+      // busca. El flag manual sigue la misma idea que el ajuste de la v14:
+      // lo que corriges tú, el reimport no lo pisa.
+      addColumn(db, "time_entries", "work_items", "TEXT NOT NULL DEFAULT ''");
+      addColumn(db, "time_entries", "work_items_manual", "INTEGER NOT NULL DEFAULT 0");
+      addColumn(db, "projects", "tracker", "TEXT");
+    },
+  },
   {
     version: 14,
     describe: "ajustes a mano con su motivo, que el reimport no pisa",

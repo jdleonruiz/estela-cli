@@ -825,4 +825,47 @@ export const EN: Record<string, string> = {
     "--language accepts es, en or auto, and I got \"{0}\".",
   "  Sus documentos salen en {0}.":
     "  Its documents come out in {0}.",
+
+  // ── cli.ts (gestor de tareas y tickets) ──
+  "\"{0}\" usa {1}{2}.":
+    "\"{0}\" uses {1}{2}.",
+  "\"{0}\" no tiene gestor de tareas. Solo se reconocen AB#1234 y claves de Jira en mayúscula en la rama.":
+    "\"{0}\" has no issue tracker. Only AB#1234 and uppercase Jira keys in the branch are recognised.",
+  "\"{0}\" ya no tiene gestor de tareas.":
+    "\"{0}\" no longer has an issue tracker.",
+  "Gestor desconocido: {0}. Usa jira, azure, github, gitlab o none.":
+    "Unknown tracker: {0}. Use jira, azure, github, gitlab or none.",
+  "Prefijo inválido: tienen que ser letras y números, como PROJ u OPS.":
+    "Invalid prefix: it has to be letters and numbers, like PROJ or OPS.",
+  "Para aplicarlo a lo ya capturado:  estela import":
+    "To apply it to what's already captured:  estela import",
+  "No existe el bloque \"{0}\". Los ids salen con: estela entries --project <id> --ids":
+    "There's no block \"{0}\". Ids are shown by: estela entries --project <id> --ids",
+  "Tickets de \"{0}\" devueltos a lo que detecte el import.":
+    "Tickets of \"{0}\" returned to whatever the import detects.",
+  "No sé de qué gestor es \"{0}\". Escríbelo como PROJ-12, AB#1234, o configura el del proyecto con: estela project tracker":
+    "I can't tell which tracker \"{0}\" belongs to. Write it as PROJ-12 or AB#1234, or set the project's with: estela project tracker",
+  // ── cli.ts (export con formato y rango) ──
+  "Formato desconocido: {0}. Usa csv o clockify.":
+    "Unknown format: {0}. Use csv or clockify.",
+  "Exportar a Clockify":
+    "Exporting to Clockify",
+  "Falta --email: el correo de tu cuenta de Clockify.":
+    "Missing --email: your Clockify account's email.",
+  "--date-format admite {0}.":
+    "--date-format accepts {0}.",
+  "--time-format admite 12h o 24h.":
+    "--time-format accepts 12h or 24h.",
+  "  {0} bloques. En Clockify: Settings → Import → Timesheets.":
+    "  {0} blocks. In Clockify: Settings → Import → Timesheets.",
+  "  La fecha y la hora tienen que coincidir con el formato de tu perfil de Clockify;":
+    "  The date and time have to match your Clockify profile's format;",
+  "  si no, repítelo con --date-format DD/MM/YYYY o --time-format 24h.":
+    "  if they don't, run it again with --date-format DD/MM/YYYY or --time-format 24h.",
+  "--month va como YYYY-MM.":
+    "--month goes as YYYY-MM.",
+  "{0} es de Pro. Vincula tu cuenta con: estela login --email tu@correo.com":
+    "{0} is a Pro feature. Link your account with: estela login --email you@email.com",
+  "{0} es de Pro. Actualiza con: estela upgrade --plan pro":
+    "{0} is a Pro feature. Upgrade with: estela upgrade --plan pro",
 };

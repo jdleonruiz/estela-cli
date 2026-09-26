@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 
 import type { TimeEntry, WorkKind } from "@estela/shared";
-import { billableAmount, localDate, roundSeconds, WORK_KIND_LABELS } from "@estela/shared";
+import { billableAmount, extractWorkItems, formatWorkItem, localDate, roundSeconds, WORK_KIND_LABELS } from "@estela/shared";
 
 import { amortize, monthOf, shareForProject } from "./billing/amortize.js";
 import { InvoiceError, issueInvoice, rateAt } from "./billing/invoice.js";
@@ -146,6 +146,7 @@ async function importOnce(dbPath: string): Promise<number> {
         agents: block.turnCount > 0 ? ["claude-code"] : [],
         source: block.turnCount > 0 ? "agent" : "commit", kind: "development",
         branch: block.branch,
+        workItems: extractWorkItems(block.branch, block.commits.map((c) => c.subject), project.tracker),
       });
       imputed++;
     }
@@ -1060,6 +1061,9 @@ function buildDay(db: Db, date: string) {
       source: (r["source"] as string) ?? "agent",
       kind: (r["kind"] as string) ?? "development",
       commits: commits.map((c) => ({ hash: c.hash.slice(0, 7), subject: c.subject })),
+      // Ya en la forma de cada gestor (PROJ-12, AB#1234, #12): es lo que la
+      // gente reconoce, no la clave interna.
+      workItems: String(r["work_items"] ?? "").split(",").filter(Boolean).map(formatWorkItem),
     };
   });
 

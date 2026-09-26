@@ -210,7 +210,7 @@ test("las cabeceras del CSV en español no cambian nunca: hay quien las procesa"
   const csv = withLang("es", () => timeEntriesToCsv([entry("2026-08-10", 3600)], PROJECT, CLIENT, () => null));
   const cabecera = csv.replace("﻿", "").split("\r\n")[0];
   assert.equal(cabecera,
-    "fecha,inicio,fin,horas,descripcion,proyecto,cliente,facturable,tarifa,moneda,importe,coste_ia_usd,factura,commits");
+    "fecha,inicio,fin,horas,descripcion,proyecto,cliente,facturable,tarifa,moneda,importe,coste_ia_usd,factura,commits,tickets");
   assert.ok(csv.includes(",si,"), "facturable: si");
 });
 
@@ -218,7 +218,7 @@ test("el CSV en inglés traduce cabeceras y valores", () => {
   const csv = withLang("en", () => timeEntriesToCsv([entry("2026-08-10", 3600)], PROJECT, CLIENT, () => null));
   const cabecera = csv.replace("﻿", "").split("\r\n")[0];
   assert.equal(cabecera,
-    "date,start,end,hours,description,project,client,billable,rate,currency,amount,ai_cost_usd,invoice,commits");
+    "date,start,end,hours,description,project,client,billable,rate,currency,amount,ai_cost_usd,invoice,commits,tickets");
   assert.ok(csv.includes(",yes,"), "billable: yes");
   assert.ok(!csv.includes(",si,"));
 });

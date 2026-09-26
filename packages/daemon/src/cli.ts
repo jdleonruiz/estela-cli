@@ -8,10 +8,10 @@ process.on("warning", (w) => {
   if (w.name !== "ExperimentalWarning") console.warn(w);
 });
 
-import type { Client, Currency, TimeEntry, WorkKind } from "@estela/shared";
+import type { Client, CloudAccount, Currency, TimeEntry, TrackerSystem, WorkKind } from "@estela/shared";
 import {
-  formatAiCost, formatDuration, formatMoney, localDate, parseMoney, setMoneyLocale,
-  WORK_KIND_LABELS,
+  extractWorkItems, formatAiCost, formatDuration, formatMoney, formatWorkItem, localDate, parseMoney,
+  parseWorkItem, setMoneyLocale, TRACKER_SYSTEMS, WORK_KIND_LABELS,
 } from "@estela/shared";
 
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -26,6 +26,7 @@ import { seedDemo } from "./demo.js";
 import { diagnose, renderFindings } from "./doctor.js";
 import { applySetup, planSetup, summarize, summaryLine } from "./setup.js";
 import { invoiceToCsv, timeEntriesToCsv } from "./export/csv.js";
+import { CLOCKIFY_DATE_FORMATS, type ClockifyDateFormat, timeEntriesToClockifyCsv } from "./export/clockify.js";
 import { invoiceToPdf } from "./export/invoice-pdf.js";
 import { buildShareReport } from "./export/share.js";
 import { startServer } from "./server.js";
@@ -74,6 +75,11 @@ estela — registro de horas para desarrollo asistido por IA
         vuelve a haber actividad ahí — "estela doctor" avisa en ese caso, en
         vez de perder el bloque o facturarlo por sorpresa.
   estela project reopen --project <id>
+  estela project tracker --project <id> [--system jira|azure|github|gitlab|none]
+                         [--prefix PROJ,OPS]
+        El gestor de tareas del proyecto, para reconocer sus tickets en la
+        rama y los commits (feature/1234-login, AB#1234, PROJ-12). Luego
+        "estela import" lo aplica a lo ya capturado.
   estela rate set --project <id> --rate <importe> [--from YYYY-MM-DD]
   estela budget --project <id> [--amount <dólares>|none]
         Presupuesto mensual de IA. Sin --amount, consulta el actual. Alimenta
@@ -100,7 +106,11 @@ estela — registro de horas para desarrollo asistido por IA
   estela doctor                       Revisa los datos y avisa de lo que
                                       rompería una demo. Úsalo antes de publicar.
   estela status                       Qué hay capturado y sin imputar.
-  estela entries --project <id>       Bloques imputados a un proyecto.
+  estela entries --project <id> [--ids]
+        Bloques imputados a un proyecto, con sus tickets. --ids enseña el id
+        de cada uno, para "estela entry link".
+  estela entry link --entry <id> --items PROJ-12[,AB#1234] | --clear
+        Pone a mano los tickets de un bloque. El import ya no los cambia.
   estela ai-cost                      Reparto de tu cuota entre proyectos.
   estela share --project <id> [--from YYYY-MM-DD] [--to YYYY-MM-DD]
                [--author <tu nombre>] [--with-amounts] [--out <fichero.html>]
@@ -158,7 +168,12 @@ estela — registro de horas para desarrollo asistido por IA
   estela account
         Tu correo, tu plan, y desde qué máquinas te has conectado.
 
-  estela export --project <id> [--out <fichero.csv>]
+  estela export --project <id> [--out <fichero.csv>] [--month YYYY-MM]
+                [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format csv|clockify]
+        Tus bloques en CSV. --format clockify (Pro) sale listo para importar en
+        Clockify; --email es tu correo allí (por defecto el de tu cuenta de
+        Estela), y --date-format/--time-format tienen que coincidir con tu
+        perfil de Clockify (MM/DD/YYYY y 12h por defecto).
 
   estela report --project <id> --cutoff YYYY-MM-DD [--dry-run]
                 [--pdf <fichero.pdf>] [--csv <fichero.csv>] [--fx <tipo>]
@@ -209,6 +224,11 @@ estela — time tracking for AI-assisted development
         there's activity there again — "estela doctor" flags that instead of
         silently dropping the block or billing it by surprise.
   estela project reopen --project <id>
+  estela project tracker --project <id> [--system jira|azure|github|gitlab|none]
+                         [--prefix PROJ,OPS]
+        The project's issue tracker, to recognise its tickets in the branch
+        and commits (feature/1234-login, AB#1234, PROJ-12). Then
+        "estela import" applies it to what's already captured.
   estela rate set --project <id> --rate <amount> [--from YYYY-MM-DD]
   estela budget --project <id> [--amount <dollars>|none]
         Monthly AI budget. Without --amount, shows the current one. Feeds the
@@ -235,7 +255,11 @@ estela — time tracking for AI-assisted development
   estela doctor                       Checks your data and flags anything that
                                       would ruin a demo. Run it before publishing.
   estela status                       What's been captured and not yet assigned.
-  estela entries --project <id>       Blocks assigned to a project.
+  estela entries --project <id> [--ids]
+        Blocks assigned to a project, with their tickets. --ids shows each
+        one's id, for "estela entry link".
+  estela entry link --entry <id> --items PROJ-12[,AB#1234] | --clear
+        Sets a block's tickets by hand. Imports won't change them anymore.
   estela ai-cost                      How your subscription splits across projects.
   estela share --project <id> [--from YYYY-MM-DD] [--to YYYY-MM-DD]
                [--author <your name>] [--with-amounts] [--out <file.html>]
@@ -293,7 +317,12 @@ estela — time tracking for AI-assisted development
   estela account
         Your email, your plan, and which machines you've signed in from.
 
-  estela export --project <id> [--out <file.csv>]
+  estela export --project <id> [--out <file.csv>] [--month YYYY-MM]
+                [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--format csv|clockify]
+        Your blocks as CSV. --format clockify (Pro) comes out ready to import
+        into Clockify; --email is your email there (your Estela account's by
+        default), and --date-format/--time-format have to match your Clockify
+        profile (MM/DD/YYYY and 12h by default).
 
   estela report --project <id> --cutoff YYYY-MM-DD [--dry-run]
                 [--pdf <file.pdf>] [--csv <file.csv>] [--fx <rate>]
@@ -690,6 +719,9 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
         source: block.turnCount > 0 ? "agent" : "commit",
         kind: "development",
         branch: block.branch,
+        // El ticket se saca aquí y no más tarde: en la base solo quedan los
+        // hashes de los commits, y es en sus mensajes donde va el `AB#1234`.
+        workItems: extractWorkItems(block.branch, block.commits.map((c) => c.subject), project.tracker),
       };
       // El id es determinista (proyecto + día + rama) para que reimportar
       // actualice la imputación en vez de duplicarla. La fecha tiene que ser la
@@ -844,6 +876,80 @@ function cmdProjectReopen(args: Args, dbPath: string): void {
 }
 
 /**
+ * `estela project tracker` — qué gestor de tareas usa un proyecto, para
+ * reconocer sus tickets en ramas y commits. Sin --system enseña el actual.
+ *
+ * No recalcula nada por sí mismo: `estela import` ya rehace todos los bloques
+ * no facturados, y así solo hay un camino que decide los tickets.
+ */
+function cmdProjectTracker(args: Args, dbPath: string): void {
+  const db = openDatabase(dbPath);
+  try {
+    const projectId = required(args, "project");
+    const project = store.getProject(db, projectId);
+    if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
+
+    const system = str(args, "system");
+    if (!system) {
+      console.log(project.tracker
+        ? tr`"${project.name}" usa ${project.tracker.system}${project.tracker.prefixes.length ? " (" + project.tracker.prefixes.join(", ") + ")" : ""}.`
+        : tr`"${project.name}" no tiene gestor de tareas. Solo se reconocen AB#1234 y claves de Jira en mayúscula en la rama.`);
+      return;
+    }
+
+    if (system === "none") {
+      store.setProjectTracker(db, projectId, null);
+      console.log(tr`"${project.name}" ya no tiene gestor de tareas.`);
+    } else {
+      if (!(TRACKER_SYSTEMS as readonly string[]).includes(system)) {
+        throw new UserError(tr`Gestor desconocido: ${system}. Usa jira, azure, github, gitlab o none.`);
+      }
+      const prefixes = (str(args, "prefix") ?? "").split(",").map((p) => p.trim().toUpperCase()).filter(Boolean);
+      if (prefixes.some((p) => !/^[A-Z][A-Z0-9]*$/.test(p))) {
+        throw new UserError(tr`Prefijo inválido: tienen que ser letras y números, como PROJ u OPS.`);
+      }
+      store.setProjectTracker(db, projectId, { system: system as TrackerSystem, prefixes });
+      console.log(tr`"${project.name}" usa ${system}${prefixes.length ? " (" + prefixes.join(", ") + ")" : ""}.`);
+    }
+    console.log(tr`Para aplicarlo a lo ya capturado:  estela import`);
+  } finally { db.close(); }
+}
+
+/**
+ * `estela entry link` — pone a mano los tickets de un bloque, cuando la rama
+ * no lo decía o lo decía mal. Desde entonces el import no los toca;
+ * `--clear` los devuelve a lo que se detecte solo.
+ */
+function cmdEntryLink(args: Args, dbPath: string): void {
+  const db = openDatabase(dbPath);
+  try {
+    const entryId = required(args, "entry");
+    const row = db.prepare("SELECT project_id FROM time_entries WHERE id = ?").get(entryId) as
+      { project_id: string } | undefined;
+    if (!row) throw new UserError(tr`No existe el bloque "${entryId}". Los ids salen con: estela entries --project <id> --ids`);
+
+    if (args.flags["clear"] === true) {
+      store.setEntryWorkItems(db, entryId, null);
+      console.log(tr`Tickets de "${entryId}" devueltos a lo que detecte el import.`);
+      return;
+    }
+
+    const tracker = store.getProject(db, row.project_id)?.tracker ?? null;
+    const raw = required(args, "items").split(",").map((t) => t.trim()).filter(Boolean);
+    const keys: string[] = [];
+    for (const text of raw) {
+      const key = parseWorkItem(text, tracker);
+      if (!key) {
+        throw new UserError(tr`No sé de qué gestor es "${text}". Escríbelo como PROJ-12, AB#1234, o configura el del proyecto con: estela project tracker`);
+      }
+      if (!keys.includes(key)) keys.push(key);
+    }
+    store.setEntryWorkItems(db, entryId, keys);
+    console.log(`"${entryId}" → ${keys.map(formatWorkItem).join(", ")}`);
+  } finally { db.close(); }
+}
+
+/**
  * Presupuesto mensual de IA de un proyecto.
  *
  * En dólares, que es la moneda en la que facturan los modelos, aunque le
@@ -965,14 +1071,17 @@ function cmdEntries(args: Args, dbPath: string): void {
     const entries = store.getTimeEntries(db, projectId);
     if (entries.length === 0) { console.log(tr`Sin bloques imputados. Ejecuta: estela import`); return; }
 
+    const ids = args.flags["ids"] === true;
     console.log(`${project.name}\n`);
     for (const e of entries) {
       const flag = e.invoiceId ? tr`facturado` : e.billable ? tr`pendiente` : tr`no facturable`;
+      const tickets = (e.workItems ?? []).map(formatWorkItem).join(",");
       console.log(
         `${e.startedAt.toISOString().slice(0, 16).replace("T", " ")}  ` +
         `${formatDuration(e.seconds).padStart(8)}  ` +
         `${formatAiCost(e.aiCost).padStart(9)}  ` +
-        `${flag.padEnd(14)}  ${e.description.slice(0, 44)}`);
+        `${flag.padEnd(14)}  ${tickets ? tickets.padEnd(10) + "  " : ""}${e.description.slice(0, 44)}`);
+      if (ids) console.log(`    ${e.id}`);
     }
   } finally { db.close(); }
 }
@@ -1481,7 +1590,7 @@ function cmdDoctor(dbPath: string): void {
   } finally { db.close(); }
 }
 
-function cmdExport(args: Args, dbPath: string): void {
+async function cmdExport(args: Args, dbPath: string): Promise<void> {
   const db = openDatabase(dbPath);
   try {
     const projectId = required(args, "project");
@@ -1490,10 +1599,28 @@ function cmdExport(args: Args, dbPath: string): void {
     const client = store.getClient(db, project.clientId)!;
     const rates = store.getRates(db, projectId);
 
+    const format = str(args, "format") ?? "csv";
+    if (format !== "csv" && format !== "clockify") {
+      throw new UserError(tr`Formato desconocido: ${format}. Usa csv o clockify.`);
+    }
+    const entries = entriesInRange(store.getTimeEntries(db, projectId), args);
     const lang = docLangOf(args, client);
-    const csv = withLang(lang, () => timeEntriesToCsv(
-      store.getTimeEntries(db, projectId), project, client,
-      (at) => rateAt(rates, projectId, at)));
+
+    let csv: string;
+    if (format === "clockify") {
+      const account = await requirePaidPlan(db, tr`Exportar a Clockify`);
+      const email = str(args, "email") ?? account?.email;
+      if (!email) throw new UserError(tr`Falta --email: el correo de tu cuenta de Clockify.`);
+      const dateFormat = (str(args, "date-format") ?? "MM/DD/YYYY").toUpperCase() as ClockifyDateFormat;
+      if (!CLOCKIFY_DATE_FORMATS.includes(dateFormat)) {
+        throw new UserError(tr`--date-format admite ${CLOCKIFY_DATE_FORMATS.join(", ")}.`);
+      }
+      const timeFormat = str(args, "time-format") ?? "12h";
+      if (timeFormat !== "12h" && timeFormat !== "24h") throw new UserError(tr`--time-format admite 12h o 24h.`);
+      csv = withLang(lang, () => timeEntriesToClockifyCsv(entries, project, client, { email, dateFormat, timeFormat }));
+    } else {
+      csv = withLang(lang, () => timeEntriesToCsv(entries, project, client, (at) => rateAt(rates, projectId, at)));
+    }
 
     const out = str(args, "out");
     if (out) {
@@ -1501,11 +1628,63 @@ function cmdExport(args: Args, dbPath: string): void {
       console.log(tr`CSV: ${out}`);
       // Solo si va a un fichero: por la salida estándar el aviso se colaría
       // dentro del propio CSV.
-      hintDocLang(args, client, lang);
+      if (format === "clockify") {
+        console.log(tr`  ${entries.length} bloques. En Clockify: Settings → Import → Timesheets.`);
+        console.log(tr`  La fecha y la hora tienen que coincidir con el formato de tu perfil de Clockify;`);
+        console.log(tr`  si no, repítelo con --date-format DD/MM/YYYY o --time-format 24h.`);
+      } else {
+        hintDocLang(args, client, lang);
+      }
     } else {
       process.stdout.write(csv);
     }
   } finally { db.close(); }
+}
+
+/**
+ * `--month YYYY-MM`, o `--from`/`--to` en fechas locales. Sin ninguno, todo:
+ * es lo que hacía `estela export` antes de tener rango.
+ */
+function entriesInRange(entries: readonly TimeEntry[], args: Args): TimeEntry[] {
+  const month = str(args, "month");
+  if (month && !/^\d{4}-\d{2}$/.test(month)) throw new UserError(tr`--month va como YYYY-MM.`);
+  const from = month ? `${month}-01` : str(args, "from");
+  const to = month ? `${month}-31` : str(args, "to");
+  for (const d of [from, to]) {
+    if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new UserError(tr`Fecha inválida: ${d}`);
+  }
+  return entries.filter((e) => {
+    const day = localDate(e.startedAt);
+    return (!from || day >= from) && (!to || day <= to);
+  });
+}
+
+/**
+ * Lo de Pro, comprobado contra la cuenta y no contra lo guardado aquí: el plan
+ * local se anota "free" al hacer login y nadie lo actualiza después de pagar.
+ * Sin conexión se deja pasar — mejor regalar un export que bloquear a quien
+ * paga porque está en un avión — y se aprovecha la respuesta para dejar el
+ * plan local al día.
+ */
+async function requirePaidPlan(db: ReturnType<typeof openDatabase>, what: string) {
+  const account = store.getCloudAccount(db);
+  if (!account) {
+    throw new UserError(tr`${what} es de Pro. Vincula tu cuenta con: estela login --email tu@correo.com`);
+  }
+  try {
+    const info = await cloudGet<{ plan: string }>(account.apiBaseUrl, "/account", { deviceToken: account.deviceToken });
+    store.setCloudAccount(db, { ...account, plan: info.plan as CloudAccount["plan"] });
+    if (info.plan === "free") {
+      throw new UserError(tr`${what} es de Pro. Actualiza con: estela upgrade --plan pro`);
+    }
+  } catch (error) {
+    if (error instanceof CloudError && error.status === 401) {
+      throw new UserError(tr`Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n  estela login --email tu@correo.com\n`);
+    }
+    if (!(error instanceof CloudError) || error.status !== undefined) throw error;
+    // Sin conexión: se deja pasar.
+  }
+  return account;
 }
 
 function cmdSubscriptionAdd(args: Args, dbPath: string): void {
@@ -1709,6 +1888,8 @@ async function main(): Promise<void> {
     case "project add":       cmdProjectAdd(args, dbPath); break;
     case "project close":     cmdProjectClose(args, dbPath); break;
     case "project reopen":    cmdProjectReopen(args, dbPath); break;
+    case "project tracker":   cmdProjectTracker(args, dbPath); break;
+    case "entry link":        cmdEntryLink(args, dbPath); break;
     case "rate set":          cmdRateSet(args, dbPath); break;
     case "budget":            cmdBudget(args, dbPath); break;
     case "subscription add":  cmdSubscriptionAdd(args, dbPath); break;
@@ -1720,7 +1901,7 @@ async function main(): Promise<void> {
     case "author":            await cmdAuthor(args, dbPath); break;
     case "share":             cmdShare(args, dbPath); break;
     case "publish":           await cmdPublish(args, dbPath); break;
-    case "export":            cmdExport(args, dbPath); break;
+    case "export":            await cmdExport(args, dbPath); break;
     case "report":            cmdInvoice(args, dbPath); break;
     case "login":             await cmdLogin(args, dbPath); break;
     case "logout":            await cmdLogout(dbPath); break;

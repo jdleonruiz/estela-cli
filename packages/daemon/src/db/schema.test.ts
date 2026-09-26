@@ -701,3 +701,59 @@ test("reimportar no toca una imputación ya facturada", () => {
     assert.equal(r.description, "feat: cartera de servicios");
   } finally { db.close(); }
 });
+
+// ── Tickets ───────────────────────────────────────────────────────────
+
+function reimportarCon(db: ReturnType<typeof openDatabase>, workItems: string[]): void {
+  store.saveTimeEntry(db, {
+    id: "te_fija", projectId: "web",
+    startedAt: new Date("2026-09-23T09:00:00.000Z"),
+    endedAt: new Date("2026-09-23T10:00:00.000Z"),
+    seconds: 3600, description: "feat: cartera de servicios", billable: true,
+    invoiceId: null, aiCost: { microUsd: 0 }, agentSeconds: 3600,
+    commitHashes: [], agents: [], source: "agent", kind: "development", branch: "main",
+    workItems,
+  });
+}
+
+test("los tickets se rehacen al reimportar, salvo los puestos a mano", () => {
+  const path = tempDb();
+  entradaDeAgente(path, 3600);
+  const db = openDatabase(path);
+  try {
+    const tickets = () => store.getTimeEntries(db, "web")[0]!.workItems;
+    assert.deepEqual(tickets(), [], "una entrada de antes de los tickets lee una lista vacía");
+
+    reimportarCon(db, ["azure:1234"]);
+    assert.deepEqual(tickets(), ["azure:1234"]);
+
+    // Corregido a mano: el reimport, que sigue detectando el 1234, no lo pisa.
+    store.setEntryWorkItems(db, "te_fija", ["azure:5678"]);
+    reimportarCon(db, ["azure:1234"]);
+    assert.deepEqual(tickets(), ["azure:5678"]);
+
+    // Quitar la corrección devuelve el bloque a lo detectado.
+    store.setEntryWorkItems(db, "te_fija", null);
+    reimportarCon(db, ["azure:1234"]);
+    assert.deepEqual(tickets(), ["azure:1234"]);
+
+    assert.throws(() => store.setEntryWorkItems(db, "no-existe", ["azure:1"]));
+  } finally { db.close(); }
+});
+
+test("el gestor de tareas de un proyecto se guarda y se quita sin tocar el resto", () => {
+  const path = tempDb();
+  entradaDeAgente(path, 3600);
+  const db = openDatabase(path);
+  try {
+    assert.equal(store.getProject(db, "web")!.tracker, null);
+    store.setProjectTracker(db, "web", { system: "jira", prefixes: ["PROJ"] });
+    const p = store.getProject(db, "web")!;
+    assert.deepEqual(p.tracker, { system: "jira", prefixes: ["PROJ"] });
+    assert.equal(p.name, "Web", "el resto del proyecto sigue igual");
+
+    store.setProjectTracker(db, "web", null);
+    assert.equal(store.getProject(db, "web")!.tracker, null);
+    assert.throws(() => store.setProjectTracker(db, "no-existe", null));
+  } finally { db.close(); }
+});

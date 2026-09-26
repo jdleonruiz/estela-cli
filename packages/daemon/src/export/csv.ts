@@ -1,5 +1,5 @@
 import type { Client, Invoice, Project, TimeEntry } from "@estela/shared";
-import { billableAmount, formatMoney } from "@estela/shared";
+import { billableAmount, formatMoney, formatWorkItem } from "@estela/shared";
 
 import { localizeDescription } from "../billing/localize.js";
 import { getLang } from "../i18n/index.js";
@@ -22,7 +22,9 @@ import { getLang } from "../i18n/index.js";
 const COLUMNS = {
   es: {
     entries: ["fecha", "inicio", "fin", "horas", "descripcion", "proyecto", "cliente",
-              "facturable", "tarifa", "moneda", "importe", "coste_ia_usd", "factura", "commits"],
+              "facturable", "tarifa", "moneda", "importe", "coste_ia_usd", "factura", "commits",
+              // Al final a propósito: quien lee las columnas por posición no se rompe.
+              "tickets"],
     yes: "si", no: "no",
     invoice: "factura", client: "cliente", project: "proyecto", issued: "emitida",
     period: "periodo", to: "a", currency: "moneda",
@@ -32,7 +34,8 @@ const COLUMNS = {
   },
   en: {
     entries: ["date", "start", "end", "hours", "description", "project", "client",
-              "billable", "rate", "currency", "amount", "ai_cost_usd", "invoice", "commits"],
+              "billable", "rate", "currency", "amount", "ai_cost_usd", "invoice", "commits",
+              "tickets"],
     yes: "yes", no: "no",
     invoice: "invoice", client: "client", project: "project", issued: "issued",
     period: "period", to: "to", currency: "currency",
@@ -83,6 +86,7 @@ export function timeEntriesToCsv(
       (e.aiCost.microUsd / 1_000_000).toFixed(4),
       e.invoiceId ?? "",
       e.commitHashes.join(" "),
+      (e.workItems ?? []).map(formatWorkItem).join(" "),
     ]);
   }
 
