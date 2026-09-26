@@ -13,6 +13,10 @@ npx estela setup
 Twenty seconds later you have the last few months of your history. No account,
 no card, and nothing leaves your machine.
 
+![Estela's dashboard: the hours rebuilt from your AI sessions and Git, what they're worth per client, and what the AI cost](https://raw.githubusercontent.com/jdleonruiz/estela-cli/main/docs/dashboard.png)
+
+<sub>The local dashboard (`estela web`), here with the made-up data from `estela demo`.</sub>
+
 ---
 
 ## Why it exists

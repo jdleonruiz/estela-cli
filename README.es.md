@@ -13,6 +13,10 @@ npx estela setup
 Veinte segundos después tienes tu historial de los últimos meses. Sin cuenta,
 sin tarjeta y sin que nada salga de tu máquina.
 
+![El panel de Estela: las horas reconstruidas desde tus sesiones de IA y Git, lo que valen por cliente y lo que costó la IA](https://raw.githubusercontent.com/jdleonruiz/estela-cli/main/docs/dashboard.png)
+
+<sub>El panel local (`estela web`), aquí con los datos inventados de `estela demo`.</sub>
+
 ---
 
 ## Por qué existe
