@@ -248,6 +248,16 @@ Node 22 and **zero runtime dependencies**, on purpose: nobody installs a program
 that reads their transcripts if they can't audit it, and an empty dependency
 list can be audited in an afternoon.
 
+## Contributing
+
+Issues and pull requests are welcome, and the
+[good first issues](https://github.com/jdleonruiz/estela-cli/labels/good%20first%20issue)
+are a good place to start. One thing to know so nobody's put off: this
+repository mirrors the open part of a larger repo where the paid service also
+lives, which is why each commit here is a release. I review PRs here and apply
+them to the main repo keeping you as the author, and the next release commit
+credits you as co-author. PRs welcome — I merge them into the main repo.
+
 ## Open source, closed service
 
 Everything that installs on your machine is open source under the MIT license:

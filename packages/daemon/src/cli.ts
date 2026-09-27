@@ -14,7 +14,7 @@ import {
   parseWorkItem, setMoneyLocale, TRACKER_SYSTEMS, WORK_KIND_LABELS,
 } from "@estela/shared";
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 
 import { amortize, monthOf, shareForProject } from "./billing/amortize.js";
 import { issueInvoice, InvoiceError, marginOf, rateAt, renderInvoice } from "./billing/invoice.js";
@@ -608,7 +608,22 @@ async function cmdSetup(args: Args, dbPath: string): Promise<void> {
       console.log(tr`  es de un cliente al que facturas, ponle la suya y podrás emitir`);
       console.log(tr`  informes:  estela rate set --project <id> --rate 50\n`);
     }
+    starHintOnce(dbPath);
   } finally { db.close(); }
+}
+
+/**
+ * La estrella se pide una vez, al terminar bien el primer setup: es cuando se
+ * acaba de ver funcionar. Casi todo el que instala lo hace por npm y nunca
+ * pasa por el repositorio, así que sin esto no sabe que existe. Una marca al
+ * lado de la base evita pedirlo en cada setup, que sería insistir.
+ */
+function starHintOnce(dbPath: string): void {
+  const flag = join(dirname(dbPath), ".star-hint-shown");
+  if (existsSync(flag)) return;
+  console.log(tr`\n  ¿Te sirve? Una estrella en GitHub ayuda a que otros lo encuentren:`);
+  console.log(`  https://github.com/jdleonruiz/estela-cli\n`);
+  try { writeFileSync(flag, new Date().toISOString()); } catch { /* sin permiso: se volverá a pedir, no pasa nada */ }
 }
 
 async function cmdImport(args: Args, dbPath: string): Promise<void> {

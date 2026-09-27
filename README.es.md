@@ -247,6 +247,17 @@ Node 22 y **cero dependencias de runtime**, a propósito: nadie instala un
 programa que lee sus transcripts si no puede auditarlo, y una lista de
 dependencias vacía se audita en una tarde.
 
+## Contribuir
+
+Los issues y los pull requests son bienvenidos, y los
+[good first issues](https://github.com/jdleonruiz/estela-cli/labels/good%20first%20issue)
+son un buen sitio para empezar. Una cosa que conviene saber para que nadie se
+desanime: este repositorio es el reflejo de la parte abierta de otro más grande,
+donde también vive el servicio de pago, y por eso cada commit de aquí es una
+versión. Reviso los PR aquí y los aplico en el repositorio principal
+manteniéndote como autor, y el commit de la siguiente versión te nombra como
+coautor. Los PR son bienvenidos: yo los integro en el repositorio principal.
+
 ## Código abierto, servicio cerrado
 
 Todo el programa que se instala en tu máquina es abierto y está bajo licencia

@@ -874,4 +874,8 @@ export const EN: Record<string, string> = {
     "{0} of {1} Copilot requests were malformed ",
   "VS Code puede haber cambiado su formato: revisa los totales antes de facturar.":
     "VS Code may have changed its format: check the totals before billing.",
+
+  // ── cli.ts (setup: la estrella, una vez) ──
+  "\n  ¿Te sirve? Una estrella en GitHub ayuda a que otros lo encuentren:":
+    "\n  Is Estela useful? A star on GitHub helps others find it:",
 };
