@@ -51,6 +51,13 @@ What it doesn't do:
   with which model.
 - **It doesn't send anything anywhere.** The free plan is entirely local.
 
+### Already using ccusage?
+
+Keep it. [ccusage](https://github.com/ryoppippi/ccusage) reads the same files
+and tells you what the AI cost you; Estela tells you how many hours you worked
+and what to bill the client. Both only read, so they run side by side.
+[Side-by-side comparison](https://getestela.dev/en/vs/ccusage).
+
 ## Getting started
 
 You need **Node 22.5 or later** (for `node:sqlite`).

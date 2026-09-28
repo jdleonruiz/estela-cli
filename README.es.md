@@ -50,6 +50,13 @@ Lo que no hace:
   modelo.
 - **No manda nada a ningún sitio.** El plan gratuito es local entero.
 
+### ¿Ya usas ccusage?
+
+Sigue usándolo. [ccusage](https://github.com/ryoppippi/ccusage) lee los mismos
+ficheros y te dice cuánto te costó la IA; Estela, cuántas horas trabajaste y
+cuánto cobrarle al cliente. Las dos solo leen, así que conviven sin problema.
+[Comparación lado a lado](https://getestela.dev/vs/ccusage).
+
 ## Empezar
 
 Necesitas **Node 22.5 o superior** (por `node:sqlite`).
