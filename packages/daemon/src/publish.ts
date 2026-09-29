@@ -47,6 +47,8 @@ export interface PublishOptions {
    * el cliente, y sin ese, el de la terminal de quien publica.
    */
   readonly language?: Lang;
+  /** Sin la línea "Horas rellenadas por Estela" del pie. Solo Pro y Teams: el servidor lo comprueba. */
+  readonly hideCredit?: boolean;
 }
 
 export interface PublishResult {
@@ -101,6 +103,7 @@ export async function publishPanel(db: DatabaseSync, options: PublishOptions): P
     ...(options.includeTeam !== false ? { team } : {}),
     ...(options.authorName ? { authorName: options.authorName } : {}),
     withAmounts: options.withAmounts === true,
+    hideCredit: options.hideCredit === true,
     rateAt: (at) => rateAt(rates, options.projectId, at),
     aiPayer: "self",
     commits: projectCommits,
@@ -125,7 +128,8 @@ export async function publishPanel(db: DatabaseSync, options: PublishOptions): P
   try {
     result = await cloudPost(account.apiBaseUrl, "/panels",
       { token, projectName: project.name, projectId: project.id, html,
-        ...(options.clients ? { clients: options.clients } : {}) },
+        ...(options.clients ? { clients: options.clients } : {}),
+        ...(options.hideCredit ? { hideCredit: true } : {}) },
       { deviceToken: account.deviceToken });
   } catch (error) {
     // Igual que en sync.ts: el 402 se deja pasar. El mensaje ya viene

@@ -721,8 +721,8 @@ export const EN: Record<string, string> = {
     "It is generated from real Git and editor activity, and it updates whenever whoever published it publishes it again.",
   "Verlo para un equipo":
     "See it for a team",
-  "Horas medidas con {0}.":
-    "Hours measured with {0}.",
+  "Horas rellenadas por Estela":
+    "Hours filled in by Estela",
   "El grueso del trabajo fue **{0}**":
     "Most of the work went into **{0}**",
   "con **{0} entrega**":
@@ -878,4 +878,36 @@ export const EN: Record<string, string> = {
   // ── cli.ts (setup: la estrella, una vez) ──
   "\n  ¿Te sirve? Una estrella en GitHub ayuda a que otros lo encuentren:":
     "\n  Is Estela useful? A star on GitHub helps others find it:",
+
+  // ── cli.ts (badge) ──
+  "Este directorio no es de ningún proyecto. Indica cuál con --project <id>.":
+    "This directory doesn't belong to any project. Say which one with --project <id>.",
+  "\"{0}\" no tiene horas medidas todavía: el badge solo cuenta las de sesiones de agente.":
+    "\"{0}\" has no measured hours yet: the badge only counts hours from agent sessions.",
+  "Vista previa: {0}": "Preview: {0}",
+  "El coste es a tarifa API. Si pagas cuota fija, regístrala para que salga lo que pagas de verdad:":
+    "That cost is at API rates. If you pay a flat subscription, add it so the badge shows what you actually pay:",
+  "Es una imagen estática: para actualizar las cifras, vuelve a generarlo.":
+    "It's a static image: to update the numbers, generate it again.",
+
+  // ── cli.ts y export/receipt.ts (receipt) ──
+  "Recibo guardado en {0}": "Receipt saved to {0}",
+  "Sin nombres de proyectos ni ramas, para que puedas compartirlo. Con --names, se incluyen.":
+    "No project or branch names, so you can share it. Add --names to include them.",
+  "Se ha generado en tu máquina y no se ha enviado a ningún sitio.":
+    "It was generated on your machine and hasn't been sent anywhere.",
+  "RECIBO DE LA SEMANA": "RECEIPT FOR THE WEEK",
+  "RECIBO DE TU HISTORIAL": "RECEIPT FOR YOUR HISTORY",
+  "HORAS MEDIDAS": "MEASURED HOURS",
+  "HORAS ESTIMADAS": "ESTIMATED HOURS",
+  "AÑADIDAS A MANO": "ADDED BY HAND",
+  "TOTAL": "TOTAL",
+  "{0} MEDIDO": "{0} MEASURED",
+  "COSTE DE IA": "AI COST",
+  "(A TARIFA API)": "(AT API RATES)",
+  "AHORRO POR CACHÉ": "SAVED BY CACHING",
+  "PROYECTO MÁS CARO": "MOST EXPENSIVE PROJECT",
+  "RAMA MÁS CARA": "MOST EXPENSIVE BRANCH",
+  "SIN CONSUMO DE IA": "NO AI USAGE",
+  "HORAS QUE NO TUVISTE QUE RELLENAR": "HOURS YOU DIDN'T HAVE TO FILL IN",
 };

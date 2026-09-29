@@ -4,7 +4,7 @@ import { test } from "node:test";
 import type { Client, Project, TimeEntry } from "@estela/shared";
 import { money } from "@estela/shared";
 
-import { buildPanel, newPanelToken } from "./panel.js";
+import { buildPanel, CREDIT_MARKER, newPanelToken } from "./panel.js";
 
 const CLIENT: Client = { id: "nebula", name: "Nebula", currency: "EUR" };
 const PROJECT: Project = {
@@ -392,7 +392,7 @@ test("los enlaces del panel nunca apuntan a un dominio fijo que puede no existir
   assert.ok(html.includes('id="cta-more"'), "falta el enlace de la tarjeta superior");
   assert.ok(html.includes('id="footer-site"'), "falta el enlace del pie de página");
   assert.match(html, /el\("cta-more"\)\.setAttribute\("href",\s*site/);
-  assert.match(html, /el\("footer-site"\)/);
+  assert.match(html, /credito\.setAttribute\("href", site/);
 });
 
 test("con --site, la tarjeta de arriba y el candado apuntan al mismo sitio", () => {
@@ -412,10 +412,25 @@ test("el pie dice qué es, no solo el dominio a secas, y los dos enlaces de sali
   // lo generó. Y sin el mismo "d=" que ya usa el CTA fuerte, un clic desde el
   // pie no quedaba atribuido a este panel en el formulario de la landing.
   const html = buildPanel({ ...BASE, entries: [entry("2026-08-20", 3600)] });
-  assert.match(html, /<a id="footer-site" rel="noopener noreferrer">Estela<\/a>/);
+  assert.match(html, /<p class="credit" data-estela-credit><a id="footer-site" rel="noopener noreferrer"><\/a><\/p>/);
+  assert.match(html, /credito\.textContent = L\.credit \+ " · " \+ host/);
   assert.match(html, /el\("cta-more"\)\.setAttribute\("href",\s*site \+ "\/teams" \+ origen\)/);
-  assert.match(html, /el\("footer-site"\)\.setAttribute\("href",\s*site \+ "\/" \+ origen\)/);
-  assert.match(html, /var origen = "\?d=" \+ encodeURIComponent\(D\.client \|\| ""\)/);
+  // utm_source=panel para GA, y el mismo "d" que lee el formulario de la landing.
+  assert.match(html, /"\?utm_source=panel&utm_medium=footer&d=" \+ encodeURIComponent\(D\.client \|\| ""\)/);
+  assert.match(html, /UI\.lang === "en" \? "\/en\/" : "\/"/);
+});
+
+test("el pie de Estela se puede quitar, y entonces no queda ni la marca que busca el servidor", () => {
+  const html = buildPanel({ ...BASE, entries: [entry("2026-08-20", 3600)], hideCredit: true });
+  assert.ok(!html.includes(CREDIT_MARKER), "sin crédito, el servidor no debe encontrar la marca");
+  assert.ok(!html.includes('id="footer-site"'));
+  // Lo que respalda las horas no es publicidad: se queda.
+  assert.match(html, /id="footer-text"/);
+});
+
+test("por defecto el panel lleva la línea de Estela", () => {
+  const html = buildPanel({ ...BASE, entries: [entry("2026-08-20", 3600)] });
+  assert.ok(html.includes(CREDIT_MARKER));
 });
 
 test("el script del panel es JavaScript sintácticamente válido", () => {

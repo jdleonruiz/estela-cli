@@ -8,15 +8,19 @@ process.on("warning", (w) => {
   if (w.name !== "ExperimentalWarning") console.warn(w);
 });
 
-import type { Client, CloudAccount, Currency, TimeEntry, TrackerSystem, WorkKind } from "@estela/shared";
+import type { DatabaseSync } from "node:sqlite";
+
+import type { Client, CloudAccount, Currency, Money, TimeEntry, TrackerSystem, WorkKind } from "@estela/shared";
 import {
-  extractWorkItems, formatAiCost, formatDuration, formatMoney, formatWorkItem, localDate, parseMoney,
+  extractWorkItems, formatAiCost, formatDuration, formatMoney, formatMoneyWhole, formatWorkItem, localDate, parseMoney,
   parseWorkItem, setMoneyLocale, TRACKER_SYSTEMS, WORK_KIND_LABELS,
 } from "@estela/shared";
 
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 
-import { amortize, monthOf, shareForProject } from "./billing/amortize.js";
+import { amortize, feeForMonth, monthOf, shareForProject } from "./billing/amortize.js";
+import { badgeMarkdown, badgeText, badgeUrl } from "./export/badge.js";
+import { receiptData, renderReceipt } from "./export/receipt.js";
 import { issueInvoice, InvoiceError, marginOf, rateAt, renderInvoice } from "./billing/invoice.js";
 import { attachCommits, describeBlock, groupByBranchAndDay, sessionize,
          sessionizeCommits, withoutOverlap } from "./billing/sessionize.js";
@@ -113,6 +117,14 @@ estela — registro de horas para desarrollo asistido por IA
   estela entry link --entry <id> --items PROJ-12[,AB#1234] | --clear
         Pone a mano los tickets de un bloque. El import ya no los cambia.
   estela ai-cost                      Reparto de tu cuota entre proyectos.
+  estela badge [--project <id>]
+        Badge para el README: horas medidas y coste de IA del proyecto.
+        Sin --project, el del repositorio en el que estás.
+  estela receipt [--week] [--names] [--out <fichero.png>]
+        Un recibo en PNG: horas medidas y estimadas, coste de IA, lo más
+        caro y lo que ahorró la caché. Con --week, los últimos 7 días.
+        Sin nombres de proyectos ni ramas salvo con --names. Se genera y
+        se queda en tu máquina.
   estela share --project <id> [--from YYYY-MM-DD] [--to YYYY-MM-DD]
                [--author <tu nombre>] [--with-amounts] [--out <fichero.html>]
         Informe compartible en un solo fichero HTML. Horas y commits; sin
@@ -120,12 +132,15 @@ estela — registro de horas para desarrollo asistido por IA
 
   estela publish --project <id> [--author <tu nombre>] [--with-amounts]
                  [--token <existente>] [--no-team] [--client <correo>[,otro]]
+                 [--no-credit]
         Panel de solo lectura para que tu cliente USE el producto, no solo
         reciba un documento. Se aloja en getestela.dev — Free permite uno a
         la vez, Pro y Teams sin límite. Necesita "estela login" antes.
         Con --client se le avisa por correo y le aparece en su cuenta al
         entrar en getestela.dev/app. Sin --client no se toca esa lista: tus
         republicaciones no desvinculan a quien ya lo tenía.
+        --no-credit quita la línea "Horas rellenadas por Estela" del pie
+        (Pro y Teams).
 
   estela team ai-cost --project <id> --allow | --deny
         Si quien te invitó pide ver el coste de IA del proyecto, esta es tu
@@ -262,6 +277,14 @@ estela — time tracking for AI-assisted development
   estela entry link --entry <id> --items PROJ-12[,AB#1234] | --clear
         Sets a block's tickets by hand. Imports won't change them anymore.
   estela ai-cost                      How your subscription splits across projects.
+  estela badge [--project <id>]
+        Badge for your README: the project's measured hours and AI cost.
+        Without --project, the one for the repository you're in.
+  estela receipt [--week] [--names] [--out <file.png>]
+        A PNG receipt: measured and estimated hours, AI cost, the most
+        expensive work and what caching saved. With --week, the last 7 days.
+        No project or branch names unless you pass --names. It's generated
+        and stays on your machine.
   estela share --project <id> [--from YYYY-MM-DD] [--to YYYY-MM-DD]
                [--author <your name>] [--with-amounts] [--out <file.html>]
         Shareable report in a single HTML file. Hours and commits; no AI
@@ -269,12 +292,15 @@ estela — time tracking for AI-assisted development
 
   estela publish --project <id> [--author <your name>] [--with-amounts]
                  [--token <existing>] [--no-team] [--client <email>[,other]]
+                 [--no-credit]
         Read-only dashboard so your client can USE the product, not just
         receive a document. Hosted on getestela.dev — Free allows one at a
         time, Pro and Teams have no limit. Requires "estela login" first.
         With --client they get an email and it shows up in their account
         when they sign in to getestela.dev/app. Without --client that list
         isn't touched: republishing never unlinks anyone who already had it.
+        --no-credit removes the "Hours filled in by Estela" line from the
+        footer (Pro and Teams).
 
   estela team ai-cost --project <id> --allow | --deny
         If whoever invited you asks to see the project's AI cost, this is
@@ -1262,6 +1288,7 @@ async function cmdPublish(args: Args, dbPath: string): Promise<void> {
         ...(clientes?.length ? { clients: clientes } : {}),
         withAmounts: args.flags["with-amounts"] === true,
         includeTeam: args.flags["no-team"] !== true,
+        hideCredit: args.flags["no-credit"] === true,
         ...(explicitLang(args) ? { language: explicitLang(args)! } : {}),
       });
     } catch (error) {
@@ -1760,6 +1787,108 @@ function cmdAiCost(dbPath: string): void {
   } finally { db.close(); }
 }
 
+/**
+ * El proyecto de un comando: el de --project, o el del repositorio en el que
+ * se está. Es lo natural para lo que se pega en el README de ese repositorio.
+ */
+async function projectFromArgsOrCwd(args: Args, db: DatabaseSync): Promise<string> {
+  const explicit = str(args, "project");
+  if (explicit) {
+    if (!store.getProject(db, explicit)) throw new UserError(tr`No existe el proyecto "${explicit}".`);
+    return explicit;
+  }
+  const root = await repoRoot(process.cwd());
+  const id = root ? store.projectForRepo(db, root) : null;
+  if (!id) throw new UserError(tr`Este directorio no es de ningún proyecto. Indica cuál con --project <id>.`);
+  return id;
+}
+
+/**
+ * Lo que costó la IA de un proyecto, en dinero de verdad si se puede.
+ *
+ * Con una cuota registrada, es su reparto (lo que se pagó); sin ella, la
+ * tarifa API equivalente, que es lo que valdría ese uso y así se marca. Los
+ * meses sin cuota vigente no suman: ahí no hay reparto que hacer. `months`
+ * limita a esos meses; sin él, cuenta toda la historia del proyecto.
+ */
+function projectAiCost(
+  db: DatabaseSync, projectId: string, entries: readonly TimeEntry[], months?: readonly string[],
+): { money: Money; api: boolean } | null {
+  const subs = store.listSubscriptions(db);
+  if (subs.length) {
+    const shares = amortize(store.consumptionByProjectMonth(db), subs, store.totalConsumptionByMonth(db))
+      .filter((sh) => sh.projectId === projectId && feeForMonth(subs, sh.month) !== null &&
+                      (!months || months.includes(sh.month)));
+    if (shares.length) {
+      const currency = shares[0]!.amount.currency;
+      return { money: { amount: shares.reduce((n, sh) => n + sh.amount.amount, 0), currency }, api: false };
+    }
+  }
+  const micro = entries.reduce((n, e) => n + e.aiCost.microUsd, 0);
+  if (micro === 0) return null;
+  return { money: { amount: Math.round(micro / 10_000), currency: "USD" }, api: true };
+}
+
+async function cmdBadge(args: Args, dbPath: string): Promise<void> {
+  const db = openDatabase(dbPath);
+  try {
+    const projectId = await projectFromArgsOrCwd(args, db);
+    const entries = store.getTimeEntries(db, projectId);
+    const measuredSeconds = entries.filter((e) => e.source === "agent").reduce((n, e) => n + e.seconds, 0);
+    if (measuredSeconds === 0) {
+      throw new UserError(tr`"${projectId}" no tiene horas medidas todavía: el badge solo cuenta las de sesiones de agente.`);
+    }
+    const cost = projectAiCost(db, projectId, entries);
+    const text = badgeText({ measuredSeconds, aiCost: cost ? formatMoneyWhole(cost.money) : null });
+
+    console.log(badgeMarkdown(text));
+    console.log("");
+    console.log(tr`Vista previa: ${badgeUrl(text)}`);
+    if (cost?.api) {
+      console.log(tr`El coste es a tarifa API. Si pagas cuota fija, regístrala para que salga lo que pagas de verdad:`);
+      console.log(tr`  estela subscription add --id claude-max --name "Claude Max" --fee 200`);
+    }
+    console.log(tr`Es una imagen estática: para actualizar las cifras, vuelve a generarlo.`);
+  } finally { db.close(); }
+}
+
+function cmdReceipt(args: Args, dbPath: string): void {
+  const db = openDatabase(dbPath);
+  try {
+    const week = args.flags["week"] === true;
+    // Hasta el final de hoy, en la hora de quien lo pide; con --week, desde
+    // el principio del día de hace seis: siete días naturales contando hoy.
+    const hoy = new Date();
+    const to = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 1);
+    const from = week ? new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 6) : null;
+
+    const projects = store.listProjects(db);
+    const entries = projects.flatMap((p) => store.getTimeEntries(db, p.id));
+    if (entries.length === 0) throw new UserError(tr`Sin bloques imputados. Ejecuta: estela import`);
+
+    const turns = (db.prepare(
+      `SELECT at, model, tok_cache_read, tok_cache_w5m, tok_cache_w1h FROM agent_turns
+       WHERE at >= ? AND at < ?`,
+    ).all((from ?? new Date(0)).toISOString(), to.toISOString()) as {
+      at: string; model: string; tok_cache_read: number; tok_cache_w5m: number; tok_cache_w1h: number;
+    }[]).map((t) => ({
+      at: new Date(t.at), model: t.model,
+      cacheRead: t.tok_cache_read, cacheWrite5m: t.tok_cache_w5m, cacheWrite1h: t.tok_cache_w1h,
+    }));
+
+    const data = receiptData({
+      entries, turns, from, to, projectNames: new Map(projects.map((p) => [p.id, p.name])),
+    });
+    const out = resolve(str(args, "out") ??
+      (week ? `estela-receipt-${localDate(hoy)}.png` : "estela-receipt.png"));
+    const names = args.flags["names"] === true;
+    writeFileSync(out, renderReceipt(data, { week, names }));
+    console.log(tr`Recibo guardado en ${out}`);
+    if (!names) console.log(tr`Sin nombres de proyectos ni ramas, para que puedas compartirlo. Con --names, se incluyen.`);
+    console.log(tr`Se ha generado en tu máquina y no se ha enviado a ningún sitio.`);
+  } finally { db.close(); }
+}
+
 function cmdInvoice(args: Args, dbPath: string): void {
   const db = openDatabase(dbPath);
   try {
@@ -1911,6 +2040,8 @@ async function main(): Promise<void> {
     case "budget":            cmdBudget(args, dbPath); break;
     case "subscription add":  cmdSubscriptionAdd(args, dbPath); break;
     case "ai-cost":           cmdAiCost(dbPath); break;
+    case "badge":             await cmdBadge(args, dbPath); break;
+    case "receipt":           cmdReceipt(args, dbPath); break;
     case "status":            cmdStatus(dbPath); break;
     case "doctor":            cmdDoctor(dbPath); break;
     case "entries":           cmdEntries(args, dbPath); break;

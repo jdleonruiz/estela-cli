@@ -155,6 +155,17 @@ export function formatMoney(m: Money, locale = defaultMoneyLocale): string {
   return symbol ? `${symbol}${value}` : `${value} ${m.currency}`;
 }
 
+/**
+ * Importe redondeado a la unidad, con separador de miles en inglés: "$18",
+ * "€1,204". Para textos cortos que se leen de un vistazo (un badge, un
+ * ticket), donde los céntimos solo estorban.
+ */
+export function formatMoneyWhole(m: Money): string {
+  const value = Math.round(m.amount / 10 ** MINOR_UNIT_DIGITS[m.currency]).toLocaleString("en-US");
+  const symbol = SYMBOLS[m.currency];
+  return symbol ? `${symbol}${value}` : `${value} ${m.currency}`;
+}
+
 /** El coste de IA se muestra con 2 decimales, o 4 cuando es menor de un céntimo. */
 export function formatAiCost(cost: AiCost): string {
   const usd = cost.microUsd / 1_000_000;

@@ -63,7 +63,15 @@ export interface PanelOptions {
    * actualizado, no debe depender de tener que recordar pasarlo siempre.
    */
   readonly siteUrl?: string;
+  /**
+   * Quitar la línea "Horas rellenadas por Estela" del pie. Es de Pro y Teams:
+   * al publicar, el servidor rechaza la petición de una cuenta Free.
+   */
+  readonly hideCredit?: boolean;
 }
+
+/** La marca que lleva el pie cuando incluye la línea de Estela. */
+export const CREDIT_MARKER = "data-estela-credit";
 
 export interface PanelTeamMember {
   readonly name: string;
@@ -194,7 +202,10 @@ export function buildPanel(options: PanelOptions): string {
   // costes, y hay tests que lo comprueban), y mezclarlos con frases sueltas
   // haría esa comprobación imposible de hacer sin falsos positivos.
   const lang = getLang();
-  const ui: PanelUi = { lang, L: panelLabels(), monthNames: MONTHS[lang], dayNames: DAYS[lang] };
+  const ui: PanelUi = {
+    lang, L: panelLabels(), monthNames: MONTHS[lang], dayNames: DAYS[lang],
+    credit: options.hideCredit !== true,
+  };
 
   return render(data, ui);
 }
@@ -222,7 +233,7 @@ function panelLabels() {
     ctaBody: tr`Se genera de la actividad real de Git y del editor, y se actualiza cuando quien lo publica lo vuelve a publicar.`,
     ctaMore: tr`Verlo para un equipo`,
     backedByCommits: tr`Cada bloque está respaldado por sus commits.`,
-    measuredWith: tr`Horas medidas con ${"{link}"}.`,
+    credit: tr`Horas rellenadas por Estela`,
     leadTop: tr`El grueso del trabajo fue **${"{x}"}**`,
     leadDeliveries: { one: tr`con **${n} entrega**`, other: tr`con **${n} entregas**` } as Pair,
     leadOpen: { one: tr`y **${n} frente abierto**`, other: tr`y **${n} frentes abiertos**` } as Pair,
@@ -274,6 +285,8 @@ type PanelLabels = ReturnType<typeof panelLabels>;
 
 interface PanelUi {
   readonly lang: string;
+  /** Si el pie lleva la línea de Estela. Se decide al generar, no en el navegador. */
+  readonly credit: boolean;
   readonly L: PanelLabels;
   readonly monthNames: readonly string[];
   readonly dayNames: readonly string[];
@@ -504,6 +517,9 @@ main{max-width:1180px;margin:0 auto;padding:30px 28px 70px}
   padding:9px 18px;border-radius:9px;font-size:.88rem;font-weight:620;white-space:nowrap}
 footer{margin-top:26px;font-size:.8rem;color:var(--ink3);line-height:1.6}
 footer a{color:var(--jade2)}
+footer .credit{margin:6px 0 0;font-size:.75rem}
+footer .credit a{color:var(--ink3);text-decoration:none}
+footer .credit a:hover{color:var(--jade2);text-decoration:underline}
 
 /* Una sola entrada orquestada: las tarjetas suben al cargar y las barras
    crecen. Más movimiento que esto distrae de lo que hay que leer. */
@@ -578,7 +594,8 @@ footer a{color:var(--jade2)}
     <a id="cta-more" rel="noopener noreferrer">${esc(L.ctaMore)}</a>
   </div>
 
-  <footer id="footer-text"></footer>
+  <footer><span id="footer-text"></span>${ui.credit
+    ? `<p class="credit" ${CREDIT_MARKER}><a id="footer-site" rel="noopener noreferrer"></a></p>` : ""}</footer>
 </main>
 
 <script id="data" type="application/json">__DATA__</script>
@@ -657,9 +674,18 @@ function renderHead(){
   // El nombre de la herramienta va en un enlace, no el dominio a secas: quien
   // ve el panel no tiene por qué saber que un enlace suelto al pie es lo que
   // lo generó. El resto de la frase lo pone la traducción.
-  el("footer-text").innerHTML = esc(L.backedByCommits)+" "+
-    fill(esc(L.measuredWith),"{link}",'<a id="footer-site" rel="noopener noreferrer">Estela</a>');
-  el("footer-site").setAttribute("href", site + "/" + origen);
+  el("footer-text").textContent = L.backedByCommits;
+  // La línea de Estela, si el panel la lleva (Pro puede quitarla al publicar).
+  // Va a la web en el idioma del panel, con utm_source=panel para que la
+  // analítica sepa que llegó de aquí, y con el mismo "d" que el CTA de arriba
+  // para que el formulario lo atribuya a este cliente.
+  var credito = el("footer-site");
+  if (credito) {
+    var host = site.replace("https://", "").replace("http://", "");
+    credito.textContent = L.credit + " · " + host;
+    credito.setAttribute("href", site + (UI.lang === "en" ? "/en/" : "/") +
+      "?utm_source=panel&utm_medium=footer&d=" + encodeURIComponent(D.client || ""));
+  }
 }
 
 /* ── Esfuerzo, con proporción visible ───────────────────────── */

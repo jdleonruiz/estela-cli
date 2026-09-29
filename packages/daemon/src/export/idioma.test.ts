@@ -104,8 +104,11 @@ test("el panel en inglés: documento, texto y fechas, todo en inglés", () => {
   assert.ok(p["kpis"]!.innerHTML.includes("workstream"));
   assert.match(p["lead"]!.innerHTML, /^Most of the work went into <b>main<\/b>/);
   assert.equal(p["detail-count"]!.textContent, "2 days");
-  assert.ok(p["footer-text"]!.innerHTML.includes("Hours measured with"));
-  assert.ok(p["footer-text"]!.innerHTML.includes(">Estela</a>"));
+  assert.equal(p["footer-text"]!.textContent, "Every block is backed by its commits.");
+  // La línea de Estela: en inglés, y enlazando a la web en inglés con su utm.
+  assert.equal(p["footer-site"]!.textContent, "Hours filled in by Estela · getestela.dev");
+  assert.equal(p["footer-site"]!.attrs["href"],
+    "https://getestela.dev/en/?utm_source=panel&utm_medium=footer&d=Nebula");
   assert.ok(p["days"]!.innerHTML.includes("Tuesday, July 28"), p["days"]!.innerHTML);
 });
 
@@ -120,6 +123,9 @@ test("el panel en español sigue diciendo lo mismo que antes", () => {
   assert.ok(p["kpis"]!.innerHTML.includes("días con actividad · del 28 jul al 16 sep"),
     p["kpis"]!.innerHTML);
   assert.equal(p["detail-count"]!.textContent, "2 días");
+  assert.equal(p["footer-site"]!.textContent, "Horas rellenadas por Estela · getestela.dev");
+  assert.equal(p["footer-site"]!.attrs["href"],
+    "https://getestela.dev/?utm_source=panel&utm_medium=footer&d=Nebula");
   assert.ok(p["days"]!.innerHTML.includes("martes 28 de julio"), p["days"]!.innerHTML);
 });
 
