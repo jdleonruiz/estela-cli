@@ -189,6 +189,35 @@ different machine, pass `--token` with the existing one, or your client ends up
 with a dead link. The Free plan allows one published dashboard at a time; Pro
 and Teams have no limit.
 
+The dashboard's footer says "Hours filled in by Estela", linking to
+getestela.dev. On Pro and Teams, `--no-credit` removes that line.
+
+## Showing what you built
+
+A badge for your project's README, with its measured hours and what the AI
+cost:
+
+```sh
+estela badge                     # the project for the repo you're in
+estela badge --project acme-web
+```
+
+It prints a Markdown line with a static [shields.io](https://shields.io) image,
+something like `Built in 42 h · $18 of AI`. Nothing is hosted and nothing is
+looked up: the numbers are baked into the URL, so run it again to update them.
+It only counts **measured** hours, never the ones estimated from commits.
+
+And a receipt of your week (or of your whole history) as a PNG:
+
+```sh
+estela receipt --week
+```
+
+Measured versus estimated hours, the AI cost, what caching saved you, and the
+most expensive project and branch. It's drawn on your machine and stays there.
+Project and branch names are left out by default, because they're usually a
+client's; add `--names` to include them.
+
 ## What the AI actually costs
 
 On a flat subscription, your real spend isn't the sum of the tokens: it's the

@@ -188,6 +188,36 @@ máquina, pasa `--token` con el que ya existe, o tu cliente se queda con un
 enlace muerto. El plan Free permite un panel publicado a la vez; Pro y Teams no
 tienen límite.
 
+El pie del panel dice "Horas rellenadas por Estela", con un enlace a
+getestela.dev. En Pro y Teams, `--no-credit` quita esa línea.
+
+## Enseñar lo que has hecho
+
+Un badge para el README del proyecto, con sus horas medidas y lo que costó la
+IA:
+
+```sh
+estela badge                     # el proyecto del repositorio en el que estás
+estela badge --project acme-web
+```
+
+Imprime una línea de Markdown con una imagen estática de
+[shields.io](https://shields.io), del estilo `Built in 42 h · $18 of AI`. No
+se aloja nada ni se consulta nada: las cifras van dentro de la URL, así que
+para actualizarlas se vuelve a generar. Solo cuenta horas **medidas**, nunca las
+estimadas desde commits.
+
+Y un recibo de tu semana (o de toda tu historia) en PNG:
+
+```sh
+estela receipt --week
+```
+
+Horas medidas frente a estimadas, el coste de IA, lo que te ahorró la caché, y
+el proyecto y la rama más caros. Se pinta en tu máquina y se queda ahí. Los
+nombres de proyectos y ramas no salen por defecto, porque suelen ser de un
+cliente; con `--names` se incluyen.
+
 ## El coste de la IA
 
 Con una cuota plana el gasto real no es la suma de los tokens: es la cuota
