@@ -428,7 +428,14 @@ function haceCuanto(days) {
 
 async function loadSummary() {
   const { from, to } = periodRange(state.period === "all" ? "quarter" : state.period);
-  state.summary = await api(`/api/summary?from=${from}&to=${to}`);
+  // La cuota es siempre de esta semana, sea cual sea el periodo elegido: si
+  // fallara, el resumen se pinta igual y la tarjeta simplemente no sale.
+  const [summary, quota] = await Promise.all([
+    api(`/api/summary?from=${from}&to=${to}`),
+    api("/api/quota").catch(() => null),
+  ]);
+  state.summary = summary;
+  state.quota = quota;
   renderSummary();
 }
 
@@ -473,6 +480,8 @@ function renderSummary() {
     parts.push(`<div class="plist">${s.projects.map(renderProjectRow).join("")}</div>`);
   }
 
+  parts.push(renderQuota(state.quota));
+
   if (s.activity.length) {
     parts.push(`<h2 class="block-title">${tr("summary.activity")}</h2>`);
     parts.push(`<div class="feed">${s.activity.map(renderActivity).join("")}</div>`);
@@ -508,6 +517,57 @@ function renderSummary() {
       } catch (error) { toast(error.message); }
     });
   });
+}
+
+/* ¿Qué proyecto se come tu cuota? El mismo reparto de la semana que da
+   `estela quota`, por agente y nunca mezclados: Claude Code gasta la cuota de
+   Anthropic y Codex la de OpenAI. Solo consumo real: ni "te queda" ni
+   "se acaba", porque esos límites no se publican. */
+function renderQuota(q) {
+  if (!q || (!q.agents.length && !q.excluded.length)) return "";
+  const AGENT = { "claude-code": "Claude Code", codex: "Codex" };
+  const out = [];
+
+  for (const a of q.agents) {
+    out.push(`<h2 class="block-title">${tr("quota.title", { agent: AGENT[a.agent] || a.agent })}</h2>`);
+    out.push(`<div class="plist">${a.week.projects.map(quotaRow).join("")}</div>`);
+    out.push(`<p class="quota-note">${esc(quotaComparison(a.comparison))}</p>`);
+  }
+  if (q.excluded.length) out.push(`<p class="quota-note">${tr("quota.copilot")}</p>`);
+  if (q.agents.length) out.push(`<p class="quota-note">${tr("quota.estimate")}</p>`);
+  return out.join("");
+}
+
+function quotaRow(p) {
+  const name = p.projectName ?? (p.folder ? tr("quota.folder", { folder: p.folder }) : tr("quota.noFolder"));
+  const pct = Math.round(p.share * 100);
+  return `
+<div class="prow">
+  <div class="prow-text">
+    <div class="prow-name">${esc(name)}</div>
+    <div class="prow-meta">${tr("quota.breakdown", {
+      input: fmtTokens(p.input), output: fmtTokens(p.output),
+      read: fmtTokens(p.cacheRead), write: fmtTokens(p.cacheWrite) })}</div>
+    <div class="quota-bar"><i style="width:${pct}%"></i></div>
+  </div>
+  <div class="prow-figs">
+    <div class="prow-hours">${fmtTokens(p.total)}</div>
+    <div class="prow-amount">${tr("quota.share", { n: pct })}</div>
+  </div>
+</div>`;
+}
+
+function quotaComparison(c) {
+  if (c.status !== "ok") return tr("quota.noHistory", { weeks: c.weeks, have: c.completeWeeks });
+  if (c.ratio === null) return tr("quota.noPastUsage", { current: fmtTokens(c.current), weeks: c.weeks });
+  const diff = Math.round((c.ratio - 1) * 100);
+  const how = diff > 0 ? tr("quota.more", { n: diff }) : diff < 0 ? tr("quota.less", { n: -diff }) : tr("quota.same");
+  return tr("quota.vsHistory", { current: fmtTokens(c.current), average: fmtTokens(c.average), weeks: c.weeks, how });
+}
+
+/** Tokens con el formato corto del idioma: "22,7 M" o "22.7M". */
+function fmtTokens(n) {
+  return new Intl.NumberFormat(localeTag(), { notation: "compact", maximumFractionDigits: 1 }).format(n);
 }
 
 function kpi(value, label, extra = "") {

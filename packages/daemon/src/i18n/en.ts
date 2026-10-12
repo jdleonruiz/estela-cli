@@ -910,4 +910,61 @@ export const EN: Record<string, string> = {
   "RAMA MÁS CARA": "MOST EXPENSIVE BRANCH",
   "SIN CONSUMO DE IA": "NO AI USAGE",
   "HORAS QUE NO TUVISTE QUE RELLENAR": "HOURS YOU DIDN'T HAVE TO FILL IN",
+  // ── estela quota ──
+  "(No se pudieron leer los transcripts de esta semana; se usa lo ya guardado.)":
+    "(Couldn't read this week's transcripts; using what's already stored.)",
+  "\nConsumo de cuota · lo calcula Estela en tu máquina; no es el límite de tu plan\n":
+    "\nQuota usage · calculated by Estela on your machine; it isn't your plan's limit\n",
+  "Sin consumo de Claude Code ni Codex esta semana.":
+    "No Claude Code or Codex usage this week.",
+  "Sin turnos de agente guardados. Empieza con: estela setup":
+    "No agent turns stored. Start with: estela setup",
+  "{0} — ventana de 5 h actual (estimada): desde las {1}, termina a las {2}":
+    "{0} — current 5-hour window (estimated): from {1}, ends at {2}",
+  "{0} — sin ventana de 5 h abierta ahora; la última terminó {1}.\n":
+    "{0} — no 5-hour window open right now; the last one ended {1}.\n",
+  "{0} — esta semana ({1} → hoy)":
+    "{0} — this week ({1} → today)",
+  "Copilot no guarda tokens fiables y queda fuera de este cálculo.":
+    "Copilot doesn't record reliable tokens and is left out of this calculation.",
+  "La ventana de 5 h es una estimación: no se publica cómo se redondea su inicio, y lo que":
+    "The 5-hour window is an estimate: how its start is rounded isn't public, and anything",
+  "uses en claude.ai u otro equipo también consume cuota y Estela no lo ve.":
+    "you use on claude.ai or another machine also uses quota and Estela can't see it.",
+  "Proyecto":
+    "Project",
+  "Total":
+    "Total",
+  "Entrada":
+    "Input",
+  "Salida":
+    "Output",
+  "Lect. caché":
+    "Cache read",
+  "Escr. caché":
+    "Cache write",
+  "sin proyecto · {0}":
+    "no project · {0}",
+  "sin carpeta":
+    "no folder",
+  "Sin historial suficiente para comparar: hacen falta {0} semanas completas y hay {1}.":
+    "Not enough history to compare: it takes {0} complete weeks and there are {1}.",
+  "lunes → {0} {1}":
+    "Monday → {0} {1}",
+  "Frente a tu historial: {0} esta semana; en el mismo tramo ({1}) de las {2} semanas anteriores no hubo consumo.":
+    "Against your history: {0} this week; over the same stretch ({1}) of the previous {2} weeks there was no usage.",
+  "un {0} % más":
+    "{0}% more",
+  "un {0} % menos":
+    "{0}% less",
+  "lo mismo":
+    "about the same",
+  "Frente a tu historial: {0} esta semana, y una media de {1} en el mismo tramo ({2}) de las {3} semanas anteriores: {4}.":
+    "Against your history: {0} this week, and an average of {1} over the same stretch ({2}) of the previous {3} weeks: {4}.",
+  "{0} %":
+    "{0}%",
+  "a las {0}":
+    "at {0}",
+  "el {0} a las {1}":
+    "on {0} at {1}",
 };

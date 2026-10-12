@@ -30,7 +30,10 @@
             data-i18n="sync.now" data-i18n-title="sync.now.title"
             title="Sube tus horas a la nube y baja lo de tus otras máquinas">Sincronizar</button>
     <div class="upgrade-wrap" id="upgrade-wrap" hidden>
-      <button type="button" class="btn-main btn-upgrade" id="upgrade-btn" data-i18n="upgrade.btn">Actualizar a Pro o Teams</button>
+      <button type="button" class="btn-main btn-upgrade" id="upgrade-btn"
+              data-i18n-aria-label="upgrade.btn" aria-label="Actualizar a Pro o Teams"><span class="up-long"
+              data-i18n="upgrade.btn">Actualizar a Pro o Teams</span><span class="up-short"
+              data-i18n="upgrade.btnShort">Pro o Teams</span></button>
       <div class="upgrade-menu" id="upgrade-menu" hidden>
         <div class="upgrade-ciclo" role="group" aria-label="Ciclo de facturación" data-i18n-aria-label="upgrade.cycle">
           <button type="button" data-ciclo="monthly" class="is-on" data-i18n="upgrade.monthly">Mensual</button>

@@ -231,6 +231,28 @@ estela ai-cost
 La caché se cuenta aparte porque suele ser la mayor parte de la factura —
 ignorarla subestimaba el gasto cinco veces.
 
+## Qué proyecto se come tu cuota
+
+Con Claude Max/Pro o Codex con suscripción, la cuota se acaba antes de lo que
+esperas y nada te dice en qué se fue. `estela quota` la reparte por proyecto:
+
+```sh
+estela quota          # ventana de 5 h actual y esta semana, por proyecto
+estela quota --json   # lo mismo, para scripts
+```
+
+Tokens (entrada, salida, lectura y escritura de caché) por proyecto, en la
+ventana de 5 h actual y en la semana (de lunes a hoy, en tu hora), y esta semana
+frente a la media de tus 4 anteriores en el mismo tramo. Claude Code y Codex van
+por separado: gastan cuotas distintas. También es una tarjeta en la pestaña
+Resumen de `estela web`, y es gratis.
+
+Lo que nunca hace es decirte cuánto te queda: Anthropic y OpenAI no publican los
+límites de sus planes, así que cualquier "te quedan X tokens" sería inventado. La
+ventana de 5 h es una estimación: no se sabe cómo redondean su inicio, y lo que
+uses en claude.ai u otro equipo también cuenta, pero no está en este. Copilot
+queda fuera porque no guarda tokens fiables. Todo se calcula en tu máquina.
+
 ## Horas que ningún import va a deducir
 
 Reuniones, desplazamientos, investigación, y desarrollo sin agente que tampoco

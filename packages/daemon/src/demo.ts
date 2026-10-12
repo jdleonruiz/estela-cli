@@ -187,6 +187,7 @@ export function seedDemo(db: ReturnType<typeof openDatabase>, options: DemoOptio
   }
 
   store.saveTurns(db, turnos);
+  store.saveTurns(db, turnosDeCuota(ahora, hoy));
   store.saveCommits(db, commits);
   for (const repo of REPOS) {
     store.setProjectAuthors(db, repo.id, [YO.email]);
@@ -247,4 +248,58 @@ function commitDemo(
     at, authorEmail: autor.email, authorName: autor.name, branch: rama, subject: asunto,
     linesAdded: entre(3, 180), linesDeleted: entre(0, 90), files: [],
   };
+}
+
+/**
+ * Turnos que solo existen para `estela quota` y su tarjeta: una sesión en
+ * curso (sin ella, el día que alguien abra la demo puede no haber ninguna
+ * ventana de 5 h que enseñar) y tres semanas de Codex, las justas para que se
+ * vea el aviso de "sin historial suficiente" junto a un Claude Code que sí lo
+ * tiene.
+ *
+ * Van aparte y no pasan por `sessionize`: así no mueven ni una de las horas ni
+ * de los importes de la demo, que otros tests dan por fijos. Y con su propio
+ * generador, por lo mismo: tirar del de arriba cambiaría todo lo que sale
+ * después.
+ */
+function turnosDeCuota(ahora: Date, hoy: Date): AgentTurn[] {
+  const rnd = azar(20261011);
+  const hora = (dia: Date, minutos: number) =>
+    new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 0, minutos);
+  const entre = (a: number, b: number) => a + Math.floor(rnd() * (b - a + 1));
+  const out: AgentTurn[] = [];
+  let n = 0;
+
+  // La sesión en curso: los últimos ~100 minutos, en dos proyectos.
+  for (let min = 100; min >= 4; min -= entre(3, 6)) {
+    const repo = min > 40 ? "brightside-portal" : "ledger-cli";
+    out.push({
+      agent: "claude-code", turnId: `demo_quota_claude_${n++}`, sessionId: `demo-quota-${repo}`,
+      at: new Date(ahora.getTime() - min * 60_000), model: "claude-sonnet-4-6",
+      repoPath: RUTA(repo), branch: "main",
+      tokens: { input: entre(2, 30), output: entre(300, 2800), cacheRead: entre(40_000, 160_000),
+                cacheWrite5m: entre(1000, 9000), cacheWrite1h: 0 },
+      producerVersion: "2.1.4",
+    });
+  }
+
+  // Codex, desde hace tres semanas, por las tardes.
+  for (let d = 20; d >= 0; d--) {
+    const dia = new Date(hoy);
+    dia.setDate(dia.getDate() - d);
+    if (dia.getDay() === 0 || dia.getDay() === 6 || rnd() < 0.3) continue;
+    const repo = rnd() < 0.6 ? "ledger-cli" : "northwind-app";
+    for (let m = entre(960, 1000), fin = m + entre(30, 80); m < fin; m += entre(3, 8)) {
+      const at = hora(dia, m);
+      if (at > ahora) break;
+      out.push({
+        agent: "codex", turnId: `demo_quota_codex_${n++}`, sessionId: `demo-codex-${d}`,
+        at, model: "gpt-5-codex", repoPath: RUTA(repo), branch: "main",
+        tokens: { input: entre(800, 6000), output: entre(200, 2400), cacheRead: entre(8_000, 60_000),
+                  cacheWrite5m: 0, cacheWrite1h: 0 },
+        producerVersion: "0.46.0",
+      });
+    }
+  }
+  return out;
 }

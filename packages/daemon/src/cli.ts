@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 // `node:sqlite` avisa de que es experimental en cada arranque. Es ruido para
 // quien solo quiere su factura, y el aviso no le dice nada accionable.
@@ -48,6 +48,10 @@ import { type AgentScan, allTurns, scanAgents } from "./watchers/agents.js";
 import { gitUserEmail, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
 import { detectLang, documentLang, getLang, setLang, tr, withLang, type Lang } from "./i18n/index.js";
+import { DAYS, MONTHS } from "./export/dates.js";
+import { HISTORY_WEEKS, quotaToJson, weekStart, type AgentQuota, type QuotaBreakdown,
+         type QuotaBucket, type QuotaReport } from "./metrics/quota.js";
+import { loadQuotaReport, refreshQuotaTurns } from "./quota.js";
 import { kindLabel } from "./i18n/labels.js";
 
 const HELP_ES = `
@@ -117,6 +121,17 @@ estela — registro de horas para desarrollo asistido por IA
   estela entry link --entry <id> --items PROJ-12[,AB#1234] | --clear
         Pone a mano los tickets de un bloque. El import ya no los cambia.
   estela ai-cost                      Reparto de tu cuota entre proyectos.
+  estela quota [--json] [--no-refresh]
+        ¿Qué proyecto se come tu cuota de Claude Code o Codex? Tokens por
+        proyecto en la ventana de 5 h actual y en la semana (de lunes a
+        hoy), y esta semana frente a la media de tus 4 anteriores en el
+        mismo tramo. Solo consumo real: no dice cuánto te queda, porque
+        Anthropic y OpenAI no publican los límites. La ventana de 5 h es
+        una estimación: no se sabe cómo redondean su inicio, y lo que uses
+        en claude.ai u otro equipo también cuenta y Estela no lo ve.
+        Copilot queda fuera: no guarda tokens fiables. Antes de calcular
+        lee los transcripts desde el lunes (--no-refresh lo evita).
+        A diferencia de ai-cost, que reparte dinero, esto reparte tokens.
   estela badge [--project <id>]
         Badge para el README: horas medidas y coste de IA del proyecto.
         Sin --project, el del repositorio en el que estás.
@@ -277,6 +292,18 @@ estela — time tracking for AI-assisted development
   estela entry link --entry <id> --items PROJ-12[,AB#1234] | --clear
         Sets a block's tickets by hand. Imports won't change them anymore.
   estela ai-cost                      How your subscription splits across projects.
+  estela quota [--json] [--no-refresh]
+        Which project is eating your Claude Code or Codex quota? Tokens per
+        project in the current 5-hour window and this week (Monday to
+        today), and this week against the average of your previous 4 over
+        the same stretch. Real usage only: it never says how much you have
+        left, because Anthropic and OpenAI don't publish the limits. The
+        5-hour window is an estimate: how its start is rounded isn't public,
+        and anything you use on claude.ai or another machine also counts and
+        Estela can't see it. Copilot is left out: it doesn't record reliable
+        tokens. Before calculating it reads transcripts since Monday
+        (--no-refresh skips that). Unlike ai-cost, which splits money, this
+        splits tokens.
   estela badge [--project <id>]
         Badge for your README: the project's measured hours and AI cost.
         Without --project, the one for the repository you're in.
@@ -1852,6 +1879,122 @@ async function cmdBadge(args: Args, dbPath: string): Promise<void> {
   } finally { db.close(); }
 }
 
+/**
+ * `estela quota` — qué proyecto se come la cuota. El cálculo vive en
+ * `metrics/quota.ts`; aquí solo se presenta.
+ */
+async function cmdQuota(args: Args, dbPath: string): Promise<void> {
+  const db = openDatabase(dbPath);
+  try {
+    const now = new Date();
+    // Sobre la base de la demo no se lee nada tuyo: mezclaría tus turnos
+    // reales con los inventados, justo lo que la demo promete no hacer.
+    const esDemo = basename(dbPath) === "estela-demo.db";
+    if (args.flags["no-refresh"] !== true && !esDemo) {
+      try { await refreshQuotaTurns(db, weekStart(now)); }
+      catch {
+        // Sin refrescar se sigue: lo guardado sigue valiendo, solo más viejo.
+        if (args.flags["json"] !== true) console.log(tr`(No se pudieron leer los transcripts de esta semana; se usa lo ya guardado.)`);
+      }
+    }
+
+    const report = loadQuotaReport(db, now);
+    if (args.flags["json"] === true) {
+      console.log(JSON.stringify(quotaToJson(report), null, 2));
+      return;
+    }
+    printQuota(report, store.firstTurnByAgent(db).size > 0);
+  } finally { db.close(); }
+}
+
+function printQuota(report: QuotaReport, hayTurnos: boolean): void {
+  console.log(tr`\nConsumo de cuota · lo calcula Estela en tu máquina; no es el límite de tu plan\n`);
+
+  if (report.agents.length === 0) {
+    console.log(hayTurnos
+      ? tr`Sin consumo de Claude Code ni Codex esta semana.`
+      : tr`Sin turnos de agente guardados. Empieza con: estela setup`);
+  }
+
+  for (const a of report.agents) {
+    const nombre = agentName(a.agent);
+    if (a.window) {
+      console.log(tr`${nombre} — ventana de 5 h actual (estimada): desde las ${hhmm(a.window.start)}, termina a las ${hhmm(a.window.end)}`);
+      printQuotaTable(a.window);
+    } else if (a.lastWindowEnded) {
+      console.log(tr`${nombre} — sin ventana de 5 h abierta ahora; la última terminó ${cuando(a.lastWindowEnded, report.generatedAt)}.\n`);
+    }
+
+    console.log(tr`${nombre} — esta semana (${diaCorto(report.weekStart)} → hoy)`);
+    printQuotaTable(a.week);
+    console.log(`  ${comparacion(a, report.generatedAt)}\n`);
+  }
+
+  if (report.copilotExcluded) console.log(tr`Copilot no guarda tokens fiables y queda fuera de este cálculo.`);
+  console.log(tr`La ventana de 5 h es una estimación: no se publica cómo se redondea su inicio, y lo que`);
+  console.log(tr`uses en claude.ai u otro equipo también consume cuota y Estela no lo ve.`);
+}
+
+function printQuotaTable(b: QuotaBreakdown): void {
+  const filas = b.rows.map((r) => [nombreDeFila(r.bucket), r.usage, pct(r.share)] as const);
+  const ancho = Math.min(28, Math.max(tr`Proyecto`.length, tr`Total`.length, ...filas.map((f) => f[0].length)));
+  const cabeza = [tr`Entrada`, tr`Salida`, tr`Lect. caché`, tr`Escr. caché`, tr`Total`];
+  const col = Math.max(10, ...cabeza.map((c) => c.length + 2));
+  const celdas = (u: QuotaBreakdown["total"]) =>
+    [u.input, u.output, u.cacheRead, u.cacheWrite, u.total].map((n) => fmtTokens(n).padStart(col)).join("");
+  const nombre = (t: string) => (t.length > ancho ? t.slice(0, ancho - 1) + "…" : t).padEnd(ancho);
+
+  console.log(`  ${nombre(tr`Proyecto`)}${cabeza.map((c) => c.padStart(col)).join("")}${"%".padStart(7)}`);
+  for (const [n, u, p] of filas) console.log(`  ${nombre(n)}${celdas(u)}${p.padStart(7)}`);
+  console.log(`  ${nombre(tr`Total`)}${celdas(b.total)}\n`);
+}
+
+function nombreDeFila(b: QuotaBucket): string {
+  if (b.kind === "project") return b.projectName;
+  if (b.kind === "folder") return tr`sin proyecto · ${b.folder}`;
+  return tr`sin carpeta`;
+}
+
+function comparacion(a: AgentQuota, now: Date): string {
+  const c = a.comparison;
+  if (c.status === "insufficient") {
+    return tr`Sin historial suficiente para comparar: hacen falta ${HISTORY_WEEKS} semanas completas y hay ${c.completeWeeks}.`;
+  }
+  const tramo = tr`lunes → ${DAYS[getLang()][now.getDay()]} ${hhmm(now)}`;
+  if (c.ratio === null) {
+    return tr`Frente a tu historial: ${fmtTokens(c.current)} esta semana; en el mismo tramo (${tramo}) de las ${c.weeks} semanas anteriores no hubo consumo.`;
+  }
+  const diff = Math.round((c.ratio - 1) * 100);
+  const cuanto = diff > 0 ? tr`un ${diff} % más` : diff < 0 ? tr`un ${-diff} % menos` : tr`lo mismo`;
+  return tr`Frente a tu historial: ${fmtTokens(c.current)} esta semana, y una media de ${fmtTokens(c.average)} en el mismo tramo (${tramo}) de las ${c.weeks} semanas anteriores: ${cuanto}.`;
+}
+
+/** Tokens con el formato corto del idioma: "22,7 M" o "22.7M". */
+function fmtTokens(n: number): string {
+  return new Intl.NumberFormat(getLang() === "en" ? "en-US" : "es-ES",
+    { notation: "compact", maximumFractionDigits: 1 }).format(n);
+}
+
+function pct(share: number): string {
+  return tr`${Math.round(share * 100)} %`;
+}
+
+function hhmm(d: Date): string {
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** "lun 5 oct" o "Mon Oct 5". */
+function diaCorto(d: Date): string {
+  const dia = DAYS[getLang()][d.getDay()]!.slice(0, 3);
+  const mes = MONTHS[getLang()][d.getMonth()]!.slice(0, 3);
+  return getLang() === "en" ? `${dia} ${mes} ${d.getDate()}` : `${dia} ${d.getDate()} ${mes}`;
+}
+
+/** "a las 14:00" si fue hoy; si no, con su día. */
+function cuando(d: Date, now: Date): string {
+  return localDate(d) === localDate(now) ? tr`a las ${hhmm(d)}` : tr`el ${diaCorto(d)} a las ${hhmm(d)}`;
+}
+
 function cmdReceipt(args: Args, dbPath: string): void {
   const db = openDatabase(dbPath);
   try {
@@ -2040,6 +2183,7 @@ async function main(): Promise<void> {
     case "budget":            cmdBudget(args, dbPath); break;
     case "subscription add":  cmdSubscriptionAdd(args, dbPath); break;
     case "ai-cost":           cmdAiCost(dbPath); break;
+    case "quota":             await cmdQuota(args, dbPath); break;
     case "badge":             await cmdBadge(args, dbPath); break;
     case "receipt":           cmdReceipt(args, dbPath); break;
     case "status":            cmdStatus(dbPath); break;

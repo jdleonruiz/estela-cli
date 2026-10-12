@@ -27,6 +27,8 @@ import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
 import { documentLang, tr, withLang } from "./i18n/index.js";
 import { baseName } from "./paths.js";
 import { localizeDescription } from "./billing/localize.js";
+import { quotaToJson } from "./metrics/quota.js";
+import { loadQuotaReport } from "./quota.js";
 import { kindLabel } from "./i18n/labels.js";
 
 /**
@@ -329,6 +331,13 @@ async function api(
       const from = url.searchParams.get("from") ?? "";
       const to = url.searchParams.get("to") ?? "";
       return json(res, 200, buildSummary(db, from, to));
+    }
+
+    // Qué proyecto se come la cuota esta semana. Sin refrescar transcripts:
+    // el panel ya importa solo cada pocos minutos, y una petición web no debe
+    // ponerse a leer el disco entero.
+    if (path === "/api/quota" && req.method === "GET") {
+      return json(res, 200, quotaToJson(loadQuotaReport(db)));
     }
 
     if (path === "/api/day" && req.method === "GET") {

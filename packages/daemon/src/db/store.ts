@@ -2,11 +2,12 @@ import type { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 
 import type {
-  AgentTurn, AiConsentDecision, AiConsentRecord, Client, CloudAccount, CommitRecord, Currency,
+  AgentKind, AgentTurn, AiConsentDecision, AiConsentRecord, Client, CloudAccount, CommitRecord, Currency,
   Invoice, InvoiceLine, ParseReport, Project, ProjectSync, RatePeriod, Subscription, TimeEntry,
   WorkItemTracker,
 } from "@estela/shared";
 import type { ConsumptionRow } from "../billing/amortize.js";
+import type { QuotaTurn } from "../metrics/quota.js";
 import { localDate } from "@estela/shared";
 import { costOfTurn } from "../pricing/cost.js";
 import { tr } from "../i18n/index.js";
@@ -336,6 +337,35 @@ export function saveTurns(db: DatabaseSync, turns: readonly AgentTurn[]): number
     throw error;
   }
   return inserted;
+}
+
+/**
+ * Turnos de agente con `from <= at < to`, para la cuota. Solo lo que hace
+ * falta: quién, cuándo, dónde y cuántos tokens. Ya están deduplicados —
+ * `saveTurns` los guarda con el `turn_id` del origen como clave.
+ */
+export function quotaTurns(db: DatabaseSync, from: Date, to: Date): QuotaTurn[] {
+  const rows = db.prepare(`
+    SELECT agent, at, repo_path, tok_input, tok_output, tok_cache_read, tok_cache_w5m, tok_cache_w1h
+    FROM agent_turns WHERE at >= ? AND at < ?
+  `).all(iso(from), iso(to)) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    agent: r["agent"] as AgentKind,
+    at: new Date(r["at"] as string),
+    repoPath: (r["repo_path"] as string | null) ?? null,
+    tokens: {
+      input: r["tok_input"] as number, output: r["tok_output"] as number,
+      cacheRead: r["tok_cache_read"] as number,
+      cacheWrite5m: r["tok_cache_w5m"] as number, cacheWrite1h: r["tok_cache_w1h"] as number,
+    },
+  }));
+}
+
+/** El primer turno guardado de cada agente: hasta dónde llega su historial. */
+export function firstTurnByAgent(db: DatabaseSync): Map<AgentKind, Date> {
+  const rows = db.prepare("SELECT agent, MIN(at) AS first FROM agent_turns GROUP BY agent")
+    .all() as { agent: AgentKind; first: string }[];
+  return new Map(rows.map((r) => [r.agent, new Date(r.first)]));
 }
 
 /**

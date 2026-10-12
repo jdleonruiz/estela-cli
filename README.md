@@ -231,6 +231,30 @@ estela ai-cost
 Cache is counted separately because it's usually most of the bill — ignoring it
 underestimated spend fivefold.
 
+## Which project is eating your quota
+
+On Claude Max/Pro or Codex with a subscription, the quota runs out before you
+expect it and nothing tells you where it went. `estela quota` splits it by
+project:
+
+```sh
+estela quota          # current 5-hour window and this week, per project
+estela quota --json   # the same, for scripts
+```
+
+Tokens (input, output, cache read and cache write) per project, for the current
+5-hour window and for this week (Monday to today, in your time zone), plus this
+week against the average of your previous 4 over the same stretch. Claude Code
+and Codex are shown separately: they draw on different quotas. It's also a card
+in the Summary tab of `estela web`, and it's free.
+
+What it never does is tell you how much you have left: Anthropic and OpenAI
+don't publish their plans' limits, so any "X tokens left" would be made up. The
+5-hour window is an estimate — how its start is rounded isn't public, and
+anything you use on claude.ai or another machine counts too but isn't on this
+one. Copilot is left out because it doesn't record reliable tokens. Everything
+is calculated on your machine.
+
 ## Hours no import will infer
 
 Meetings, travel, research, and development without an agent that didn't leave

@@ -10,6 +10,7 @@ import { money } from "@estela/shared";
 import { openDatabase } from "./db/schema.js";
 import * as store from "./db/store.js";
 import { seedDemo } from "./demo.js";
+import { weekStart } from "./metrics/quota.js";
 import { startServer } from "./server.js";
 
 /**
@@ -353,4 +354,44 @@ test("el día separa lo ya facturado de lo que queda por facturar", async () => 
       assert.equal(nueva.invoiced, false);
       assert.equal(nueva.invoiceNumber, null);
     });
+});
+
+test("/api/quota da el reparto de la semana por agente, el mismo JSON que estela quota --json", async () => {
+  // Turnos a mitad de camino entre el lunes a las 00:00 y ahora: siempre caen
+  // en esta semana. Con la demo, un lunes por la mañana Codex aún no tenía nada.
+  await conServidor(
+    (dbPath) => {
+      const ahora = new Date();
+      const enEstaSemana = new Date((weekStart(ahora).getTime() + ahora.getTime()) / 2);
+      const turno = (agent: "claude-code" | "codex", id: string, repo: string, cacheRead: number) => ({
+        agent, turnId: id, sessionId: "s", at: enEstaSemana, model: "m", repoPath: repo, branch: "main",
+        tokens: { input: 0, output: 0, cacheRead, cacheWrite5m: 0, cacheWrite1h: 0 }, producerVersion: null,
+      });
+      const db = openDatabase(dbPath);
+      try {
+        store.upsertClient(db, { id: "c", name: "C", currency: "EUR" });
+        for (const id of ["web", "api"]) {
+          store.upsertProject(db, { id, clientId: "c", name: id, repoPaths: [`/repos/${id}`], billable: true,
+            roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client" });
+        }
+        store.saveTurns(db, [
+          turno("claude-code", "a", "/repos/web", 300), turno("claude-code", "b", "/repos/api", 900),
+          turno("codex", "c", "/repos/api", 50),
+        ]);
+      } finally { db.close(); }
+    },
+    async (base) => {
+      const r = await fetch(`${base}/api/quota`);
+      assert.equal(r.status, 200);
+      const q = await r.json() as {
+        windowIsEstimate: boolean;
+        agents: { agent: string; week: { projects: { projectName: string | null; total: number }[] } }[];
+      };
+      assert.equal(q.windowIsEstimate, true);
+      assert.deepEqual(q.agents.map((a) => a.agent), ["claude-code", "codex"]);
+      assert.deepEqual(q.agents[0]!.week.projects.map((p) => p.projectName), ["api", "web"]);
+      const totales = q.agents[0]!.week.projects.map((p) => p.total);
+      assert.deepEqual(totales, [...totales].sort((a, b) => b - a), "de mayor a menor");
+    },
+  );
 });
