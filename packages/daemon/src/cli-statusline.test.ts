@@ -334,3 +334,22 @@ test("sin proyecto, con rate_limits: los porcentajes salen igual", () => {
   assert.equal(estela(home, nc, entrada(join(home, "suelta"), limites)).out,
     "estela · sin proyecto · semana 38 % · 5 h 62 %\n");
 });
+
+test("una sesión nueva sin rate_limits enseña los últimos que mandó Claude Code; uno nuevo los reemplaza", () => {
+  const { home, repo, db } = entorno();
+  proyecto(db, repo);
+  const enHoras = (h: number) => Math.floor(Date.now() / 1000) + h * 3600;
+  const con = (cinco: number, semana: number, reinicio5 = enHoras(2)) => entrada(repo, { rate_limits: {
+    five_hour: { used_percentage: cinco, resets_at: reinicio5 },
+    seven_day: { used_percentage: semana, resets_at: enHoras(72) } } });
+
+  assert.match(estela(home, nc, con(62, 38)).out, /semana 38 % · 5 h 62 %/);
+  // Lo que manda Claude Code al arrancar: nada de rate_limits.
+  assert.match(estela(home, nc, entrada(repo)).out, /semana 38 % · 5 h 62 %/);
+  // Llega el dato nuevo y reemplaza.
+  assert.match(estela(home, nc, con(81, 40)).out, /semana 40 % · 5 h 81 %/);
+  assert.match(estela(home, nc, entrada(repo)).out, /semana 40 % · 5 h 81 %/);
+  // Una 5 h cuyo reinicio ya pasó no se enseña al arrancar; la semana sí.
+  estela(home, nc, con(90, 41, enHoras(-1)));
+  assert.match(estela(home, nc, entrada(repo)).out, /^estela · ACME › Web · hoy 0m · semana 41 %\n$/);
+});

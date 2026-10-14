@@ -4,6 +4,14 @@ Cambios visibles de cada versión del paquete `estela`. Las anteriores a la
 0.2.0 están en el historial de git, con una etiqueta por versión en
 [github.com/jdleonruiz/estela-cli](https://github.com/jdleonruiz/estela-cli/tags).
 
+## 0.2.2 — 2026-10-14
+
+### Cambios
+- **La status line no pierde los límites al arrancar una sesión.** Claude Code
+  no manda `rate_limits` hasta la primera respuesta; mientras tanto, la línea
+  enseña los últimos porcentajes de semana y de 5 h que mandó, si el reinicio
+  de esa ventana aún no ha llegado. Cuando llega el dato nuevo, lo reemplaza.
+
 ## 0.2.1 — 2026-10-14
 
 ### Cambios

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import { setLang } from "./i18n/index.js";
@@ -6,6 +9,7 @@ import {
   appendedCommand, isOurs, planInstall, planUninstall, shellQuote,
 } from "./statusline-install.js";
 import { compactDuration, parseStatusInput, renderStatus, stripAnsi, type StatusData } from "./statusline.js";
+import { loadCache, rememberLimits } from "./statusline-cache.js";
 
 /**
  * La status line, sin disco: entrada, composición, color y recorte; y el
@@ -32,7 +36,7 @@ test("entrada con rate_limits: los dos porcentajes, tal cual llegan", () => {
     rate_limits: { five_hour: { used_percentage: 62.4, resets_at: 1 }, seven_day: { used_percentage: 38 } },
   }));
   assert.deepEqual(i, { dir: "/a", transcriptPath: "/t.jsonl", fiveHour: 62.4, sevenDay: 38,
-    fiveHourResetsAt: new Date(1000) });
+    fiveHourResetsAt: new Date(1000), sevenDayResetsAt: null });
 });
 
 test("entrada sin rate_limits (API key, versiones viejas): nada de límites", () => {
@@ -260,4 +264,52 @@ test("sin proyecto, la 5 h también en ámbar desde el 80 %", () => {
   const d: StatusData = { ...DATA, project: null, unassignedRoot: "web", sevenDay: 10, fiveHour: 85 };
   assert.ok(renderStatus(d).includes(`${amber}5 h 85 %`));
   assert.ok(!renderStatus({ ...d, fiveHour: 79 }).includes(amber));
+});
+
+// ── Los últimos rate_limits, al arrancar una sesión ──────────────────────
+
+const lim = (pct: number | null, reset: Date | null) => ({ usedPercentage: pct, resetsAt: reset });
+const nada = { fiveHour: lim(null, null), sevenDay: lim(null, null) };
+
+test("sin rate_limits al arrancar, se usa lo último guardado si su reinicio no ha pasado", () => {
+  const db = join(mkdtempSync(join(tmpdir(), "estela-lim-")), "estela.db");
+  const t0 = new Date("2026-10-14T10:00:00Z");
+  const r5 = new Date("2026-10-14T13:00:00Z"), r7 = new Date("2026-10-18T00:00:00Z");
+  assert.deepEqual(rememberLimits(db, { fiveHour: lim(62, r5), sevenDay: lim(38, r7) }, t0), { fiveHour: 62, sevenDay: 38 });
+
+  // Una sesión nueva, sin rate_limits todavía: los de antes.
+  assert.deepEqual(rememberLimits(db, nada, new Date("2026-10-14T11:00:00Z")), { fiveHour: 62, sevenDay: 38 });
+
+  // Pasado el reinicio de la 5 h, esa ya no se enseña; la semana sí.
+  assert.deepEqual(rememberLimits(db, nada, new Date("2026-10-14T13:00:01Z")), { fiveHour: null, sevenDay: 38 });
+  // Y pasado el de la semana, tampoco.
+  assert.deepEqual(rememberLimits(db, nada, new Date("2026-10-18T00:00:00Z")), { fiveHour: null, sevenDay: null });
+});
+
+test("un dato nuevo reemplaza al guardado; usar el guardado no lo cuenta como visto otra vez", () => {
+  const db = join(mkdtempSync(join(tmpdir(), "estela-lim-")), "estela.db");
+  const r5 = new Date("2026-10-14T13:00:00Z");
+  rememberLimits(db, { fiveHour: lim(40, r5), sevenDay: lim(null, null) }, new Date("2026-10-14T09:00:00Z"));
+  const visto = loadCache(db).fiveHour!.seenAt;
+
+  rememberLimits(db, nada, new Date("2026-10-14T10:00:00Z"));
+  assert.equal(loadCache(db).fiveHour!.seenAt, visto, "quota no debe creer que es un dato reciente");
+
+  assert.deepEqual(rememberLimits(db, { fiveHour: lim(71, r5), sevenDay: lim(null, null) }, new Date("2026-10-14T10:05:00Z")).fiveHour, 71);
+  assert.equal(loadCache(db).fiveHour!.usedPercentage, 71, "el porcentaje nuevo se guarda aunque el reinicio sea el mismo");
+  assert.deepEqual(rememberLimits(db, nada, new Date("2026-10-14T10:06:00Z")).fiveHour, 71);
+});
+
+test("un reinicio sin porcentaje de la misma ventana no borra el porcentaje guardado", () => {
+  const db = join(mkdtempSync(join(tmpdir(), "estela-lim-")), "estela.db");
+  const r5 = new Date("2026-10-14T13:00:00Z");
+  rememberLimits(db, { fiveHour: lim(55, r5), sevenDay: lim(null, null) }, new Date("2026-10-14T09:00:00Z"));
+  rememberLimits(db, { fiveHour: lim(null, r5), sevenDay: lim(null, null) }, new Date("2026-10-14T09:30:00Z"));
+  assert.equal(loadCache(db).fiveHour!.usedPercentage, 55);
+});
+
+test("sin directorio de Estela no se escribe nada, pero lo que llega se enseña igual", () => {
+  const db = join(tmpdir(), "no-existe-" + Date.now(), "estela.db");
+  const r = rememberLimits(db, { fiveHour: lim(10, new Date(Date.now() + 3600_000)), sevenDay: lim(null, null) }, new Date());
+  assert.equal(r.fiveHour, 10);
 });

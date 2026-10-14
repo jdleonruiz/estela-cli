@@ -9,7 +9,7 @@ import * as store from "./db/store.js";
 import { breakdown, weekStart, type QuotaBucket } from "./metrics/quota.js";
 import { normalizePath } from "./paths.js";
 import { folderName, gitRoot, ownerResolver } from "./project-of.js";
-import { loadCache, recordFiveHourReset, saveCache } from "./statusline-cache.js";
+import { loadCache, rememberLimits, saveCache } from "./statusline-cache.js";
 import { renderStatus, stripAnsi, type StatusData, type StatusInput, parseStatusInput } from "./statusline.js";
 import { isScratchpad, parseTranscriptLine, resolveScratchpads } from "./watchers/claude.js";
 
@@ -40,10 +40,16 @@ export async function runStatusline(argv: readonly string[]): Promise<void> {
     const columns = Number(process.env["COLUMNS"]) || null;
 
     const now = new Date();
-    if (input.fiveHourResetsAt) {
-      try { recordFiveHourReset(flags.db, input.fiveHourResetsAt, now); } catch { /* es una caché */ }
-    }
-    const data = computeStatus(input, flags.db, now);
+    // Lo nuevo de rate_limits se guarda; lo que no venga (al arrancar una
+    // sesión) se toma de lo último visto, si su ventana sigue abierta.
+    let limits = { fiveHour: input.fiveHour, sevenDay: input.sevenDay };
+    try {
+      limits = rememberLimits(flags.db, {
+        fiveHour: { usedPercentage: input.fiveHour, resetsAt: input.fiveHourResetsAt ?? null },
+        sevenDay: { usedPercentage: input.sevenDay, resetsAt: input.sevenDayResetsAt ?? null },
+      }, now);
+    } catch { /* es una caché: sin ella, la línea sale con lo que llegó */ }
+    const data = computeStatus({ ...input, ...limits }, flags.db, now);
     const ours = renderStatus(data, { columns, color: flags.color, reserved });
     process.stdout.write((extra ? `${ours}${flags.color ? "\x1b[90m | \x1b[0m" : " | "}${extra}` : ours) + "\n");
   } catch {
@@ -66,7 +72,7 @@ function parseFlags(argv: readonly string[]): Flags {
 
 /** Ejecutado a mano en una terminal, sin nada por stdin: el directorio actual. */
 function manualInput(): StatusInput {
-  return { dir: process.cwd(), transcriptPath: null, fiveHour: null, sevenDay: null, fiveHourResetsAt: null };
+  return { dir: process.cwd(), transcriptPath: null, fiveHour: null, sevenDay: null, fiveHourResetsAt: null, sevenDayResetsAt: null };
 }
 
 function readStdin(): Promise<string> {

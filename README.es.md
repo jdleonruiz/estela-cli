@@ -286,7 +286,9 @@ Las horas medidas hoy en este proyecto (la misma cifra que dará el informe),
 la parte de tu consumo de Claude Code de esta semana que es de este proyecto
 y, solo si Claude Code los manda, sus propios porcentajes de límite de la
 semana y de 5 h, tal cual. Estela nunca estima un límite ni hace cuenta atrás.
-La cifra de 5 h se pone en ámbar desde el 80 %. En una terminal estrecha la
+La cifra de 5 h se pone en ámbar desde el 80 %. Una sesión nueva enseña las
+últimas cifras que mandó Claude Code hasta que lleguen otras, si esa ventana no
+se ha reiniciado. En una terminal estrecha la
 línea quita primero la 5 h, luego la semana, acorta el nombre, quita "este
 proyecto" y después "hoy"; `estela` no se va nunca. Tarda unos 50 ms y solo
 lee lo nuevo del transcript de la sesión actual.

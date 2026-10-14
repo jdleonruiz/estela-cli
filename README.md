@@ -288,7 +288,9 @@ Hours measured today on this project (the same number the report will
 give), this project's share of your Claude Code usage this week, and — only
 if Claude Code sends them — its own weekly and 5-hour limit percentages, as
 they come. Estela never estimates a limit or counts down to a reset. The
-5-hour figure turns amber from 80%. On a narrow terminal the line drops the
+5-hour figure turns amber from 80%. A new session shows the last figures Claude
+Code sent until fresh ones arrive, if that window hasn't reset yet. On a
+narrow terminal the line drops the
 5-hour figure first, then the week, then shortens the name, then this
 project, then today; `estela` always stays. It runs in about 50 ms and only
 reads what's new in the current session's transcript.

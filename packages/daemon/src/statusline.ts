@@ -24,6 +24,8 @@ export interface StatusInput {
    * atrás): se guarda para que `estela quota` sepa dónde empieza la ventana.
    */
   readonly fiveHourResetsAt?: Date | null;
+  /** `rate_limits.seven_day.resets_at`: tampoco se enseña nunca. */
+  readonly sevenDayResetsAt?: Date | null;
 }
 
 /**
@@ -42,6 +44,7 @@ export function parseStatusInput(text: string): StatusInput {
     fiveHour: pct(obj(limits["five_hour"])["used_percentage"]),
     sevenDay: pct(obj(limits["seven_day"])["used_percentage"]),
     fiveHourResetsAt: epoch(obj(limits["five_hour"])["resets_at"]),
+    sevenDayResetsAt: epoch(obj(limits["seven_day"])["resets_at"]),
   };
 }
 
