@@ -967,4 +967,79 @@ export const EN: Record<string, string> = {
     "at {0}",
   "el {0} a las {1}":
     "on {0} at {1}",
+  // ── estela statusline ──
+  "{0} no es un JSON válido. No lo toco: arréglalo y vuelve a intentarlo.":
+    "{0} isn't valid JSON. I'm not touching it: fix it and try again.",
+  "La status line de Estela ya está instalada en {0}.":
+    "Estela's status line is already installed in {0}.",
+  "Ya tienes otra status line en {0}:\n":
+    "You already have another status line in {0}:\n",
+  "No la toco. Elige:":
+    "I won't touch it. Choose:",
+  "  estela statusline install --append   enseña las dos, la de Estela primero":
+    "  estela statusline install --append   show both, Estela's first",
+  "  estela statusline install --force    sustituye la tuya por la de Estela":
+    "  estela statusline install --force    replace yours with Estela's",
+  "Copia de seguridad: {0}":
+    "Backup: {0}",
+  "Status line de Estela instalada, con la tuya detrás: {0}":
+    "Estela's status line installed, with yours after it: {0}",
+  "Status line de Estela instalada en lugar de: {0}":
+    "Estela's status line installed instead of: {0}",
+  "Status line de Estela instalada en {0}.":
+    "Estela's status line installed in {0}.",
+  "Se verá en la próxima sesión de Claude Code (o al reiniciar la actual).":
+    "You'll see it in your next Claude Code session (or after restarting the current one).",
+  "\nAviso: \"estela\" no está en tu PATH, así que Claude Code no podrá ejecutarla.":
+    "\nWarning: \"estela\" isn't on your PATH, so Claude Code won't be able to run it.",
+  "Instálala de forma global: npm install -g estela":
+    "Install it globally: npm install -g estela",
+  "No hay status line de Estela que quitar.":
+    "There's no Estela status line to remove.",
+  "La status line de {0} no es la de Estela, así que no la toco:\n\n  {1}":
+    "The status line in {0} isn't Estela's, so I won't touch it:\n\n  {1}",
+  "Status line de Estela quitada; vuelve a estar la que tenías: {0}":
+    "Estela's status line removed; your previous one is back: {0}",
+  "Status line de Estela quitada.":
+    "Estela's status line removed.",
+  "sin proyecto":
+    "no project",
+  "hoy {0}":
+    "today {0}",
+  "este proyecto {0} %":
+    "this project {0}%",
+  "semana {0} %":
+    "week {0}%",
+  "5 h {0} %":
+    "5h {0}%",
+  // ── quota: ventana oficial y --weighted ──
+  "{0} — ventana de 5 h actual: desde las {1}, termina a las {2}":
+    "{0} — current 5-hour window: from {1}, ends at {2}",
+  "Ponderado por precio de lista; no es cómo el proveedor cuenta tu límite.":
+    "Weighted by list price; this is not how the provider counts your limit.",
+  "{0} turnos de modelos sin precio de lista cuentan como 0 en ese %.":
+    "{0} turns from models without a list price count as 0 in that %.",
+  "La ventana de 5 h es la que da Claude Code; el reparto solo incluye lo usado en esta máquina.":
+    "The 5-hour window is the one Claude Code reports; the split only includes what was used on this machine.",
+  // ── import: horas de subcarpetas y worktrees ──
+  "\nEstela ahora reconoce las sesiones en subcarpetas y worktrees de un repositorio.":
+    "\nEstela now recognizes sessions in a repository's subfolders and worktrees.",
+  "Estas horas no estaban imputadas y se sumarían a su proyecto:\n":
+    "These hours weren't assigned and would be added to their project:\n",
+  "\n  Nada de lo ya imputado cambia de proyecto, y los días aprobados no se tocan.":
+    "\n  Nothing already assigned changes project, and approved days aren't touched.",
+  "\n  Sin tocar, porque ese día ya está aprobado o facturado:":
+    "\n  Left alone, because that day is already approved or invoiced:",
+  "    {0} · {1}: {2} recuperables. Revísalo con: estela entries --project {3}":
+    "    {0} · {1}: {2} recoverable. Review it with: estela entries --project {3}",
+  "¿Imputar estas horas? [s/N] ":
+    "Assign these hours? [y/N] ",
+  "  No se ha tocado nada. Cuando quieras: estela import --yes\n":
+    "  Nothing was changed. Whenever you want: estela import --yes\n",
+  "  {0} recuperadas de sesiones en subcarpetas y worktrees":
+    "  {0} recovered from sessions in subfolders and worktrees",
+  "{0} (sin proyecto)":
+    "{0} (no project)",
+  "\n{0} de esos bloques son de subcarpetas o worktrees de un proyecto: estela import --yes los imputa.":
+    "\n{0} of those blocks are from a project's subfolders or worktrees: estela import --yes assigns them.",
 };

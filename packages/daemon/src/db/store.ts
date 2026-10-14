@@ -346,18 +346,41 @@ export function saveTurns(db: DatabaseSync, turns: readonly AgentTurn[]): number
  */
 export function quotaTurns(db: DatabaseSync, from: Date, to: Date): QuotaTurn[] {
   const rows = db.prepare(`
-    SELECT agent, at, repo_path, tok_input, tok_output, tok_cache_read, tok_cache_w5m, tok_cache_w1h
+    SELECT agent, at, model, repo_path, tok_input, tok_output, tok_cache_read, tok_cache_w5m, tok_cache_w1h
     FROM agent_turns WHERE at >= ? AND at < ?
   `).all(iso(from), iso(to)) as Record<string, unknown>[];
   return rows.map((r) => ({
     agent: r["agent"] as AgentKind,
     at: new Date(r["at"] as string),
+    model: r["model"] as string,
     repoPath: (r["repo_path"] as string | null) ?? null,
     tokens: {
       input: r["tok_input"] as number, output: r["tok_output"] as number,
       cacheRead: r["tok_cache_read"] as number,
       cacheWrite5m: r["tok_cache_w5m"] as number, cacheWrite1h: r["tok_cache_w1h"] as number,
     },
+  }));
+}
+
+/** Turnos completos con `from <= at < to`: lo que necesita `sessionize`. */
+export function turnsBetween(db: DatabaseSync, from: Date, to: Date): AgentTurn[] {
+  const rows = db.prepare(`
+    SELECT * FROM agent_turns WHERE at >= ? AND at < ? ORDER BY at
+  `).all(iso(from), iso(to)) as Record<string, unknown>[];
+  return rows.map((r) => ({
+    agent: r["agent"] as AgentKind,
+    turnId: r["turn_id"] as string,
+    sessionId: r["session_id"] as string,
+    at: new Date(r["at"] as string),
+    model: r["model"] as string,
+    repoPath: (r["repo_path"] as string | null) ?? null,
+    branch: (r["branch"] as string | null) ?? null,
+    tokens: {
+      input: r["tok_input"] as number, output: r["tok_output"] as number,
+      cacheRead: r["tok_cache_read"] as number,
+      cacheWrite5m: r["tok_cache_w5m"] as number, cacheWrite1h: r["tok_cache_w1h"] as number,
+    },
+    producerVersion: (r["producer_version"] as string | null) ?? null,
   }));
 }
 

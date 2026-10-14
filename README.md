@@ -116,6 +116,11 @@ Two things trip people up before Estela even starts:
   the standalone Node, then `nvm install lts` and `nvm use lts` from an
   administrator terminal. `where.exe npm` should list a single path.
 
+A session in a subfolder or a git worktree counts for its repository's
+project. If an import would add hours to what you had already imported, Estela
+shows you how many per project and asks first (`estela import --yes` skips the
+question); it never moves hours between projects or touches an approved day.
+
 ## Reporting to a client
 
 Projects are created as internal and without a rate, because making one up
@@ -238,8 +243,9 @@ expect it and nothing tells you where it went. `estela quota` splits it by
 project:
 
 ```sh
-estela quota          # current 5-hour window and this week, per project
-estela quota --json   # the same, for scripts
+estela quota              # current 5-hour window and this week, per project
+estela quota --weighted   # the % by list price instead of by tokens
+estela quota --json       # the same, for scripts
 ```
 
 Tokens (input, output, cache read and cache write) per project, for the current
@@ -248,12 +254,49 @@ week against the average of your previous 4 over the same stretch. Claude Code
 and Codex are shown separately: they draw on different quotas. It's also a card
 in the Summary tab of `estela web`, and it's free.
 
+A session in a subfolder or in a git worktree counts for its repo's project;
+a folder that isn't a project shows up under its git root's name. The % is
+by tokens by default; `--weighted` splits it by each model's list price
+instead, which is not how the provider counts your limit. With the status
+line installed (below), the 5-hour window is the one Claude Code reports
+rather than an estimate.
+
 What it never does is tell you how much you have left: Anthropic and OpenAI
 don't publish their plans' limits, so any "X tokens left" would be made up. The
 5-hour window is an estimate — how its start is rounded isn't public, and
 anything you use on claude.ai or another machine counts too but isn't on this
 one. Copilot is left out because it doesn't record reliable tokens. Everything
 is calculated on your machine.
+
+## A line under every Claude Code session
+
+```sh
+npm install -g estela        # the status line needs estela on your PATH
+estela statusline install
+```
+
+In a repository that isn't a project yet it shows `estela · web (no project) ·
+estela setup`, and outside git just `estela · no project`. Each Claude Code
+session in a project shows a line like this:
+
+```
+estela · Brightside Health › brightside-portal · today 2h14 · this project 21% · week 38% · 5h 62%
+```
+
+Hours measured today on this project (the same number the report will
+give), this project's share of your Claude Code usage this week, and — only
+if Claude Code sends them — its own weekly and 5-hour limit percentages, as
+they come. Estela never estimates a limit or counts down to a reset. The
+5-hour figure turns amber from 80%. On a narrow terminal the line drops the
+5-hour figure first, then the week, then shortens the name, then this
+project, then today; `estela` always stays. It runs in about 50 ms and only
+reads what's new in the current session's transcript.
+
+`install` merges the block into `~/.claude/settings.json` without touching
+anything else, after making a backup. If you already have a status line it
+won't overwrite it: `--force` replaces it, `--append` shows yours after
+Estela's. `estela statusline uninstall` removes it (and puts yours back if
+you used `--append`).
 
 ## Hours no import will infer
 

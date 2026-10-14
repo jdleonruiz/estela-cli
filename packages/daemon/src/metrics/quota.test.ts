@@ -7,7 +7,7 @@ import { openDatabase } from "../db/schema.js";
 import * as store from "../db/store.js";
 import { loadQuotaReport } from "../quota.js";
 import {
-  buildQuota, compareWithHistory, fiveHourWindows, quotaToJson, sameStretch, weekStart, windowAt,
+  breakdown, buildQuota, compareWithHistory, fiveHourWindows, officialWindow, quotaToJson, sameStretch, weekStart, windowAt,
   type QuotaBucket, type QuotaTurn,
 } from "./quota.js";
 
@@ -147,7 +147,7 @@ test("un turno fuera de cualquier proyecto cuenta, a nombre de su carpeta, y uno
       { ...turnoGuardado("t2", null, "2026-10-07T10:05:00") },
     ]);
     const filas = loadQuotaReport(db, local(2026, 10, 7, 12)).agents[0]!.week.rows.map((x) => x.bucket);
-    assert.deepEqual(filas, [{ kind: "folder", folder: "notas" }, { kind: "none" }]);
+    assert.deepEqual(filas, [{ kind: "folder", folder: "notas", path: "/home/yo/notas" }, { kind: "none" }]);
   } finally { db.close(); }
 });
 
@@ -236,7 +236,7 @@ test("el JSON lleva fechas en ISO, filas homogéneas y avisa de que la ventana e
   };
   assert.equal(j.windowIsEstimate, true);
   assert.deepEqual(Object.keys(j.agents[0]!.week.projects[0]!).sort(),
-    ["cacheRead", "cacheWrite", "folder", "input", "output", "projectId", "projectName", "share", "total"]);
+    ["cacheRead", "cacheWrite", "folder", "input", "listCostMicroUsd", "output", "projectId", "projectName", "share", "total"]);
   assert.equal(j.agents[0]!.week.projects[1]!["projectId"], null);
   assert.deepEqual(j.excluded, []);
   assert.doesNotThrow(() => JSON.parse(JSON.stringify(j)));
@@ -250,3 +250,77 @@ function turnoGuardado(turnId: string, repoPath: string | null, at: string, cach
     repoPath, branch: "main", tokens: tok(cacheRead), producerVersion: null,
   };
 }
+
+// ── La ventana que dio Claude Code (resets_at) ──────────────────────────
+
+test("con un resets_at de hace menos de 5 h, la ventana empieza 5 h antes del reinicio", () => {
+  const now = local(2026, 10, 7, 15, 0);
+  const w = officialWindow({ resetsAt: local(2026, 10, 7, 17, 30), seenAt: local(2026, 10, 7, 14, 50) }, now);
+  assert.deepEqual(w, { start: local(2026, 10, 7, 12, 30), end: local(2026, 10, 7, 17, 30) });
+});
+
+test("un resets_at visto hace 5 h o más, o ya pasado, no vale: se estima", () => {
+  const now = local(2026, 10, 7, 15, 0);
+  assert.equal(officialWindow({ resetsAt: local(2026, 10, 7, 17, 0), seenAt: local(2026, 10, 7, 10, 0) }, now), null,
+    "visto hace 5 h justas");
+  assert.equal(officialWindow({ resetsAt: local(2026, 10, 7, 14, 59), seenAt: local(2026, 10, 7, 14, 0) }, now), null,
+    "el reinicio ya pasó: la ventana de ahora es otra que nadie ha visto");
+  assert.equal(officialWindow(null, now), null);
+});
+
+test("buildQuota usa la ventana oficial solo para Claude Code, y la marca como no estimada", () => {
+  const now = local(2026, 10, 7, 15, 0);
+  const r = buildQuota({
+    turns: [
+      { agent: "claude-code", at: local(2026, 10, 7, 12, 0), repoPath: "/a", tokens: tok(5) },  // antes de la ventana oficial
+      { agent: "claude-code", at: local(2026, 10, 7, 13, 0), repoPath: "/a", tokens: tok(7) },
+      { agent: "codex", at: local(2026, 10, 7, 14, 0), repoPath: "/a", tokens: tok(3) },
+    ],
+    firstTurnAt: new Map(), now, bucketOf: porCarpeta,
+    claudeWindow: { start: local(2026, 10, 7, 12, 30), end: local(2026, 10, 7, 17, 30) },
+  });
+  const claude = r.agents.find((a) => a.agent === "claude-code")!;
+  const codex = r.agents.find((a) => a.agent === "codex")!;
+  assert.equal(claude.window!.estimated, false);
+  assert.deepEqual(claude.window!.start, local(2026, 10, 7, 12, 30));
+  assert.equal(claude.window!.total.total, 7, "lo de antes del inicio oficial no entra");
+  assert.equal(codex.window!.estimated, true, "Codex tiene su propia cuota: sigue estimada");
+  const j = quotaToJson(r) as { windowIsEstimate: boolean };
+  assert.equal(j.windowIsEstimate, true, "hay una ventana estimada (Codex)");
+});
+
+// ── --weighted ──────────────────────────────────────────────────────────
+
+test("ponderado: el % sale del precio de lista de cada modelo, no de los tokens", () => {
+  const at = local(2026, 10, 7, 10);
+  const opus = { agent: "claude-code" as const, at, repoPath: "/caro", model: "claude-opus-4-8",
+    tokens: { input: 0, output: 10_000, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 } };   // 10k × 25 $/M = 0,25 $
+  const lectura = { agent: "claude-code" as const, at, repoPath: "/barato", model: "claude-sonnet-4-6",
+    tokens: { input: 0, output: 0, cacheRead: 100_000, cacheWrite5m: 0, cacheWrite1h: 0 } }; // 100k × 3 $/M × 0,1 = 0,03 $
+  const desde = local(2026, 10, 7), hasta = local(2026, 10, 8);
+
+  const tokens = breakdown([opus, lectura], desde, hasta, porCarpeta);
+  assert.equal(tokens.weighted, false);
+  assert.equal((tokens.rows[0]!.bucket as { projectId: string }).projectId, "/barato", "por tokens gana la caché");
+
+  const precio = breakdown([opus, lectura], desde, hasta, porCarpeta, { weighted: true });
+  assert.equal(precio.weighted, true);
+  assert.ok(precio.listCost > 0);
+  const caro = precio.rows[0]!;
+  assert.equal((caro.bucket as { projectId: string }).projectId, "/caro", "por precio gana Opus: el orden se invierte");
+  assert.equal(caro.listCost, 250_000);
+  assert.equal(precio.rows[1]!.listCost, 30_000);
+  assert.equal(caro.share, 250_000 / 280_000);
+  // Mismos tokens en las dos: ponderar solo cambia el %, no las columnas.
+  assert.deepEqual(precio.total, tokens.total);
+});
+
+test("ponderado: un modelo sin precio cuenta como 0 y se cuenta aparte", () => {
+  const at = local(2026, 10, 7, 10);
+  const b = breakdown([
+    { agent: "claude-code", at, repoPath: "/a", model: "modelo-que-no-existe", tokens: tok(1000) },
+    { agent: "claude-code", at, repoPath: "/b", model: "claude-sonnet-4-6", tokens: tok(10) },
+  ], local(2026, 10, 7), local(2026, 10, 8), porCarpeta, { weighted: true });
+  assert.equal(b.unpriced, 1);
+  assert.equal(b.rows[0]!.share, 1, "todo el % es del único con precio");
+});

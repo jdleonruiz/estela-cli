@@ -294,7 +294,7 @@ function turnosDeCuota(ahora: Date, hoy: Date): AgentTurn[] {
       if (at > ahora) break;
       out.push({
         agent: "codex", turnId: `demo_quota_codex_${n++}`, sessionId: `demo-codex-${d}`,
-        at, model: "gpt-5-codex", repoPath: RUTA(repo), branch: "main",
+        at, model: "gpt-5.6-sol", repoPath: RUTA(repo), branch: "main",
         tokens: { input: entre(800, 6000), output: entre(200, 2400), cacheRead: entre(8_000, 60_000),
                   cacheWrite5m: 0, cacheWrite1h: 0 },
         producerVersion: "0.46.0",

@@ -71,28 +71,12 @@ export async function scanClaudeCode(options: ScanOptions = {}): Promise<ScanRes
 
   for (const file of files) {
     for await (const line of readLines(file)) {
-      if (!line.trim()) continue;
+      const parsed = parseTranscriptLine(line);
+      if (parsed === null) continue;
       recordsSeen++;
-
-      let raw: RawAssistantRecord;
-      try {
-        raw = JSON.parse(line) as RawAssistantRecord;
-      } catch {
-        // Una línea a medio escribir mientras la sesión está viva es normal.
-        malformedRecords++;
-        continue;
-      }
-
-      if (raw.type !== "assistant") {
-        unknownRecords++;
-        continue;
-      }
-
-      const turn = toTurn(raw);
-      if (!turn) {
-        malformedRecords++;
-        continue;
-      }
+      if (parsed === "other") { unknownRecords++; continue; }
+      if (parsed === "malformed") { malformedRecords++; continue; }
+      const turn = parsed;
 
       if (seenTurnIds.has(turn.turnId)) {
         duplicatesDropped++;
@@ -132,6 +116,25 @@ export async function scanClaudeCode(options: ScanOptions = {}): Promise<ScanRes
       warnings,
     },
   };
+}
+
+/**
+ * Una línea del transcript: un turno, `"other"` si es de otro tipo (maquinaria
+ * interna que se ignora), `"malformed"` si no se entiende, o null si está en
+ * blanco. Es lo que usan tanto el escaneo completo como `estela statusline`,
+ * que lee solo las líneas nuevas: los dos tienen que entender lo mismo.
+ */
+export function parseTranscriptLine(line: string): AgentTurn | "other" | "malformed" | null {
+  if (!line.trim()) return null;
+  let raw: RawAssistantRecord;
+  try {
+    raw = JSON.parse(line) as RawAssistantRecord;
+  } catch {
+    // Una línea a medio escribir mientras la sesión está viva es normal.
+    return "malformed";
+  }
+  if (raw.type !== "assistant") return "other";
+  return toTurn(raw) ?? "malformed";
 }
 
 function toTurn(raw: RawAssistantRecord): AgentTurn | null {
@@ -209,8 +212,12 @@ function num(value: unknown): number {
  * es generar ese mismo identificador para cada repositorio conocido y ver cuál
  * coincide.
  */
-export function resolveScratchpads(turns: readonly AgentTurn[]): AgentTurn[] {
-  const realPaths = new Set<string>();
+export function resolveScratchpads(
+  turns: readonly AgentTurn[],
+  /** Repositorios ya conocidos, para cuando el lote no trae la ruta real (la status line lee pocas líneas). */
+  knownRepos: readonly string[] = [],
+): AgentTurn[] {
+  const realPaths = new Set<string>(knownRepos.filter((p) => !isScratchpad(p)));
   for (const turn of turns) {
     if (turn.repoPath && !isScratchpad(turn.repoPath)) realPaths.add(turn.repoPath);
   }
@@ -226,7 +233,7 @@ export function resolveScratchpads(turns: readonly AgentTurn[]): AgentTurn[] {
   });
 }
 
-function isScratchpad(path: string): boolean {
+export function isScratchpad(path: string): boolean {
   return path.includes("/claude-") && path.endsWith("/scratchpad");
 }
 

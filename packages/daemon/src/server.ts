@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { extname, join, normalize } from "node:path";
+import { dirname, extname, join, normalize } from "node:path";
 
 import type { TimeEntry, WorkKind } from "@estela/shared";
 import { billableAmount, extractWorkItems, formatWorkItem, localDate, roundSeconds, WORK_KIND_LABELS } from "@estela/shared";
@@ -27,6 +27,7 @@ import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
 import { documentLang, tr, withLang } from "./i18n/index.js";
 import { baseName } from "./paths.js";
 import { localizeDescription } from "./billing/localize.js";
+import { planEntries } from "./billing/assign.js";
 import { quotaToJson } from "./metrics/quota.js";
 import { loadQuotaReport } from "./quota.js";
 import { kindLabel } from "./i18n/labels.js";
@@ -123,34 +124,14 @@ async function importOnce(dbPath: string): Promise<number> {
     const fromAgents = attachCommits(sessionize(turns), commits);
     const fromCommits = withoutOverlap(sessionizeCommits(commits), fromAgents);
 
-    // Se agrupa por PROYECTO, no por ruta: el agente abierto en `repo/` y en
-    // `repo/src/UI` son dos rutas del mismo proyecto, y agrupar por ruta
-    // producía dos bloques que luego se pisaban al guardarse con el mismo id.
-    const porProyecto = (b: { repoPath: string | null }) =>
-      (b.repoPath ? store.projectForRepo(db, b.repoPath) ?? b.repoPath : "");
-
-    for (const block of groupByBranchAndDay([...fromAgents, ...fromCommits], porProyecto)) {
-      const projectId = block.repoPath ? store.projectForRepo(db, block.repoPath) : null;
-      if (!projectId) continue;
-      const project = store.getProject(db, projectId)!;
-
-      const day = localDate(block.startedAt);
-      const slug = (block.branch ?? "sin-rama").replace(/[^a-zA-Z0-9]+/g, "-");
-      store.saveTimeEntry(db, {
-        id: `te_${projectId}_${day}_${slug}`,
-        projectId,
-        startedAt: block.startedAt, endedAt: block.endedAt, seconds: block.seconds,
-        description: describeBlock(block),
-        billable: project.billable, invoiceId: null,
-        aiCost: block.aiCost,
-        // Sin agente no hay segundos de agente que atribuir.
-        agentSeconds: block.turnCount > 0 ? block.seconds : 0,
-        commitHashes: block.commits.map((c) => c.hash),
-        agents: block.turnCount > 0 ? [...(block.agents ?? ["claude-code"])] : [],
-        source: block.turnCount > 0 ? "agent" : "commit", kind: "development",
-        branch: block.branch,
-        workItems: extractWorkItems(block.branch, block.commits.map((c) => c.subject), project.tracker),
-      });
+    // Las mismas reglas que `estela import` (billing/assign.ts). Las horas de
+    // subcarpetas y worktrees solo se recuperan si ya se confirmó una vez
+    // desde la terminal: el panel no cambia horas importadas en segundo plano
+    // sin que nadie haya visto antes qué iba a cambiar.
+    const recover = existsSync(join(dirname(dbPath), ".recover-git-root"));
+    const plan = planEntries(db, [...fromAgents, ...fromCommits], { recover });
+    for (const { entry } of plan.entries) {
+      store.saveTimeEntry(db, entry);
       imputed++;
     }
     return imputed;
@@ -337,7 +318,7 @@ async function api(
     // el panel ya importa solo cada pocos minutos, y una petición web no debe
     // ponerse a leer el disco entero.
     if (path === "/api/quota" && req.method === "GET") {
-      return json(res, 200, quotaToJson(loadQuotaReport(db)));
+      return json(res, 200, quotaToJson(loadQuotaReport(db, new Date(), { dbPath })));
     }
 
     if (path === "/api/day" && req.method === "GET") {

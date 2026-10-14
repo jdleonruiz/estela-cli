@@ -22,7 +22,28 @@ import { detectLang, setLang, tr } from "./i18n/index.js";
 
 const MIN_NODE = "22.5.0";
 
-if (tooOld(process.version, MIN_NODE)) {
+// `estela statusline` (y no `statusline install|uninstall`, que son de la CLI):
+// lo ejecuta Claude Code en cada evento de la sesión y tiene 100 ms. Va por un
+// camino aparte que no carga cli.js, y en un Node viejo imprime "estela" y
+// sale con 0 en vez de un error: la status line no se rompe nunca.
+const sub = process.argv[3];
+const esStatusline = process.argv[2] === "statusline" &&
+  !["install", "uninstall", "help", "--help"].includes(sub ?? "");
+
+if (esStatusline) {
+  // El aviso de que node:sqlite es experimental iría a stderr en cada evento.
+  process.removeAllListeners("warning");
+  process.on("warning", () => { /* nada: la status line no habla por stderr */ });
+  if (tooOld(process.version, MIN_NODE)) {
+    process.stdout.write("estela\n");
+  } else {
+    const i = process.argv.indexOf("--lang");
+    setLang(detectLang({ flag: i >= 0 ? process.argv[i + 1] : undefined, env: process.env, platform: process.platform }));
+    void import("./statusline-run.js")
+      .then((m) => m.runStatusline(process.argv.slice(3)))
+      .catch(() => { process.stdout.write("estela\n"); });
+  }
+} else if (tooOld(process.version, MIN_NODE)) {
   // Aquí aún no se ha leído ningún argumento: `--lang` se busca a mano.
   const i = process.argv.indexOf("--lang");
   setLang(detectLang({ flag: i >= 0 ? process.argv[i + 1] : undefined, env: process.env, platform: process.platform }));

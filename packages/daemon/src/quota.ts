@@ -1,8 +1,9 @@
-import { basename } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
 import * as store from "./db/store.js";
-import { buildQuota, quotaRange, type QuotaBucket, type QuotaReport } from "./metrics/quota.js";
+import { buildQuota, officialWindow, quotaRange, type QuotaBucket, type QuotaReport } from "./metrics/quota.js";
+import { ownerResolver } from "./project-of.js";
+import { readFiveHourReset } from "./statusline-cache.js";
 import { scanAgents } from "./watchers/agents.js";
 
 /**
@@ -10,24 +11,28 @@ import { scanAgents } from "./watchers/agents.js";
  * El cálculo vive en `metrics/quota.ts`; aquí solo se leen los datos.
  */
 
-export function loadQuotaReport(db: DatabaseSync, now: Date = new Date()): QuotaReport {
+export interface QuotaLoadOptions {
+  /** % por precio de lista en vez de por tokens (`--weighted`). */
+  readonly weighted?: boolean;
+  /**
+   * La base de la que se lee, para encontrar al lado lo que guardó la status
+   * line (el `resets_at` de Claude Code). Sin ella, la ventana se estima.
+   */
+  readonly dbPath?: string;
+}
+
+export function loadQuotaReport(db: DatabaseSync, now: Date = new Date(), options: QuotaLoadOptions = {}): QuotaReport {
   const range = quotaRange(now);
   const names = new Map(store.listProjects(db).map((p) => [p.id, p.name]));
 
-  // Un proyecto por carpeta, una sola vez: `projectForRepo` lee todos los
-  // repos vinculados en cada llamada, y una semana tiene miles de turnos.
-  const cache = new Map<string, QuotaBucket>();
+  // La carpeta, y si no, su raíz git: ver project-of.ts. Una carpeta sin
+  // proyecto sale con el nombre de su raíz git, no el de una subcarpeta.
+  const ownerOf = ownerResolver(db);
   const bucketOf = (repoPath: string | null): QuotaBucket => {
-    if (!repoPath) return { kind: "none" };
-    let bucket = cache.get(repoPath);
-    if (!bucket) {
-      const projectId = store.projectForRepo(db, repoPath);
-      bucket = projectId
-        ? { kind: "project", projectId, projectName: names.get(projectId) ?? projectId }
-        : { kind: "folder", folder: basename(repoPath.replace(/[\\/]+$/, "")) || repoPath };
-      cache.set(repoPath, bucket);
-    }
-    return bucket;
+    const o = ownerOf(repoPath);
+    if (o.kind === "project") return { kind: "project", projectId: o.projectId, projectName: names.get(o.projectId) ?? o.projectId };
+    if (o.kind === "folder") return { kind: "folder", folder: o.name, path: o.path };
+    return { kind: "none" };
   };
 
   return buildQuota({
@@ -35,6 +40,8 @@ export function loadQuotaReport(db: DatabaseSync, now: Date = new Date()): Quota
     firstTurnAt: store.firstTurnByAgent(db),
     now,
     bucketOf,
+    weighted: options.weighted === true,
+    claudeWindow: options.dbPath ? officialWindow(readFiveHourReset(options.dbPath), now) : null,
   });
 }
 

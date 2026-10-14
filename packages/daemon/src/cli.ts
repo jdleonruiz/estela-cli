@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { basename, dirname, join, resolve } from "node:path";
+import { createInterface } from "node:readline";
 
 // `node:sqlite` avisa de que es experimental en cada arranque. Es ruido para
 // quien solo quiere su factura, y el aviso no le dice nada accionable.
@@ -16,7 +17,7 @@ import {
   parseWorkItem, setMoneyLocale, TRACKER_SYSTEMS, WORK_KIND_LABELS,
 } from "@estela/shared";
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import { amortize, feeForMonth, monthOf, shareForProject } from "./billing/amortize.js";
 import { badgeMarkdown, badgeText, badgeUrl } from "./export/badge.js";
@@ -52,6 +53,8 @@ import { DAYS, MONTHS } from "./export/dates.js";
 import { HISTORY_WEEKS, quotaToJson, weekStart, type AgentQuota, type QuotaBreakdown,
          type QuotaBucket, type QuotaReport } from "./metrics/quota.js";
 import { loadQuotaReport, refreshQuotaTurns } from "./quota.js";
+import { planEntries, type AssignmentPlan } from "./billing/assign.js";
+import { backupName, claudeSettingsPath, estelaOnPath, planInstall, planUninstall } from "./statusline-install.js";
 import { kindLabel } from "./i18n/labels.js";
 
 const HELP_ES = `
@@ -61,8 +64,12 @@ estela — registro de horas para desarrollo asistido por IA
         Primera ejecución: detecta tus agentes y repositorios, y reconstruye
         tu historial. Dos minutos, sin preguntas y sin cuenta.
 
-  estela import [--since YYYY-MM-DD] [--repo <ruta>]
+  estela import [--since YYYY-MM-DD] [--repo <ruta>] [--yes]
         Reconstruye tu historial desde los transcripts de los agentes y git.
+        Una sesión en una subcarpeta o en un worktree cuenta para el
+        proyecto de su repo. La primera vez que eso suma horas a lo ya
+        importado, te enseña cuántas y pregunta (--yes no pregunta). Nunca
+        mueve horas de un proyecto a otro ni toca un día aprobado.
 
   estela client add --id <id> --name <nombre> --currency <EUR|USD|...>
                     [--tax-id <NIF/CIF>] [--email <a@b.com>]
@@ -121,7 +128,7 @@ estela — registro de horas para desarrollo asistido por IA
   estela entry link --entry <id> --items PROJ-12[,AB#1234] | --clear
         Pone a mano los tickets de un bloque. El import ya no los cambia.
   estela ai-cost                      Reparto de tu cuota entre proyectos.
-  estela quota [--json] [--no-refresh]
+  estela quota [--json] [--no-refresh] [--weighted]
         ¿Qué proyecto se come tu cuota de Claude Code o Codex? Tokens por
         proyecto en la ventana de 5 h actual y en la semana (de lunes a
         hoy), y esta semana frente a la media de tus 4 anteriores en el
@@ -129,9 +136,24 @@ estela — registro de horas para desarrollo asistido por IA
         Anthropic y OpenAI no publican los límites. La ventana de 5 h es
         una estimación: no se sabe cómo redondean su inicio, y lo que uses
         en claude.ai u otro equipo también cuenta y Estela no lo ve.
+        Si la status line de Estela está instalada, la ventana de Claude
+        Code es la que da Claude Code, no una estimación. Una sesión en un
+        worktree o en una subcarpeta cuenta para el proyecto de su repo.
+        --weighted reparte el % por precio de lista del modelo en vez de
+        por tokens (no es cómo el proveedor cuenta tu límite).
         Copilot queda fuera: no guarda tokens fiables. Antes de calcular
         lee los transcripts desde el lunes (--no-refresh lo evita).
         A diferencia de ai-cost, que reparte dinero, esto reparte tokens.
+  estela statusline install [--force | --append]
+        Una línea bajo cada sesión de Claude Code: proyecto, horas medidas
+        hoy, la parte de tu consumo de la semana que es de este proyecto y,
+        si Claude Code los manda, sus porcentajes de límite de la semana y
+        de 5 h (tal cual, sin estimar nada). Se calcula en tu máquina en
+        unos 50 ms. Añade el bloque a ~/.claude/settings.json sin tocar lo
+        demás, y antes deja una copia. Si ya tienes otra status line no la
+        pisa: --force la sustituye y --append la encadena detrás.
+  estela statusline uninstall
+        La quita. Si la instalaste con --append, deja la que tenías.
   estela badge [--project <id>]
         Badge para el README: horas medidas y coste de IA del proyecto.
         Sin --project, el del repositorio en el que estás.
@@ -232,8 +254,12 @@ estela — time tracking for AI-assisted development
         First run: detects your agents and repositories, and rebuilds your
         history. Two minutes, no questions, no account.
 
-  estela import [--since YYYY-MM-DD] [--repo <path>]
-        Rebuilds your history from agent transcripts and git.
+  estela import [--since YYYY-MM-DD] [--repo <path>] [--yes]
+        Rebuilds your history from agent transcripts and git. A session in a
+        subfolder or a worktree counts for its repo's project. The first
+        time that adds hours to what was already imported, it shows how many
+        and asks (--yes skips the question). It never moves hours from one
+        project to another or touches an approved day.
 
   estela client add --id <id> --name <name> --currency <EUR|USD|...>
                     [--tax-id <tax ID>] [--email <a@b.com>]
@@ -292,7 +318,7 @@ estela — time tracking for AI-assisted development
   estela entry link --entry <id> --items PROJ-12[,AB#1234] | --clear
         Sets a block's tickets by hand. Imports won't change them anymore.
   estela ai-cost                      How your subscription splits across projects.
-  estela quota [--json] [--no-refresh]
+  estela quota [--json] [--no-refresh] [--weighted]
         Which project is eating your Claude Code or Codex quota? Tokens per
         project in the current 5-hour window and this week (Monday to
         today), and this week against the average of your previous 4 over
@@ -300,10 +326,26 @@ estela — time tracking for AI-assisted development
         left, because Anthropic and OpenAI don't publish the limits. The
         5-hour window is an estimate: how its start is rounded isn't public,
         and anything you use on claude.ai or another machine also counts and
-        Estela can't see it. Copilot is left out: it doesn't record reliable
-        tokens. Before calculating it reads transcripts since Monday
+        Estela can't see it. With Estela's status line installed, the
+        Claude Code window is the one Claude Code reports, not an estimate.
+        A session in a worktree or a subfolder counts for its repo's
+        project. --weighted splits the % by the model's list price instead
+        of by tokens (not how the provider counts your limit). Copilot is
+        left out: it doesn't record reliable tokens. Before calculating it reads transcripts since Monday
         (--no-refresh skips that). Unlike ai-cost, which splits money, this
         splits tokens.
+  estela statusline install [--force | --append]
+        A line under every Claude Code session: project, hours measured
+        today, this project's share of your usage this week and, if Claude
+        Code sends them, its weekly and 5-hour limit percentages (as they
+        come, nothing estimated). Calculated on your machine in about
+        50 ms. It adds the block to ~/.claude/settings.json without touching
+        anything else, after making a backup. If you already have another
+        status line it won't overwrite it: --force replaces it and --append
+        chains it after Estela's.
+  estela statusline uninstall
+        Removes it. If you installed it with --append, your previous one
+        is put back.
   estela badge [--project <id>]
         Badge for your README: the project's measured hours and AI cost.
         Without --project, the one for the repository you're in.
@@ -665,6 +707,39 @@ async function cmdSetup(args: Args, dbPath: string): Promise<void> {
   } finally { db.close(); }
 }
 
+/** La vista previa de la primera recuperación: horas por proyecto. */
+function printRecoveryPreview(db: ReturnType<typeof openDatabase>, plan: AssignmentPlan): void {
+  console.log(tr`\nEstela ahora reconoce las sesiones en subcarpetas y worktrees de un repositorio.`);
+  console.log(tr`Estas horas no estaban imputadas y se sumarían a su proyecto:\n`);
+  for (const [projectId, seconds] of [...plan.recovered].sort((a, b) => b[1] - a[1])) {
+    const name = store.getProject(db, projectId)?.name ?? projectId;
+    console.log(`  ${name.padEnd(30)} +${formatDuration(seconds)}`);
+  }
+  console.log(tr`\n  Nada de lo ya imputado cambia de proyecto, y los días aprobados no se tocan.`);
+  printRecoveryBlocked(db, plan.blocked);
+  console.log("");
+}
+
+/** Lo que se recuperaría en días aprobados o facturados: se avisa, no se aplica. */
+function printRecoveryBlocked(db: ReturnType<typeof openDatabase>, blocked: AssignmentPlan["blocked"]): void {
+  if (blocked.length === 0) return;
+  console.log(tr`\n  Sin tocar, porque ese día ya está aprobado o facturado:`);
+  for (const b of [...blocked].sort((x, y) => x.day.localeCompare(y.day))) {
+    const name = store.getProject(db, b.projectId)?.name ?? b.projectId;
+    console.log(tr`    ${b.day} · ${name}: ${formatDuration(b.seconds)} recuperables. Revísalo con: estela entries --project ${b.projectId}`);
+  }
+}
+
+/** Una pregunta de sí o no. Sin terminal (un script, CI) la respuesta es no. */
+async function confirm(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return false;
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    const answer = (await new Promise<string>((res) => rl.question(question, res))).trim().toLowerCase();
+    return ["s", "si", "sí", "y", "yes"].includes(answer);
+  } finally { rl.close(); }
+}
+
 /**
  * La estrella se pide una vez, al terminar bien el primer setup: es cuando se
  * acaba de ver funcionar. Casi todo el que instala lo hace por npm y nunca
@@ -754,60 +829,52 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
     const fromAgents = attachCommits(sessionize(turns), commitsAll);
     const fromCommits = withoutOverlap(sessionizeCommits(commitsAll), fromAgents);
     const raw = [...fromAgents, ...fromCommits];
-    // Se agrupa por PROYECTO, no por ruta: el agente abierto en `repo/` y en
-    // `repo/src/UI` son dos rutas del mismo proyecto, y agrupar por ruta
-    // producía dos bloques que luego se pisaban al guardarse con el mismo id.
-    const porProyecto = (b: { repoPath: string | null }) =>
-      (b.repoPath ? store.projectForRepo(db, b.repoPath) ?? b.repoPath : "");
-
-    const blocks = groupByBranchAndDay(raw, porProyecto);
     if (fromCommits.length) {
       console.log(tr`  ${fromCommits.length} bloques deducidos solo de commits (sin agente)`);
     }
-    let entries = 0;
-    let unassigned = 0;
 
-    for (const block of blocks) {
-      const projectId = block.repoPath ? store.projectForRepo(db, block.repoPath) : null;
-      if (!projectId) { unassigned++; continue; }
-      const project = store.getProject(db, projectId)!;
-
-      const entry: Omit<TimeEntry, "id"> = {
-        projectId,
-        startedAt: block.startedAt,
-        endedAt: block.endedAt,
-        seconds: block.seconds,
-        description: describeBlock(block),
-        billable: project.billable,
-        invoiceId: null,
-        aiCost: block.aiCost,
-        // Un bloque deducido solo de commits no tuvo agente: ni segundos de
-        // agente ni agente al que atribuirlos.
-        agentSeconds: block.turnCount > 0 ? block.seconds : 0,
-        commitHashes: block.commits.map((c) => c.hash),
-        agents: block.turnCount > 0 ? [...(block.agents ?? ["claude-code"])] : [],
-        source: block.turnCount > 0 ? "agent" : "commit",
-        kind: "development",
-        branch: block.branch,
-        // El ticket se saca aquí y no más tarde: en la base solo quedan los
-        // hashes de los commits, y es en sus mensajes donde va el `AB#1234`.
-        workItems: extractWorkItems(block.branch, block.commits.map((c) => c.subject), project.tracker),
-      };
-      // El id es determinista (proyecto + día + rama) para que reimportar
-      // actualice la imputación en vez de duplicarla. La fecha tiene que ser la
-      // LOCAL y la misma que usa el servidor: con toISOString() se generaba un
-      // id distinto para el mismo bloque y el día se contaba dos veces.
-      const day = localDate(block.startedAt);
-      const slug = (block.branch ?? "sin-rama").replace(/[^a-zA-Z0-9]+/g, "-");
-      store.saveTimeEntry(db, { ...entry, id: `te_${projectId}_${day}_${slug}` });
-      entries++;
+    // Horas de sesiones en subcarpetas y worktrees, que antes se quedaban sin
+    // proyecto (ver billing/assign.ts). La primera vez que cambian horas ya
+    // importadas se enseñan antes y se pide confirmación; en una base nueva no
+    // hay nada que cambiar, así que se aplica sin preguntar.
+    const marca = join(dirname(dbPath), ".recover-git-root");
+    const habiaHoras = (db.prepare("SELECT COUNT(*) AS n FROM time_entries").get() as { n: number }).n > 0;
+    let plan = planEntries(db, raw, { recover: true });
+    const conRaiz = plan;
+    const recuperable = [...plan.recovered.values()].reduce((a, b) => a + b, 0);
+    if (!existsSync(marca) && habiaHoras && recuperable > 0) {
+      printRecoveryPreview(db, plan);
+      const ok = args.flags["yes"] === true || await confirm(tr`¿Imputar estas horas? [s/N] `);
+      if (!ok) {
+        plan = planEntries(db, raw, { recover: false });
+        console.log(tr`  No se ha tocado nada. Cuando quieras: estela import --yes\n`);
+      } else {
+        writeFileSync(marca, new Date().toISOString());
+      }
+    } else {
+      try { writeFileSync(marca, new Date().toISOString()); } catch { /* sin marca, se volverá a preguntar */ }
     }
 
+    for (const { entry } of plan.entries) store.saveTimeEntry(db, entry);
+    const entries = plan.entries.length;
+    const unassigned = plan.unassigned;
+
     console.log(
-      tr`Bloques: ${raw.length} detectados → ${blocks.length} tras agrupar por rama y día · ` +
+      tr`Bloques: ${raw.length} detectados → ${plan.grouped} tras agrupar por rama y día · ` +
       tr`${entries} imputados · ${unassigned} sin proyecto`);
-    if (unassigned > 0) {
-      console.log(tr`\nHay ${unassigned} bloques sin proyecto asignado. Regístralos con:`);
+    const aplicadas = [...plan.recovered.values()].reduce((a, b) => a + b, 0);
+    if (aplicadas > 0 && existsSync(marca)) {
+      console.log(tr`  ${formatDuration(aplicadas)} recuperadas de sesiones en subcarpetas y worktrees`);
+    }
+    printRecoveryBlocked(db, plan.blocked);
+    // Si no se confirmó, parte de "sin proyecto" son sesiones de subcarpetas y
+    // worktrees: a esas no les falta registrarse, les falta el --yes.
+    const porRaiz = unassigned - conRaiz.unassigned;
+    if (porRaiz > 0) {
+      console.log(tr`\n${porRaiz} de esos bloques son de subcarpetas o worktrees de un proyecto: estela import --yes los imputa.`);
+    }
+    if (unassigned - porRaiz > 0) {
+      console.log(tr`\nHay ${unassigned - porRaiz} bloques sin proyecto asignado. Regístralos con:`);
       console.log(tr`  estela project add --id <id> --client <id> --name <nombre> --repo <ruta>`);
     }
   } finally {
@@ -1880,6 +1947,72 @@ async function cmdBadge(args: Args, dbPath: string): Promise<void> {
 }
 
 /**
+ * `estela statusline install` — la línea de Estela en Claude Code. La lógica
+ * del fichero está en `statusline-install.ts`; aquí, leer, escribir y contar.
+ */
+function cmdStatuslineInstall(args: Args): void {
+  const path = claudeSettingsPath();
+  const before = existsSync(path) ? readFileSync(path, "utf8") : null;
+  const plan = planInstall(before, { force: args.flags["force"] === true, append: args.flags["append"] === true });
+
+  if (plan.status === "invalid") {
+    throw new UserError(tr`${path} no es un JSON válido. No lo toco: arréglalo y vuelve a intentarlo.`);
+  }
+  if (plan.status === "already") {
+    console.log(tr`La status line de Estela ya está instalada en ${path}.`);
+    return;
+  }
+  if (plan.status === "conflict") {
+    console.log(tr`Ya tienes otra status line en ${path}:\n`);
+    console.log(`  ${plan.existing}\n`);
+    console.log(tr`No la toco. Elige:`);
+    console.log(tr`  estela statusline install --append   enseña las dos, la de Estela primero`);
+    console.log(tr`  estela statusline install --force    sustituye la tuya por la de Estela`);
+    process.exitCode = 1;
+    return;
+  }
+
+  mkdirSync(dirname(path), { recursive: true });
+  if (before !== null) {
+    const copia = backupName(path);
+    copyFileSync(path, copia);
+    console.log(tr`Copia de seguridad: ${copia}`);
+  }
+  writeFileSync(path, plan.text);
+  console.log(plan.status === "chained"
+    ? tr`Status line de Estela instalada, con la tuya detrás: ${plan.previous ?? ""}`
+    : plan.status === "replaced"
+      ? tr`Status line de Estela instalada en lugar de: ${plan.previous ?? ""}`
+      : tr`Status line de Estela instalada en ${path}.`);
+  console.log(tr`Se verá en la próxima sesión de Claude Code (o al reiniciar la actual).`);
+  if (!estelaOnPath()) {
+    console.log(tr`\nAviso: "estela" no está en tu PATH, así que Claude Code no podrá ejecutarla.`);
+    console.log(tr`Instálala de forma global: npm install -g estela`);
+  }
+}
+
+function cmdStatuslineUninstall(): void {
+  const path = claudeSettingsPath();
+  if (!existsSync(path)) { console.log(tr`No hay status line de Estela que quitar.`); return; }
+  const plan = planUninstall(readFileSync(path, "utf8"));
+  if (plan.status === "invalid") {
+    throw new UserError(tr`${path} no es un JSON válido. No lo toco: arréglalo y vuelve a intentarlo.`);
+  }
+  if (plan.status === "absent") { console.log(tr`No hay status line de Estela que quitar.`); return; }
+  if (plan.status === "foreign") {
+    console.log(tr`La status line de ${path} no es la de Estela, así que no la toco:\n\n  ${plan.existing}`);
+    return;
+  }
+  const copia = backupName(path);
+  copyFileSync(path, copia);
+  writeFileSync(path, plan.text);
+  console.log(tr`Copia de seguridad: ${copia}`);
+  console.log(plan.status === "restored"
+    ? tr`Status line de Estela quitada; vuelve a estar la que tenías: ${plan.restored ?? ""}`
+    : tr`Status line de Estela quitada.`);
+}
+
+/**
  * `estela quota` — qué proyecto se come la cuota. El cálculo vive en
  * `metrics/quota.ts`; aquí solo se presenta.
  */
@@ -1898,7 +2031,7 @@ async function cmdQuota(args: Args, dbPath: string): Promise<void> {
       }
     }
 
-    const report = loadQuotaReport(db, now);
+    const report = loadQuotaReport(db, now, { dbPath, weighted: args.flags["weighted"] === true });
     if (args.flags["json"] === true) {
       console.log(JSON.stringify(quotaToJson(report), null, 2));
       return;
@@ -1919,7 +2052,9 @@ function printQuota(report: QuotaReport, hayTurnos: boolean): void {
   for (const a of report.agents) {
     const nombre = agentName(a.agent);
     if (a.window) {
-      console.log(tr`${nombre} — ventana de 5 h actual (estimada): desde las ${hhmm(a.window.start)}, termina a las ${hhmm(a.window.end)}`);
+      console.log(a.window.estimated
+        ? tr`${nombre} — ventana de 5 h actual (estimada): desde las ${hhmm(a.window.start)}, termina a las ${hhmm(a.window.end)}`
+        : tr`${nombre} — ventana de 5 h actual: desde las ${hhmm(a.window.start)}, termina a las ${hhmm(a.window.end)}`);
       printQuotaTable(a.window);
     } else if (a.lastWindowEnded) {
       console.log(tr`${nombre} — sin ventana de 5 h abierta ahora; la última terminó ${cuando(a.lastWindowEnded, report.generatedAt)}.\n`);
@@ -1931,8 +2066,19 @@ function printQuota(report: QuotaReport, hayTurnos: boolean): void {
   }
 
   if (report.copilotExcluded) console.log(tr`Copilot no guarda tokens fiables y queda fuera de este cálculo.`);
-  console.log(tr`La ventana de 5 h es una estimación: no se publica cómo se redondea su inicio, y lo que`);
-  console.log(tr`uses en claude.ai u otro equipo también consume cuota y Estela no lo ve.`);
+  if (report.agents.some((a) => a.week.weighted)) {
+    console.log(tr`Ponderado por precio de lista; no es cómo el proveedor cuenta tu límite.`);
+    const sinPrecio = report.agents.reduce((n, a) => n + a.week.unpriced, 0);
+    if (sinPrecio > 0) console.log(tr`${sinPrecio} turnos de modelos sin precio de lista cuentan como 0 en ese %.`);
+  }
+  // La ventana estimada lo dice; la que dio Claude Code no lo necesita, pero
+  // el reparto sigue siendo solo de esta máquina.
+  if (report.agents.some((a) => a.window?.estimated)) {
+    console.log(tr`La ventana de 5 h es una estimación: no se publica cómo se redondea su inicio, y lo que`);
+    console.log(tr`uses en claude.ai u otro equipo también consume cuota y Estela no lo ve.`);
+  } else if (report.agents.some((a) => a.window)) {
+    console.log(tr`La ventana de 5 h es la que da Claude Code; el reparto solo incluye lo usado en esta máquina.`);
+  }
 }
 
 function printQuotaTable(b: QuotaBreakdown): void {
@@ -2184,6 +2330,8 @@ async function main(): Promise<void> {
     case "subscription add":  cmdSubscriptionAdd(args, dbPath); break;
     case "ai-cost":           cmdAiCost(dbPath); break;
     case "quota":             await cmdQuota(args, dbPath); break;
+    case "statusline install":   cmdStatuslineInstall(args); break;
+    case "statusline uninstall": cmdStatuslineUninstall(); break;
     case "badge":             await cmdBadge(args, dbPath); break;
     case "receipt":           cmdReceipt(args, dbPath); break;
     case "status":            cmdStatus(dbPath); break;

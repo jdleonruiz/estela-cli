@@ -1,5 +1,7 @@
 import type { AgentKind, TokenUsage } from "@estela/shared";
 
+import { costOfTurn } from "../pricing/cost.js";
+
 /**
  * "¿Qué proyecto se come mi cuota?"
  *
@@ -44,6 +46,8 @@ export interface QuotaTurn {
   readonly at: Date;
   readonly repoPath: string | null;
   readonly tokens: TokenUsage;
+  /** Solo para ponderar por precio (`--weighted`). Sin él, el turno no tiene precio. */
+  readonly model?: string;
 }
 
 /**
@@ -78,23 +82,39 @@ function add(u: QuotaUsage, t: TokenUsage): QuotaUsage {
  */
 export type QuotaBucket =
   | { readonly kind: "project"; readonly projectId: string; readonly projectName: string }
-  | { readonly kind: "folder"; readonly folder: string }
+  /** `folder` es el nombre que se enseña; `path`, la raíz git que agrupa. */
+  | { readonly kind: "folder"; readonly folder: string; readonly path: string }
   | { readonly kind: "none" };
 
 export interface QuotaRow {
   readonly bucket: QuotaBucket;
   readonly usage: QuotaUsage;
-  /** Parte del total del periodo, entre 0 y 1. */
+  /** Lo que valdrían sus tokens a precio de lista, en micro-USD. */
+  readonly listCost: number;
+  /**
+   * Parte del total del periodo, entre 0 y 1: por tokens, o por precio de
+   * lista si se pidió ponderar.
+   */
   readonly share: number;
 }
 
 export interface QuotaBreakdown {
   readonly rows: readonly QuotaRow[];
   readonly total: QuotaUsage;
+  readonly listCost: number;
+  /** Turnos de un modelo sin precio en el catálogo: al ponderar cuentan como 0. */
+  readonly unpriced: number;
+  readonly weighted: boolean;
 }
 
 function bucketKey(b: QuotaBucket): string {
-  return b.kind === "project" ? `p:${b.projectId}` : b.kind === "folder" ? `f:${b.folder}` : "-";
+  return b.kind === "project" ? `p:${b.projectId}` : b.kind === "folder" ? `f:${b.path}` : "-";
+}
+
+/** Precio de lista de un turno, en micro-USD, o null si su modelo no tiene precio. */
+function listCostOf(t: QuotaTurn): number | null {
+  if (!t.model) return null;
+  return costOfTurn(t.tokens, t.model, t.at)?.microUsd ?? null;
 }
 
 /**
@@ -105,21 +125,30 @@ function bucketKey(b: QuotaBucket): string {
 export function breakdown(
   turns: readonly QuotaTurn[], from: Date, to: Date,
   bucketOf: (repoPath: string | null) => QuotaBucket,
+  options: { readonly weighted?: boolean } = {},
 ): QuotaBreakdown {
-  const acc = new Map<string, { bucket: QuotaBucket; usage: QuotaUsage }>();
+  const acc = new Map<string, { bucket: QuotaBucket; usage: QuotaUsage; listCost: number }>();
   let total = ZERO;
+  let listCost = 0;
+  let unpriced = 0;
   for (const t of turns) {
     if (t.at < from || t.at >= to) continue;
     const bucket = bucketOf(t.repoPath);
     const key = bucketKey(bucket);
-    const prev = acc.get(key) ?? { bucket, usage: ZERO };
-    acc.set(key, { bucket, usage: add(prev.usage, t.tokens) });
+    const cost = listCostOf(t);
+    if (cost === null) unpriced++;
+    const prev = acc.get(key) ?? { bucket, usage: ZERO, listCost: 0 };
+    acc.set(key, { bucket, usage: add(prev.usage, t.tokens), listCost: prev.listCost + (cost ?? 0) });
     total = add(total, t.tokens);
+    listCost += cost ?? 0;
   }
+  const weighted = options.weighted === true;
+  const base = (r: { usage: QuotaUsage; listCost: number }) => (weighted ? r.listCost : r.usage.total);
+  const whole = weighted ? listCost : total.total;
   const rows = [...acc.values()]
-    .map(({ bucket, usage }) => ({ bucket, usage, share: total.total > 0 ? usage.total / total.total : 0 }))
-    .sort((a, b) => b.usage.total - a.usage.total);
-  return { rows, total };
+    .map((r) => ({ ...r, share: whole > 0 ? base(r) / whole : 0 }))
+    .sort((a, b) => base(b) - base(a));
+  return { rows, total, listCost, unpriced, weighted };
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +282,11 @@ export function compareWithHistory(
 
 export interface AgentQuota {
   readonly agent: QuotaAgent;
-  readonly window: (QuotaWindow & QuotaBreakdown) | null;
+  /**
+   * `estimated: false` cuando la ventana la dio Claude Code (`resets_at`, que
+   * guarda la status line); si no, es la estimación de `fiveHourWindows`.
+   */
+  readonly window: (QuotaWindow & QuotaBreakdown & { readonly estimated: boolean }) | null;
   /** Si no hay ventana abierta, cuándo acabó la última de los datos. */
   readonly lastWindowEnded: Date | null;
   readonly week: QuotaBreakdown;
@@ -279,8 +312,15 @@ export function buildQuota(input: {
   readonly firstTurnAt: ReadonlyMap<AgentKind, Date>;
   readonly now: Date;
   readonly bucketOf: (repoPath: string | null) => QuotaBucket;
+  /**
+   * La ventana de 5 h de Claude Code tal como la dio Claude Code (ver
+   * `officialWindow`). Solo vale para Claude Code: Codex tiene la suya.
+   */
+  readonly claudeWindow?: QuotaWindow | null;
+  readonly weighted?: boolean;
 }): QuotaReport {
   const { now, bucketOf } = input;
+  const opts = { weighted: input.weighted === true };
   const monday = weekStart(now);
   const until = new Date(now.getTime() + 1);
   const turns = input.turns.filter((t) => t.at <= now);
@@ -288,14 +328,19 @@ export function buildQuota(input: {
   const agents: AgentQuota[] = [];
   for (const agent of QUOTA_AGENTS) {
     const own = turns.filter((t) => t.agent === agent);
-    const { current, lastEnded } = windowAt(own.map((t) => t.at), now);
-    const week = breakdown(own, monday, until, bucketOf);
+    const official = agent === "claude-code" && input.claudeWindow &&
+      input.claudeWindow.start <= now && now < input.claudeWindow.end ? input.claudeWindow : null;
+    const estimate = windowAt(own.map((t) => t.at), now);
+    const current = official ?? estimate.current;
+    const week = breakdown(own, monday, until, bucketOf, opts);
     if (!current && week.rows.length === 0) continue;
 
     agents.push({
       agent,
-      window: current ? { ...current, ...breakdown(own, current.start, until, bucketOf) } : null,
-      lastWindowEnded: lastEnded,
+      window: current
+        ? { ...current, ...breakdown(own, current.start, until, bucketOf, opts), estimated: !official }
+        : null,
+      lastWindowEnded: current ? null : estimate.lastEnded,
       week,
       comparison: compareWithHistory(
         own.map((t) => ({ at: t.at, total: add(ZERO, t.tokens).total })),
@@ -309,6 +354,25 @@ export function buildQuota(input: {
     agents,
     copilotExcluded: turns.some((t) => t.agent === "copilot" && t.at >= monday),
   };
+}
+
+/**
+ * La ventana de 5 h que dio Claude Code, a partir del último `resets_at` que
+ * vio la status line: empieza 5 h antes de su reinicio.
+ *
+ * Solo vale si el dato tiene menos de 5 h (uno más viejo puede ser de otra
+ * ventana) y si el reinicio aún no ha llegado (pasado ese momento, la ventana
+ * en curso es otra que nadie ha visto). Si no, null: se estima como siempre.
+ */
+export function officialWindow(
+  seen: { readonly resetsAt: Date; readonly seenAt: Date } | null, now: Date,
+): QuotaWindow | null {
+  if (!seen) return null;
+  const age = now.getTime() - seen.seenAt.getTime();
+  if (age < 0 || age >= WINDOW_MS) return null;
+  if (seen.resetsAt <= now) return null;
+  const start = new Date(seen.resetsAt.getTime() - WINDOW_MS);
+  return start <= now ? { start, end: seen.resetsAt } : null;
 }
 
 /** Desde cuándo hay que leer turnos para montar el informe de `now`. */
@@ -331,19 +395,23 @@ export function quotaToJson(report: QuotaReport): Record<string, unknown> {
     projectName: r.bucket.kind === "project" ? r.bucket.projectName : null,
     folder: r.bucket.kind === "folder" ? r.bucket.folder : null,
     ...r.usage,
+    listCostMicroUsd: r.listCost,
     share: Math.round(r.share * 10_000) / 10_000,
   }));
+  const weighted = report.agents.some((a) => a.week.weighted);
   return {
     generatedAt: report.generatedAt.toISOString(),
     weekStart: report.weekStart.toISOString(),
-    // Para que ningún script lo trate como un dato exacto sin haberlo leído.
-    windowIsEstimate: true,
+    // Para que ningún script lo trate como un dato exacto sin haberlo leído:
+    // false solo si todas las ventanas que salen las dio Claude Code.
+    windowIsEstimate: report.agents.some((a) => !a.window || a.window.estimated),
     windowHours: WINDOW_HOURS,
+    shareBasis: weighted ? "list-price" : "tokens",
     agents: report.agents.map((a) => ({
       agent: a.agent,
       window: a.window
         ? { start: a.window.start.toISOString(), end: a.window.end.toISOString(),
-            projects: rows(a.window), total: a.window.total }
+            estimated: a.window.estimated, projects: rows(a.window), total: a.window.total }
         : null,
       lastWindowEnded: a.lastWindowEnded?.toISOString() ?? null,
       week: { projects: rows(a.week), total: a.week.total },

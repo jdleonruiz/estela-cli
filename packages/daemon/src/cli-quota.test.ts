@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -44,7 +44,7 @@ function sembrarCuota(dbPath: string): void {
   const haceSemanas = (n: number) => new Date(lunes.getTime() - n * 7 * 86_400_000 + 3600_000);
   let n = 0;
   const t = (agent: AgentKind, at: Date, repo: string, cacheRead: number): AgentTurn => ({
-    agent, turnId: `q${n++}`, sessionId: "s", at, model: "m", repoPath: repo, branch: "main",
+    agent, turnId: `q${n++}`, sessionId: "s", at, model: agent === "codex" ? "gpt-5.6-sol" : "claude-sonnet-4-6", repoPath: repo, branch: "main",
     tokens: { input: 1, output: 10, cacheRead, cacheWrite5m: 0, cacheWrite1h: 0 }, producerVersion: null,
   });
   const db = openDatabase(dbPath);
@@ -59,6 +59,8 @@ function sembrarCuota(dbPath: string): void {
       t("claude-code", haceSemanas(6), "/repos/web", 100),
       t("claude-code", enEstaSemana, "/repos/web", 3000),
       t("claude-code", enEstaSemana, "/repos/api", 1000),
+      // Uno reciente, para que haya una ventana de 5 h abierta (estimada).
+      t("claude-code", new Date(Math.max(lunes.getTime(), ahora.getTime() - 30 * 60_000)), "/repos/web", 10),
       // Codex: empezó esta semana, así que no hay con qué comparar.
       t("codex", enEstaSemana, "/repos/api", 500),
     ]);
@@ -195,4 +197,82 @@ test("Copilot queda fuera, y se dice en una línea", () => {
   };
   assert.deepEqual(j.agents, []);
   assert.deepEqual(j.excluded.map((e) => e.agent), ["copilot"]);
+});
+
+// ── La ventana que dio Claude Code ──────────────────────────────────────
+
+/** Lo que haría Claude Code: llamar a la status line con su rate_limits. */
+function statusline(home: string, db: string, resetsAt: Date): void {
+  spawnSync(process.execPath, [BIN, "statusline", "--db", db, "--no-color"], {
+    encoding: "utf8",
+    input: JSON.stringify({ workspace: { project_dir: "/repos/web" },
+      rate_limits: { five_hour: { used_percentage: 40, resets_at: Math.floor(resetsAt.getTime() / 1000) } } }),
+    env: { ...process.env, HOME: home, USERPROFILE: home },
+  });
+}
+
+test("con el resets_at que guardó la status line, quota dice 'ventana actual' sin 'estimada'", () => {
+  const { home, db } = entorno();
+  sembrarCuota(db);
+  const reinicio = new Date(Date.now() + 2 * 3600_000);
+  statusline(home, db, reinicio);
+  assert.ok(existsSync(join(home, "statusline.json")), "la status line lo guardó junto a la base");
+
+  const es = estela(home, "es", "quota", "--db", db, "--no-refresh").out;
+  assert.match(es, /Claude Code — ventana de 5 h actual: desde las \d\d:\d\d, termina a las \d\d:\d\d/);
+  assert.doesNotMatch(es, /Claude Code — ventana de 5 h actual \(estimada\)/);
+  assert.match(es, /La ventana de 5 h es la que da Claude Code/);
+
+  const j = JSON.parse(estela(home, "es", "quota", "--db", db, "--no-refresh", "--json").out) as {
+    agents: { agent: string; window: { start: string; estimated: boolean } | null }[];
+  };
+  const w = j.agents.find((a) => a.agent === "claude-code")!.window!;
+  assert.equal(w.estimated, false);
+  assert.equal(new Date(w.start).getTime(), Math.floor(reinicio.getTime() / 1000) * 1000 - 5 * 3600_000,
+    "empieza 5 h antes del reinicio");
+});
+
+test("un resets_at guardado hace más de 5 h ya no vale: vuelve la estimación", () => {
+  const { home, db } = entorno();
+  sembrarCuota(db);
+  writeFileSync(join(home, "statusline.json"), JSON.stringify({ files: {}, fiveHour: {
+    resetsAt: new Date(Date.now() + 3600_000).toISOString(),
+    seenAt: new Date(Date.now() - 6 * 3600_000).toISOString(),
+  } }));
+  const es = estela(home, "es", "quota", "--db", db, "--no-refresh").out;
+  assert.match(es, /Claude Code — ventana de 5 h actual \(estimada\)/);
+});
+
+test("la status line no enseña nunca el resets_at, aunque lo guarde", () => {
+  const { home, db } = entorno();
+  sembrarCuota(db);
+  const r = spawnSync(process.execPath, [BIN, "statusline", "--db", db, "--no-color"], {
+    encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home, ESTELA_LANG: "es" },
+    input: JSON.stringify({ workspace: { project_dir: "/repos/web" },
+      rate_limits: { five_hour: { used_percentage: 40, resets_at: Math.floor(Date.now() / 1000) + 3600 } } }),
+  });
+  assert.match(r.stdout, /5 h 40 %/);
+  assert.doesNotMatch(r.stdout, /\d\d:\d\d|reinicia|resets/);
+});
+
+// ── --weighted ──────────────────────────────────────────────────────────
+
+test("--weighted: % por precio de lista, con su nota; sin la bandera, por tokens", () => {
+  const { home, db } = entorno();
+  sembrarCuota(db);
+  const normal = estela(home, "es", "quota", "--db", db, "--no-refresh");
+  assert.doesNotMatch(normal.out, /Ponderado por precio de lista/);
+  const p = estela(home, "es", "quota", "--db", db, "--no-refresh", "--weighted");
+  assert.equal(p.code, 0, p.err);
+  assert.match(p.out, /Ponderado por precio de lista; no es cómo el proveedor cuenta tu límite\./);
+  const en = estela(home, "en", "quota", "--db", db, "--no-refresh", "--weighted");
+  assert.match(en.out, /Weighted by list price; this is not how the provider counts your limit\./);
+
+  const base = JSON.parse(estela(home, "es", "quota", "--db", db, "--no-refresh", "--json").out) as { shareBasis: string };
+  const pond = JSON.parse(estela(home, "es", "quota", "--db", db, "--no-refresh", "--json", "--weighted").out) as {
+    shareBasis: string; agents: { week: { projects: { listCostMicroUsd: number }[] } }[];
+  };
+  assert.equal(base.shareBasis, "tokens");
+  assert.equal(pond.shareBasis, "list-price");
+  assert.ok(pond.agents[0]!.week.projects.every((r) => typeof r.listCostMicroUsd === "number"));
 });

@@ -115,6 +115,11 @@ Hay dos tropiezos que ocurren antes de que Estela llegue a arrancar:
   desinstala el Node suelto, y luego `nvm install lts` y `nvm use lts` desde una
   terminal de administrador. `where.exe npm` debe mostrar una única ruta.
 
+Una sesión en una subcarpeta o en un worktree de git cuenta para el proyecto
+de su repositorio. Si un import fuera a sumar horas a lo ya importado, Estela
+te enseña cuántas por proyecto y pregunta antes (`estela import --yes` no
+pregunta); nunca mueve horas entre proyectos ni toca un día aprobado.
+
 ## Informar a un cliente
 
 Los proyectos se crean como internos y sin tarifa, porque inventarla daría
@@ -237,8 +242,9 @@ Con Claude Max/Pro o Codex con suscripción, la cuota se acaba antes de lo que
 esperas y nada te dice en qué se fue. `estela quota` la reparte por proyecto:
 
 ```sh
-estela quota          # ventana de 5 h actual y esta semana, por proyecto
-estela quota --json   # lo mismo, para scripts
+estela quota              # ventana de 5 h actual y esta semana, por proyecto
+estela quota --weighted   # el % por precio de lista en vez de por tokens
+estela quota --json       # lo mismo, para scripts
 ```
 
 Tokens (entrada, salida, lectura y escritura de caché) por proyecto, en la
@@ -247,11 +253,47 @@ frente a la media de tus 4 anteriores en el mismo tramo. Claude Code y Codex van
 por separado: gastan cuotas distintas. También es una tarjeta en la pestaña
 Resumen de `estela web`, y es gratis.
 
+Una sesión en una subcarpeta o en un worktree de git cuenta para el proyecto
+de su repo; una carpeta que no es de ningún proyecto sale con el nombre de su
+raíz git. El % es por tokens; `--weighted` lo reparte por el precio de lista
+de cada modelo, que no es cómo el proveedor cuenta tu límite. Con la status
+line instalada (abajo), la ventana de 5 h es la que da Claude Code, no una
+estimación.
+
 Lo que nunca hace es decirte cuánto te queda: Anthropic y OpenAI no publican los
 límites de sus planes, así que cualquier "te quedan X tokens" sería inventado. La
 ventana de 5 h es una estimación: no se sabe cómo redondean su inicio, y lo que
 uses en claude.ai u otro equipo también cuenta, pero no está en este. Copilot
 queda fuera porque no guarda tokens fiables. Todo se calcula en tu máquina.
+
+## Una línea bajo cada sesión de Claude Code
+
+```sh
+npm install -g estela        # la status line necesita estela en tu PATH
+estela statusline install
+```
+
+En un repositorio que aún no es un proyecto enseña `estela · web (sin proyecto) ·
+estela setup`, y fuera de git solo `estela · sin proyecto`. En un proyecto,
+cada sesión de Claude Code enseña una línea así:
+
+```
+estela · Brightside Health › brightside-portal · hoy 2h14 · este proyecto 21 % · semana 38 % · 5 h 62 %
+```
+
+Las horas medidas hoy en este proyecto (la misma cifra que dará el informe),
+la parte de tu consumo de Claude Code de esta semana que es de este proyecto
+y, solo si Claude Code los manda, sus propios porcentajes de límite de la
+semana y de 5 h, tal cual. Estela nunca estima un límite ni hace cuenta atrás.
+La cifra de 5 h se pone en ámbar desde el 80 %. En una terminal estrecha la
+línea quita primero la 5 h, luego la semana, acorta el nombre, quita "este
+proyecto" y después "hoy"; `estela` no se va nunca. Tarda unos 50 ms y solo
+lee lo nuevo del transcript de la sesión actual.
+
+`install` añade el bloque a `~/.claude/settings.json` sin tocar nada más, y
+antes deja una copia. Si ya tienes una status line no la pisa: `--force` la
+sustituye y `--append` enseña la tuya detrás de la de Estela. `estela
+statusline uninstall` la quita (y te devuelve la tuya si usaste `--append`).
 
 ## Horas que ningún import va a deducir
 
