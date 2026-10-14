@@ -1,6 +1,6 @@
 {
   "name": "estela",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Time tracking you never fill in: rebuilds your billable hours from Claude Code, Codex and GitHub Copilot sessions and your Git history, and splits what the AI cost per project.",
   "keywords": [
     "time-tracking",
@@ -36,6 +36,8 @@
   "homepage": "https://getestela.dev",
   "files": [
     "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/*.map",
     "web",
     "README.md"
   ],

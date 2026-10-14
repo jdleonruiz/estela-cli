@@ -63,12 +63,13 @@ test("orden visual: estela · cliente › proyecto · hoy · este proyecto · se
 
 test("sin cliente, el nombre es el proyecto; sin proyecto, el aviso de setup", () => {
   assert.match(plain({ ...DATA, project: { name: "ledger-cli", client: null } }), /^estela · ledger-cli · hoy/);
-  assert.equal(plain({ ...DATA, project: null, unassignedRoot: "web" }), "estela · web (sin proyecto) · estela setup");
-  assert.equal(plain({ ...DATA, project: null, unassignedRoot: null }), "estela · sin proyecto", "fuera de git, sin pista");
+  const sin = { ...DATA, project: null, fiveHour: null, sevenDay: null };
+  assert.equal(plain({ ...sin, unassignedRoot: "web" }), "estela · web (sin proyecto) · estela setup");
+  assert.equal(plain({ ...sin, unassignedRoot: null }), "estela · sin proyecto", "fuera de git, sin pista");
 });
 
 test("sin proyecto, al recortar: primero la pista, luego el nombre de la raíz con …", () => {
-  const d = { ...DATA, project: null, unassignedRoot: "facturacion-clientes" };
+  const d = { ...DATA, project: null, unassignedRoot: "facturacion-clientes", fiveHour: null, sevenDay: null };
   const anchos = [60, 45, 40, 30, 24, 10];
   const lineas = anchos.map((w) => plain(d, w));
   assert.deepEqual(lineas, [
@@ -217,4 +218,46 @@ test("reconoce la nuestra también con ruta absoluta o en Windows", () => {
   assert.ok(isOurs("C:\\npm\\estela.cmd statusline"));
   assert.ok(!isOurs("ccstatusline"));
   assert.ok(!isOurs("estelar statusline"));
+});
+
+test("sin proyecto con rate_limits: semana y 5 h también, delante de la pista", () => {
+  const d: StatusData = { ...DATA, project: null, unassignedRoot: "web", sevenDay: 38, fiveHour: 62 };
+  assert.equal(plain(d), "estela · web (sin proyecto) · semana 38 % · 5 h 62 % · estela setup");
+  assert.equal(plain({ ...d, unassignedRoot: null }), "estela · sin proyecto · semana 38 % · 5 h 62 %",
+    "fuera de git, los límites sí; la pista no");
+  setLang("en");
+  assert.equal(stripAnsi(renderStatus(d, { color: false })), "estela · web (no project) · week 38% · 5h 62% · estela setup");
+  setLang("es");
+});
+
+test("sin proyecto, al recortar: pista → 5 h → semana → raíz con …; estela nunca", () => {
+  const d: StatusData = { ...DATA, project: null, unassignedRoot: "facturacion-clientes", sevenDay: 38, fiveHour: 62 };
+  const anchos = [90, 70, 58, 46, 40, 30, 20];
+  const lineas = anchos.map((w) => plain(d, w));
+  assert.deepEqual(lineas, [
+    "estela · facturacion-clientes (sin proyecto) · semana 38 % · 5 h 62 % · estela setup",
+    "estela · facturacion-clientes (sin proyecto) · semana 38 % · 5 h 62 %",
+    "estela · facturacion-clientes (sin proyecto) · semana 38 %",
+    "estela · facturacion-clientes (sin proyecto)",
+    "estela · facturacion-cli… (sin proyecto)",
+    "estela · factu… (sin proyecto)",
+    "estela",
+  ]);
+  lineas.forEach((l, i) => assert.ok(l.length <= anchos[i]!, `${anchos[i]}: ${l}`));
+
+  const fuera = { ...d, unassignedRoot: null };
+  assert.deepEqual([50, 40, 30, 20].map((w) => plain(fuera, w)), [
+    "estela · sin proyecto · semana 38 % · 5 h 62 %",
+    "estela · sin proyecto · semana 38 %",
+    "estela · sin proyecto",
+    "estela",
+  ]);
+});
+
+test("sin proyecto, la 5 h también en ámbar desde el 80 %", () => {
+  setLang("es");
+  const amber = "\x1b[38;2;221;168;90m";
+  const d: StatusData = { ...DATA, project: null, unassignedRoot: "web", sevenDay: 10, fiveHour: 85 };
+  assert.ok(renderStatus(d).includes(`${amber}5 h 85 %`));
+  assert.ok(!renderStatus({ ...d, fiveHour: 79 }).includes(amber));
 });

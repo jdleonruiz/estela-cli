@@ -4,6 +4,17 @@ Cambios visibles de cada versión del paquete `estela`. Las anteriores a la
 0.2.0 están en el historial de git, con una etiqueta por versión en
 [github.com/jdleonruiz/estela-cli](https://github.com/jdleonruiz/estela-cli/tags).
 
+## 0.2.1 — 2026-10-14
+
+### Cambios
+- **Paquete más ligero**: ya no incluye los tests ni los mapas de código de
+  `dist`. De 701 kB a 458 kB (2,5 MB → 1,2 MB instalado), y de 436 ficheros a
+  138.
+- **Status line sin proyecto**: también enseña la semana y la 5 h cuando
+  Claude Code manda `rate_limits` (la 5 h en ámbar desde el 80 %). Se recorta
+  primero la pista `estela setup`, luego la 5 h, la semana y por último se
+  acorta el nombre de la raíz.
+
 ## 0.2.0 — 2026-10-14
 
 ### Nuevo

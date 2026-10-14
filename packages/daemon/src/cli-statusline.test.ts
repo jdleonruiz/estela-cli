@@ -322,3 +322,15 @@ test("una sesión en un worktree o en una subcarpeta enseña el proyecto del rep
     assert.match(estela(home, nc, entrada(dir)).out, /^estela · ACME › Web · hoy/, dir);
   }
 });
+
+test("sin proyecto, con rate_limits: los porcentajes salen igual", () => {
+  const { home, repo, db } = entorno();
+  proyecto(db, repo);
+  const otro = join(home, "repos", "facturas");
+  mkdirSync(join(otro, ".git"), { recursive: true });
+  const limites = { rate_limits: { five_hour: { used_percentage: 62 }, seven_day: { used_percentage: 38 } } };
+  assert.equal(estela(home, nc, entrada(otro, limites)).out,
+    "estela · facturas (sin proyecto) · semana 38 % · 5 h 62 % · estela setup\n");
+  assert.equal(estela(home, nc, entrada(join(home, "suelta"), limites)).out,
+    "estela · sin proyecto · semana 38 % · 5 h 62 %\n");
+});

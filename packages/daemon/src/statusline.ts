@@ -96,7 +96,7 @@ const GRAY = `${ESC}90m`;
 const AMBER = `${ESC}38;2;221;168;90m`;   // el ámbar del panel en modo oscuro
 const RESET = `${ESC}0m`;
 
-type Key = "today" | "project" | "week" | "fiveHour";
+type Key = "today" | "project" | "week" | "fiveHour" | "hint";
 interface Segment { readonly key: Key; readonly text: string; readonly warn?: boolean }
 
 /** "2h14", "3h", "45m": corto, que la línea es estrecha. */
@@ -121,32 +121,34 @@ export function renderStatus(data: StatusData, options: RenderOptions = {}): str
   const width = options.columns && options.columns > 0
     ? Math.max(0, options.columns - (options.reserved ?? 0)) : Infinity;
 
+  const line = (shown: string, kept: readonly Segment[]) =>
+    paint(JADE, "estela") + paint(GRAY, SEP + shown) +
+    kept.map((x) => paint(GRAY, SEP) + paint(x.warn ? AMBER : GRAY, x.text)).join("");
+  const tailOf = (kept: readonly Segment[]) => kept.map((x) => SEP + x.text).join("").length;
+
   if (!data.project) {
-    // Fuera de git no hay nombre que dar ni nada que configurar ahí.
+    // "estela · web (sin proyecto) · semana 38 % · 5 h 62 % · estela setup".
+    // Fuera de git no hay nombre que dar ni nada que configurar ahí, así que
+    // sin raíz y sin pista: "estela · sin proyecto · semana 38 % · 5 h 62 %".
+    // Se recorta la pista, luego 5 h y semana, y por último se acorta la raíz.
     const root = data.unassignedRoot ?? null;
-    if (!root) {
-      const line = `${SEP}${tr`sin proyecto`}`;
-      return "estela".length + line.length <= width ? paint(JADE, "estela") + paint(GRAY, line) : paint(JADE, "estela");
+    const segs = [...limitSegments(data), ...(root ? [{ key: "hint" as const, text: "estela setup" }] : [])];
+    const steps: (readonly Key[])[] = [[], ["hint"], ["hint", "fiveHour"], ["hint", "fiveHour", "week"]];
+    for (const drop of steps) {
+      const kept = segs.filter((x) => !drop.includes(x.key));
+      const shown = root ? tr`${root} (sin proyecto)` : tr`sin proyecto`;
+      if ("estela".length + SEP.length + shown.length + tailOf(kept) <= width) return line(shown, kept);
     }
-    // Un repo sin proyecto: "estela · web sin proyecto · estela setup". Lo
-    // primero que se va es la pista; luego se acorta el nombre de la raíz.
-    const withHint = `${SEP}${tr`${root} (sin proyecto)`}${SEP}estela setup`;
-    if ("estela".length + withHint.length <= width) return paint(JADE, "estela") + paint(GRAY, withHint);
-    const sinRoot = tr`${""} (sin proyecto)`;
-    const room = width - "estela".length - SEP.length - sinRoot.length;
-    if (room >= 2) {
-      const r = root.length <= room ? root : root.slice(0, room - 1).trimEnd() + "…";
-      return paint(JADE, "estela") + paint(GRAY, `${SEP}${tr`${r} (sin proyecto)`}`);
+    if (root) {
+      const room = width - "estela".length - SEP.length - tr`${""} (sin proyecto)`.length;
+      if (room >= 2) return line(tr`${root.slice(0, room - 1).trimEnd() + "…"} (sin proyecto)`, []);
     }
     return paint(JADE, "estela");
   }
 
   const segs: Segment[] = [{ key: "today", text: tr`hoy ${compactDuration(data.todaySeconds)}` }];
   if (data.projectShare !== null) segs.push({ key: "project", text: tr`este proyecto ${Math.round(data.projectShare * 100)} %` });
-  if (data.sevenDay !== null) segs.push({ key: "week", text: tr`semana ${Math.round(data.sevenDay)} %` });
-  if (data.fiveHour !== null) {
-    segs.push({ key: "fiveHour", text: tr`5 h ${Math.round(data.fiveHour)} %`, warn: data.fiveHour >= FIVE_HOUR_WARN });
-  }
+  segs.push(...limitSegments(data));
 
   const { name, client } = data.project;
   const full = client ? `${client} › ${name}` : name;
@@ -177,10 +179,23 @@ export function renderStatus(data: StatusData, options: RenderOptions = {}): str
       shown = short.length <= room ? short : short.slice(0, Math.max(0, room - 1)).trimEnd() + "…";
     }
     if (fixed + shown.length > width) continue;
-    return paint(JADE, "estela") + paint(GRAY, SEP + shown) +
-      kept.map((s) => paint(GRAY, SEP) + paint(s.warn ? AMBER : GRAY, s.text)).join("");
+    return line(shown, kept);
   }
   return paint(JADE, "estela");
+}
+
+/**
+ * Los porcentajes de límite que manda Claude Code, tal cual: semana y 5 h, la
+ * de 5 h en ámbar desde el 80 %. Sin rate_limits, ninguno. Los comparten la
+ * línea con proyecto y la de sin proyecto.
+ */
+function limitSegments(data: StatusData): Segment[] {
+  const out: Segment[] = [];
+  if (data.sevenDay !== null) out.push({ key: "week", text: tr`semana ${Math.round(data.sevenDay)} %` });
+  if (data.fiveHour !== null) {
+    out.push({ key: "fiveHour", text: tr`5 h ${Math.round(data.fiveHour)} %`, warn: data.fiveHour >= FIVE_HOUR_WARN });
+  }
+  return out;
 }
 
 /** Lo visible de una cadena con color: para medir y para los tests. */

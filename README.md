@@ -276,7 +276,8 @@ estela statusline install
 ```
 
 In a repository that isn't a project yet it shows `estela · web (no project) ·
-estela setup`, and outside git just `estela · no project`. Each Claude Code
+estela setup`, and outside git just `estela · no project` — plus the week and
+5-hour figures when Claude Code sends them. Each Claude Code
 session in a project shows a line like this:
 
 ```
