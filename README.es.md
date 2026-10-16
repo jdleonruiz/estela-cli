@@ -196,6 +196,11 @@ tienen límite.
 El pie del panel dice "Horas rellenadas por Estela", con un enlace a
 getestela.dev. En Pro y Teams, `--no-credit` quita esa línea.
 
+Antes de subirlo, `estela publish` enseña lo que va a quedar público (autores,
+ramas, rutas de ficheros, correos del cliente) y pide confirmación (`--yes` se
+la salta). `estela unpublish <proyecto>` borra el panel del servidor y el enlace
+deja de funcionar; `--all` los quita todos.
+
 ## Enseñar lo que has hecho
 
 Un badge para el README del proyecto, con sus horas medidas y lo que costó la
@@ -315,6 +320,24 @@ Si programaste a mano, tus commits siguen siendo un rastro: Estela deduce el
 tiempo de ellos y lo marca como **estimado**, para que sepas qué parte de tu
 parte está medida y cuál supuesta. La estimación se queda corta a propósito:
 estas horas acaban en un informe que alguien paga.
+
+## Privacidad
+
+En el plan gratuito, tus sesiones, tu código y tus horas no salen de tu
+máquina: todo vive en `~/.estela/estela.db`, y el panel de `estela web` solo
+escucha en `127.0.0.1`. Estela nunca guarda el texto de tus prompts, ni siquiera
+en local.
+
+La única conexión de red sin cuenta es una consulta a npm, como mucho una vez al
+día, por si hay versión nueva. Dos variables de entorno:
+
+| Variable | Efecto |
+|---|---|
+| `ESTELA_NO_UPDATE_CHECK=1` | No consulta la versión (tampoco se hace con `CI` definida). |
+| `ESTELA_OFFLINE=1` | Ninguna conexión de red: ni versión, ni banner, ni cuenta. |
+
+Con cuenta, solo sube lo que activas: un panel, sync, Teams. Qué manda cada
+función, una por una: [getestela.dev/privacy](https://getestela.dev/privacy).
 
 ## Planes
 

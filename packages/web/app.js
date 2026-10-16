@@ -1213,6 +1213,8 @@ function wireProjects() {
     });
   });
 
+  // Publicar va en dos pasos, como en la terminal: primero lo que va a quedar
+  // público (autores, ramas, ficheros, correos), y solo al confirmar se sube.
   document.querySelectorAll(".share-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const card = btn.closest(".pcard");
@@ -1220,53 +1222,90 @@ function wireProjects() {
       const out = card.querySelector(".share-out");
       btn.disabled = true;
       try {
-        // El token ya vive en la base de datos local (una fila por proyecto,
-        // se lee de state.projects.publications): guardarlo también en
-        // localStorage sería una segunda copia que puede desincronizarse de
-        // la real, y lo hizo — un token de una prueba vieja en el navegador
-        // pisó el que de verdad estaba publicado.
         const known = state.projects?.publications?.find((p) => p.projectId === projectId);
-        const r = await api("/api/publish", {
+        const { summary: s } = await api("/api/publish", {
           method: "POST",
-          body: JSON.stringify({ projectId, token: known?.token || "" }),
+          body: JSON.stringify({ projectId, token: known?.token || "", preview: true }),
         });
-
+        const list = (items) => items.length ? items.map(esc).join(", ") : "—";
+        const row = (label, value) => '<p class="share-line">' + label + ' ' + value + '</p>';
         out.hidden = false;
         out.innerHTML =
-          '<p class="share-line"><b>' + (r.adopted ? tr("publish.linked") : tr("publish.published")) +
-          '</b></p>' +
-          '<p class="share-line">' + tr("publish.link") + ' <code>' + esc(r.url) + '</code></p>' +
-          '<p class="share-warn">' + tr("publish.noPassword") + '</p>';
-        toast(r.adopted ? tr("toast.linkedToAccount") : tr("publish.published"));
-
-        // Publicar pone a cero los "bloques nuevos desde que lo publicaste",
-        // pero ese número vive en `state`, que se quedaba con el valor de
-        // antes: el aviso seguía ahí después de resolverlo, y solo se iba
-        // recargando la página a mano. Se vuelve a pedir el estado y se
-        // repinta, conservando el mensaje del enlace recién generado.
-        const recien = out.innerHTML;
-        await loadProjects();
-        const card2 = document.querySelector(`.pcard[data-project="${CSS.escape(projectId)}"]`);
-        const out3 = card2?.querySelector(".share-out");
-        if (out3) { out3.hidden = false; out3.innerHTML = recien; }
+          '<p class="share-line"><b>' + tr("publish.preview.title") + '</b></p>' +
+          row(tr("publish.preview.project"), esc(s.project) + " · " + esc(s.client)) +
+          row(tr("publish.preview.authors"), list(s.authors)) +
+          row(tr("publish.preview.branches"), list(s.branches)) +
+          row(tr("publish.preview.files"), list(s.files)) +
+          row(tr("publish.preview.clients"), list(s.clients)) +
+          '<p class="share-warn">' + tr("publish.noPassword") + '</p>' +
+          '<p><button type="button" class="chip share-confirm">' + tr("publish.preview.confirm") + '</button> ' +
+          '<button type="button" class="chip share-cancel">' + tr("publish.preview.cancel") + '</button></p>';
+        out.querySelector(".share-cancel").addEventListener("click", () => { out.hidden = true; out.innerHTML = ""; });
+        out.querySelector(".share-confirm").addEventListener("click", (e) => {
+          e.currentTarget.disabled = true;
+          publishNow(card, btn);
+        });
       } catch (error) {
-        const out2 = card.querySelector(".share-out");
-        // "Sin cuenta" no es un error cualquiera: se enseña con el comando
-        // exacto para resolverlo, no como un aviso genérico que hay que
-        // interpretar. `needsLogin` viaja en el cuerpo desde /api/publish.
-        if (error.body?.needsLogin) {
-          out2.hidden = false;
-          out2.innerHTML =
-            '<p class="share-line"><b>' + tr("publish.needsLogin.title") + '</b></p>' +
-            '<p class="share-line">' + tr("publish.needsLogin.why") + '</p>' +
-            '<code class="cmd">' + tr("publish.needsLogin.cmd") + '</code>' +
-            '<p class="share-warn">' + tr("publish.needsLogin.once") + '</p>';
-        } else {
-          toast(error.message);
-        }
+        showPublishError(card, error);
       } finally { btn.disabled = false; }
     });
   });
+
+  async function publishNow(card, btn) {
+    const projectId = card.dataset.project;
+    const out = card.querySelector(".share-out");
+    btn.disabled = true;
+    try {
+      // El token ya vive en la base de datos local (una fila por proyecto,
+      // se lee de state.projects.publications): guardarlo también en
+      // localStorage sería una segunda copia que puede desincronizarse de
+      // la real, y lo hizo — un token de una prueba vieja en el navegador
+      // pisó el que de verdad estaba publicado.
+      const known = state.projects?.publications?.find((p) => p.projectId === projectId);
+      const r = await api("/api/publish", {
+        method: "POST",
+        body: JSON.stringify({ projectId, token: known?.token || "" }),
+      });
+
+      out.hidden = false;
+      out.innerHTML =
+        '<p class="share-line"><b>' + (r.adopted ? tr("publish.linked") : tr("publish.published")) +
+        '</b></p>' +
+        '<p class="share-line">' + tr("publish.link") + ' <code>' + esc(r.url) + '</code></p>' +
+        '<p class="share-warn">' + tr("publish.noPassword") + '</p>';
+      toast(r.adopted ? tr("toast.linkedToAccount") : tr("publish.published"));
+
+      // Publicar pone a cero los "bloques nuevos desde que lo publicaste",
+      // pero ese número vive en `state`, que se quedaba con el valor de
+      // antes: el aviso seguía ahí después de resolverlo, y solo se iba
+      // recargando la página a mano. Se vuelve a pedir el estado y se
+      // repinta, conservando el mensaje del enlace recién generado.
+      const recien = out.innerHTML;
+      await loadProjects();
+      const card2 = document.querySelector(`.pcard[data-project="${CSS.escape(projectId)}"]`);
+      const out3 = card2?.querySelector(".share-out");
+      if (out3) { out3.hidden = false; out3.innerHTML = recien; }
+    } catch (error) {
+      showPublishError(card, error);
+    } finally { btn.disabled = false; }
+  }
+
+  function showPublishError(card, error) {
+    const out2 = card.querySelector(".share-out");
+    // "Sin cuenta" no es un error cualquiera: se enseña con el comando
+    // exacto para resolverlo, no como un aviso genérico que hay que
+    // interpretar. `needsLogin` viaja en el cuerpo desde /api/publish.
+    if (error.body?.needsLogin) {
+      out2.hidden = false;
+      out2.innerHTML =
+        '<p class="share-line"><b>' + tr("publish.needsLogin.title") + '</b></p>' +
+        '<p class="share-line">' + tr("publish.needsLogin.why") + '</p>' +
+        '<code class="cmd">' + tr("publish.needsLogin.cmd") + '</code>' +
+        '<p class="share-warn">' + tr("publish.needsLogin.once") + '</p>';
+    } else {
+      toast(error.message);
+    }
+  }
 
   document.querySelectorAll(".rateform").forEach((form) => {
     form.addEventListener("submit", async (e) => {

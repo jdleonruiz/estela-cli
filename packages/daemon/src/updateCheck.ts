@@ -2,6 +2,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { tr } from "./i18n/index.js";
+import { isOffline } from "./offline.js";
 
 /**
  * Avisa cuando hay una versión más nueva en npm.
@@ -19,9 +20,14 @@ import { tr } from "./i18n/index.js";
  *    igual. Un `estela log` no puede tardar más porque el registro esté lento.
  *  - **Como mucho una vez al día.** Consultar npm en cada `estela status` de
  *    un script sería ruido para el registro y para quien lo mira.
+ *
+ * Es la única llamada de red del plan gratuito, y se apaga con
+ * `ESTELA_NO_UPDATE_CHECK=1` (o con `ESTELA_OFFLINE=1`, que apaga toda la red). En CI (con `CI` definida) no se hace nunca: ahí
+ * nadie lee el aviso y la máquina se tira al acabar.
  */
 
-const CACHE_PATH = join(homedir(), ".estela", "update-check.json");
+/** Se calcula en cada llamada: con una constante, un test que cambia HOME no tendría efecto. */
+const cachePath = () => join(homedir(), ".estela", "update-check.json");
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 1500;
 
@@ -32,7 +38,7 @@ interface Cache {
 
 function readCache(): Cache | null {
   try {
-    return JSON.parse(readFileSync(CACHE_PATH, "utf8")) as Cache;
+    return JSON.parse(readFileSync(cachePath(), "utf8")) as Cache;
   } catch {
     return null;
   }
@@ -41,7 +47,7 @@ function readCache(): Cache | null {
 function writeCache(latest: string): void {
   try {
     mkdirSync(join(homedir(), ".estela"), { recursive: true });
-    writeFileSync(CACHE_PATH, JSON.stringify({ checkedAt: new Date().toISOString(), latest }));
+    writeFileSync(cachePath(), JSON.stringify({ checkedAt: new Date().toISOString(), latest }));
   } catch {
     // Sin permiso de escritura o disco lleno: el aviso de hoy se pierde, pero
     // no hay razón para que ESO rompa el comando que se estaba ejecutando.
@@ -81,11 +87,23 @@ function refreshInBackground(): void {
     .finally(() => clearTimeout(timeout));
 }
 
+/** Si quien ejecuta ha pedido que no se compruebe, o es una máquina de CI. */
+export function updateCheckDisabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (isOffline(env)) return true;
+  const off = env["ESTELA_NO_UPDATE_CHECK"];
+  if (off !== undefined && off !== "" && off !== "0") return true;
+  return env["CI"] !== undefined;
+}
+
 /**
  * Enseña el aviso si el caché dice que hay algo más nuevo, y refresca el
  * caché si ya toca. Se llama una vez al arrancar cualquier comando.
+ *
+ * Desactivada no hace nada, tampoco el aviso del caché: un caché viejo diría
+ * "hay versión nueva" para siempre, sin poder comprobar si sigue siendo así.
  */
-export function checkForUpdate(currentVersion: string): void {
+export function checkForUpdate(currentVersion: string, env: NodeJS.ProcessEnv = process.env): void {
+  if (updateCheckDisabled(env)) return;
   const cache = readCache();
 
   if (cache && isNewer(cache.latest, currentVersion)) {

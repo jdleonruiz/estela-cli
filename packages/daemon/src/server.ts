@@ -15,11 +15,12 @@ import * as store from "./db/store.js";
 import { buildShareReport } from "./export/share.js";
 import { invoiceToPdf } from "./export/invoice-pdf.js";
 import { openWork } from "./metrics/index.js";
-import { NoAccountError, publishPanel } from "./publish.js";
+import { NoAccountError, preparePanel, publishPanel } from "./publish.js";
 import { syncProject } from "./sync.js";
 import { syncTeamProject } from "./sync/team.js";
 import { openBillingPortal, upgradeCheckout } from "./billing.js";
 import { cloudGet, cloudPost } from "./cloud/client.js";
+import { isOffline } from "./offline.js";
 import { teamView } from "./metrics/team.js";
 import { allTurns, scanAgents } from "./watchers/agents.js";
 import { gitUserEmail, mergedBranches, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
@@ -403,13 +404,19 @@ async function api(
 
     if (path === "/api/publish" && req.method === "POST") {
       const body = await readJson(req);
+      const options = {
+        projectId: String(body["projectId"] ?? ""),
+        ...(body["token"] ? { token: String(body["token"]) } : {}),
+        ...(body["author"] ? { authorName: String(body["author"]) } : {}),
+        withAmounts: body["withAmounts"] === true,
+      };
       try {
-        const result = await publishPanel(db, {
-          projectId: String(body["projectId"] ?? ""),
-          ...(body["token"] ? { token: String(body["token"]) } : {}),
-          ...(body["author"] ? { authorName: String(body["author"]) } : {}),
-          withAmounts: body["withAmounts"] === true,
-        });
+        // Primero el resumen de lo que va a quedar público; el botón del panel
+        // lo enseña y solo publica al confirmar, igual que `estela publish`.
+        if (body["preview"] === true) {
+          return json(res, 200, { summary: (await preparePanel(db, options)).summary });
+        }
+        const result = await publishPanel(db, options);
         return json(res, 200, result);
       } catch (error) {
         // "Sin cuenta" no es un fallo del servidor: es el mismo aviso que ya
@@ -467,8 +474,11 @@ async function api(
     // internet, getestela.dev caído) hace que el banner simplemente no
     // aparezca, nunca un error visible en el panel.
     if (path === "/api/banner" && req.method === "GET") {
+      // Solo con sesión (`estela login`): sin cuenta, el panel local no hace
+      // ninguna llamada de red, tampoco para un aviso. Ni con ESTELA_OFFLINE=1.
       const account = store.getCloudAccount(db);
-      const base = (account?.apiBaseUrl ?? "https://getestela.dev").replace(/\/$/, "");
+      if (!account || isOffline()) return json(res, 200, { enabled: false });
+      const base = account.apiBaseUrl.replace(/\/$/, "");
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 2000);
       try {

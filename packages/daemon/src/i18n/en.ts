@@ -1042,4 +1042,56 @@ export const EN: Record<string, string> = {
     "{0} (no project)",
   "\n{0} de esos bloques son de subcarpetas o worktrees de un proyecto: estela import --yes los imputa.":
     "\n{0} of those blocks are from a project's subfolders or worktrees: estela import --yes assigns them.",
+  // ── publish: resumen antes de subir, y unpublish ──
+  "No se ha publicado nada. Sin terminal no se puede confirmar: añade --yes para publicar.":
+    "Nothing was published. Without a terminal there's no way to confirm: add --yes to publish.",
+  "¿Publicar? [s/N] ":
+    "Publish? [y/N] ",
+  "\nNo se ha publicado nada.":
+    "\nNothing was published.",
+  "{0} y {1} más":
+    "{0} and {1} more",
+  "\nEsto va a quedar público. Quien tenga el enlace lo ve todo:\n":
+    "\nThis will become public. Anyone with the link sees all of it:\n",
+  "Trabajo":
+    "Work",
+  "{0} días, {1} bloques, {2} mensajes de commit":
+    "{0} days, {1} blocks, {2} commit messages",
+  "Autores":
+    "Authors",
+  "Ramas":
+    "Branches",
+  "Ficheros":
+    "Files",
+  "Importes":
+    "Amounts",
+  "sí (--with-amounts)":
+    "yes (--with-amounts)",
+  "no":
+    "no",
+  "Clientes":
+    "Clients",
+  "{0} (recibirán un correo)":
+    "{0} (they'll get an email)",
+  "No tienes ningún panel publicado.":
+    "You have no published dashboards.",
+  "No se ha despublicado nada. Sin terminal no se puede confirmar: añade --yes.":
+    "Nothing was unpublished. Without a terminal there's no way to confirm: add --yes.",
+  "\n¿Despublicar estos {0} paneles? Los enlaces dejarán de funcionar. [s/N] ":
+    "\nUnpublish these {0} dashboards? The links will stop working. [y/N] ",
+  "\nNo se ha despublicado nada.":
+    "\nNothing was unpublished.",
+  "\n{0} paneles despublicados. Sus enlaces ya no funcionan.":
+    "\n{0} dashboards unpublished. Their links no longer work.",
+  "Tus paneles publicados:\n":
+    "Your published dashboards:\n",
+  "\nPara despublicar uno: estela unpublish <proyecto o token>. Todos: estela unpublish --all":
+    "\nTo unpublish one: estela unpublish <project or token>. All of them: estela unpublish --all",
+  "Panel de {0} despublicado. El enlace ya no funciona.":
+    "{0} dashboard unpublished. The link no longer works.",
+  "No hay ningún panel publicado de \"{0}\". Míralos con: estela unpublish":
+    "There's no published dashboard for \"{0}\". See them with: estela unpublish",
+  // ── ESTELA_OFFLINE ──
+  "ESTELA_OFFLINE=1: Estela no se conecta a la red. Quita la variable para usar tu cuenta.":
+    "ESTELA_OFFLINE=1: Estela doesn't connect to the network. Unset it to use your account.",
 };

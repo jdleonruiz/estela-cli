@@ -4,9 +4,9 @@ import type { CommitRecord, Project } from "@estela/shared";
 import { localDate } from "@estela/shared";
 
 import { rateAt } from "./billing/invoice.js";
-import { cloudPost, CloudError } from "./cloud/client.js";
+import { cloudDelete, cloudGet, cloudPost, CloudError } from "./cloud/client.js";
 import * as store from "./db/store.js";
-import { buildPanel, newPanelToken } from "./export/panel.js";
+import { buildPanel, newPanelToken, panelData, summarizePanel, type PanelOptions } from "./export/panel.js";
 import { emailsOverlap, teamView } from "./metrics/team.js";
 import { listTeamMembers, type TeamMemberSummary } from "./team.js";
 import { mergedBranches } from "./watchers/git.js";
@@ -51,6 +51,23 @@ export interface PublishOptions {
   readonly hideCredit?: boolean;
 }
 
+/** Lo que va a quedar público al subir el panel, para enseñarlo antes. */
+export type PanelSummary = ReturnType<typeof summarizePanel> & {
+  /** Correos del cliente que recibirán acceso y un aviso por correo. */
+  readonly clients: readonly string[];
+};
+
+/** Un panel ya construido, a falta de subirlo. */
+export interface PreparedPanel {
+  readonly projectId: string;
+  readonly projectName: string;
+  readonly token: string;
+  readonly html: string;
+  readonly summary: PanelSummary;
+  readonly clients?: readonly string[];
+  readonly hideCredit: boolean;
+}
+
 export interface PublishResult {
   readonly token: string;
   readonly url: string;
@@ -80,8 +97,21 @@ function commitsOfProject(db: DatabaseSync, repoPaths: readonly string[]): Commi
 }
 
 export async function publishPanel(db: DatabaseSync, options: PublishOptions): Promise<PublishResult> {
+  return uploadPanel(db, await preparePanel(db, options));
+}
+
+/**
+ * Construye el panel sin subirlo: el HTML y el resumen de lo que va a quedar
+ * público. `estela publish` enseña el resumen y pide confirmación antes de
+ * `uploadPanel`.
+ */
+export async function preparePanel(db: DatabaseSync, options: PublishOptions): Promise<PreparedPanel> {
   const project = store.getProject(db, options.projectId);
   if (!project) throw new Error(tr`No existe el proyecto "${options.projectId}".`);
+  // Alojarlo exige sesión: es la cuenta la que decide cuántos paneles caben
+  // en tu plan, y sin ella no hay a quién cargarle esa cuota. Se mira antes de
+  // construir nada, para no enseñar un resumen de algo que no se va a subir.
+  requireAccount(db);
   const client = store.getClient(db, project.clientId)!;
   const rates = store.getRates(db, options.projectId);
 
@@ -94,10 +124,7 @@ export async function publishPanel(db: DatabaseSync, options: PublishOptions): P
 
   const team = await buildTeam(db, project, projectCommits);
 
-  // El panel es un fichero estático: el idioma queda fijado en el momento de
-  // publicar, y republicar es lo que lo cambia.
-  const lang = documentLang({ explicit: options.language, clientLanguage: client.language });
-  const html = withLang(lang, () => buildPanel({
+  const panelOptions: PanelOptions = {
     project, client,
     entries: store.getTimeEntries(db, options.projectId),
     ...(options.includeTeam !== false ? { team } : {}),
@@ -113,39 +140,110 @@ export async function publishPanel(db: DatabaseSync, options: PublishOptions): P
           `SELECT hash, subject FROM commits WHERE hash IN (${hashes.map(() => "?").join(",")})`
         ).all(...hashes) as { hash: string; subject: string }[]
       : [],
+  };
+
+  // El panel es un fichero estático: el idioma queda fijado en el momento de
+  // publicar, y republicar es lo que lo cambia.
+  const lang = documentLang({ explicit: options.language, clientLanguage: client.language });
+  const { html, summary } = withLang(lang, () => ({
+    html: buildPanel(panelOptions),
+    summary: summarizePanel(panelData(panelOptions)),
   }));
 
-  // Alojarlo exige sesión: es la cuenta la que decide cuántos paneles caben
-  // en tu plan, y sin ella no hay a quién cargarle esa cuota.
-  const account = store.getCloudAccount(db);
-  if (!account) {
-    throw new NoAccountError(
-      tr`Necesitas una cuenta para publicar. Vincúlala con:\n\n` +
-      tr`  estela login --email tu@correo.com\n`);
-  }
+  return {
+    projectId: project.id, projectName: project.name, token, html,
+    summary: { ...summary, clients: options.clients ?? [] },
+    ...(options.clients ? { clients: options.clients } : {}),
+    hideCredit: options.hideCredit === true,
+  };
+}
 
+export async function uploadPanel(db: DatabaseSync, panel: PreparedPanel): Promise<PublishResult> {
+  const account = requireAccount(db);
   let result: { url: string; adopted: boolean };
   try {
     result = await cloudPost(account.apiBaseUrl, "/panels",
-      { token, projectName: project.name, projectId: project.id, html,
-        ...(options.clients ? { clients: options.clients } : {}),
-        ...(options.hideCredit ? { hideCredit: true } : {}) },
+      { token: panel.token, projectName: panel.projectName, projectId: panel.projectId, html: panel.html,
+        ...(panel.clients ? { clients: panel.clients } : {}),
+        ...(panel.hideCredit ? { hideCredit: true } : {}) },
       { deviceToken: account.deviceToken });
   } catch (error) {
     // Igual que en sync.ts: el 402 se deja pasar. El mensaje ya viene
     // redactado del servidor (panels.ts), que es la única fuente de la verdad
     // sobre cuántos paneles permite cada plan, y el CLI imprime CloudError
     // limpio. Envolverlo lo convertía en un volcado de pila.
-    if (error instanceof CloudError && error.status === 401) {
-      throw new NoAccountError(
-        tr`Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
-        tr`  estela login --email tu@correo.com\n`);
-    }
-    throw error;
+    throw sessionError(error);
   }
 
-  store.recordPublication(db, options.projectId, token, "https://getestela.dev");
-  return { token, url: result.url, adopted: result.adopted };
+  store.recordPublication(db, panel.projectId, panel.token, "https://getestela.dev");
+  return { token: panel.token, url: result.url, adopted: result.adopted };
+}
+
+/** Un panel publicado en tu cuenta, tal como lo lista el servidor. */
+export interface PublishedPanel {
+  readonly token: string;
+  readonly projectName: string;
+  readonly projectId: string | null;
+}
+
+/**
+ * Despublica un panel: el servidor borra el fichero y el enlace deja de
+ * funcionar. `target` es el id de un proyecto (el panel que se publicó desde
+ * esta máquina) o el token del enlace.
+ */
+export async function unpublishPanel(db: DatabaseSync, target: string): Promise<PublishedPanel> {
+  const account = requireAccount(db);
+  const panels = await listPublishedPanels(db);
+  const token = /^[0-9a-f]{32}$/.test(target) ? target : store.getPublicationToken(db, target);
+  const panel = panels.find((p) => p.token === token)
+    ?? panels.find((p) => p.projectId === target);
+  if (!panel) throw new Error(tr`No hay ningún panel publicado de "${target}". Míralos con: estela unpublish`);
+  try {
+    await cloudDelete(account.apiBaseUrl, `/panels/${panel.token}`, { deviceToken: account.deviceToken });
+  } catch (error) { throw sessionError(error); }
+  store.forgetPublication(db, panel.token);
+  return panel;
+}
+
+/** Despublica todos los paneles de la cuenta. Devuelve los que quitó. */
+export async function unpublishAll(db: DatabaseSync): Promise<PublishedPanel[]> {
+  const account = requireAccount(db);
+  const panels = await listPublishedPanels(db);
+  for (const panel of panels) {
+    try {
+      await cloudDelete(account.apiBaseUrl, `/panels/${panel.token}`, { deviceToken: account.deviceToken });
+    } catch (error) { throw sessionError(error); }
+    store.forgetPublication(db, panel.token);
+  }
+  return panels;
+}
+
+export async function listPublishedPanels(db: DatabaseSync): Promise<PublishedPanel[]> {
+  const account = requireAccount(db);
+  try {
+    const res = await cloudGet<{ panels: { token: string; projectName: string; projectId?: string | null }[] }>(
+      account.apiBaseUrl, "/panels", { deviceToken: account.deviceToken });
+    return res.panels.map((p) => ({ token: p.token, projectName: p.projectName, projectId: p.projectId ?? null }));
+  } catch (error) { throw sessionError(error); }
+}
+
+function requireAccount(db: DatabaseSync) {
+  const account = store.getCloudAccount(db);
+  if (!account) {
+    throw new NoAccountError(
+      tr`Necesitas una cuenta para publicar. Vincúlala con:\n\n` +
+      tr`  estela login --email tu@correo.com\n`);
+  }
+  return account;
+}
+
+function sessionError(error: unknown): unknown {
+  if (error instanceof CloudError && error.status === 401) {
+    return new NoAccountError(
+      tr`Tu sesión ya no vale. Vuelve a vincular la máquina:\n\n` +
+      tr`  estela login --email tu@correo.com\n`);
+  }
+  return error;
 }
 
 /**

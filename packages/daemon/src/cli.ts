@@ -37,7 +37,10 @@ import { invoiceToPdf } from "./export/invoice-pdf.js";
 import { buildShareReport } from "./export/share.js";
 import { startServer } from "./server.js";
 import { checkForUpdate } from "./updateCheck.js";
-import { NoAccountError, publishPanel, type PublishResult } from "./publish.js";
+import {
+  listPublishedPanels, NoAccountError, preparePanel, unpublishAll, unpublishPanel, uploadPanel,
+  type PanelSummary, type PublishResult,
+} from "./publish.js";
 import { NotSyncedError, syncProject } from "./sync.js";
 import { syncTeamProject } from "./sync/team.js";
 import { acceptTeamInvite, inviteTeamMember, listTeamMembers, revokeTeamMember } from "./team.js";
@@ -178,6 +181,11 @@ estela — registro de horas para desarrollo asistido por IA
         republicaciones no desvinculan a quien ya lo tenía.
         --no-credit quita la línea "Horas rellenadas por Estela" del pie
         (Pro y Teams).
+        Antes de subir enseña lo que va a quedar público (autores, ramas,
+        ficheros, correos del cliente) y pide confirmación; --yes la salta.
+  estela unpublish [<proyecto|token>] [--all] [--yes]
+        Borra el panel del servidor: el enlace deja de funcionar. Sin
+        argumentos, lista tus paneles publicados.
 
   estela team ai-cost --project <id> --allow | --deny
         Si quien te invitó pide ver el coste de IA del proyecto, esta es tu
@@ -245,6 +253,12 @@ Opciones globales:  --db <ruta>   (por defecto ${DEFAULT_DB_PATH})
                     --lang es|en  Idioma. Sin ella se usa el del sistema;
                                   ESTELA_LANG=en lo fija para siempre.
                     --version     Solo imprime la versión instalada.
+
+Red:  Sin cuenta, Estela solo consulta npm una vez al día por si hay
+      versión nueva.
+      ESTELA_NO_UPDATE_CHECK=1  no la consulta (tampoco con CI definida).
+      ESTELA_OFFLINE=1          ninguna conexión de red: ni versión, ni
+                                banner, ni nada de la cuenta.
 `;
 
 const HELP_EN = `
@@ -370,6 +384,11 @@ estela — time tracking for AI-assisted development
         isn't touched: republishing never unlinks anyone who already had it.
         --no-credit removes the "Hours filled in by Estela" line from the
         footer (Pro and Teams).
+        Before uploading it shows what will become public (authors,
+        branches, files, client emails) and asks to confirm; --yes skips it.
+  estela unpublish [<project|token>] [--all] [--yes]
+        Deletes the dashboard from the server: the link stops working.
+        With no arguments, lists your published dashboards.
 
   estela team ai-cost --project <id> --allow | --deny
         If whoever invited you asks to see the project's AI cost, this is
@@ -437,6 +456,12 @@ Global options:  --db <path>   (default ${DEFAULT_DB_PATH})
                  --lang es|en  Language. Without it, your system's is used;
                                ESTELA_LANG=en sets it for good.
                  --version     Only prints the installed version.
+
+Network:  Without an account, Estela only checks npm once a day for a new
+          version.
+          ESTELA_NO_UPDATE_CHECK=1  skips that check (so does having CI set).
+          ESTELA_OFFLINE=1          no network connections at all: no
+                                    version check, no banner, no account.
 `;
 
 function helpText(): string {
@@ -1375,7 +1400,7 @@ async function cmdPublish(args: Args, dbPath: string): Promise<void> {
 
     let result: PublishResult;
     try {
-      result = await publishPanel(db, {
+      const panel = await preparePanel(db, {
         projectId,
         ...(token ? { token } : {}),
         ...(str(args, "author") ? { authorName: str(args, "author")! } : {}),
@@ -1385,6 +1410,19 @@ async function cmdPublish(args: Args, dbPath: string): Promise<void> {
         hideCredit: args.flags["no-credit"] === true,
         ...(explicitLang(args) ? { language: explicitLang(args)! } : {}),
       });
+      // Lo que va a quedar público, antes de subirlo: quien tenga el enlace
+      // verá todo esto, y publicar no se deshace solo.
+      printPanelSummary(panel.summary);
+      if (args.flags["yes"] !== true) {
+        if (!process.stdin.isTTY) {
+          throw new UserError(tr`No se ha publicado nada. Sin terminal no se puede confirmar: añade --yes para publicar.`);
+        }
+        if (!await confirm(tr`¿Publicar? [s/N] `)) {
+          console.log(tr`\nNo se ha publicado nada.`);
+          return;
+        }
+      }
+      result = await uploadPanel(db, panel);
     } catch (error) {
       if (error instanceof NoAccountError) throw new UserError(error.message);
       throw error;
@@ -1405,6 +1443,71 @@ async function cmdPublish(args: Args, dbPath: string): Promise<void> {
 
     const owner = store.getClient(db, store.getProject(db, projectId)!.clientId)!;
     hintDocLang(args, owner, docLangOf(args, owner));
+  } finally { db.close(); }
+}
+
+/** Hasta `max` elementos de una lista, y cuántos quedan fuera. */
+function shortList(items: readonly string[], max = 8): string {
+  if (items.length === 0) return "—";
+  const shown = items.slice(0, max).join(", ");
+  return items.length > max ? tr`${shown} y ${items.length - max} más` : shown;
+}
+
+function printPanelSummary(s: PanelSummary): void {
+  console.log(tr`\nEsto va a quedar público. Quien tenga el enlace lo ve todo:\n`);
+  const row = (label: string, value: string) => console.log(`  ${label.padEnd(14)}${value}`);
+  row(tr`Proyecto`, `${s.project} · ${s.client}`);
+  row(tr`Trabajo`, tr`${s.days} días, ${s.blocks} bloques, ${s.commitSubjects} mensajes de commit`);
+  row(tr`Autores`, shortList(s.authors));
+  row(tr`Ramas`, shortList(s.branches));
+  row(tr`Ficheros`, shortList(s.files));
+  row(tr`Importes`, s.amounts ? tr`sí (--with-amounts)` : tr`no`);
+  row(tr`Clientes`, s.clients.length ? tr`${s.clients.join(", ")} (recibirán un correo)` : "—");
+  console.log("");
+}
+
+/**
+ * `estela unpublish <proyecto|token>` y `estela unpublish --all`.
+ *
+ * Borra el panel del servidor: el enlace deja de funcionar para todos al
+ * momento. Sin argumentos, lista lo que tienes publicado.
+ */
+async function cmdUnpublish(args: Args, dbPath: string): Promise<void> {
+  const db = openDatabase(dbPath);
+  try {
+    const target = args._[1] ?? str(args, "project") ?? str(args, "token");
+    try {
+      if (args.flags["all"] === true) {
+        const panels = await listPublishedPanels(db);
+        if (panels.length === 0) { console.log(tr`No tienes ningún panel publicado.`); return; }
+        for (const p of panels) console.log(`  ${p.projectName}  ·  ${p.token}`);
+        if (args.flags["yes"] !== true) {
+          if (!process.stdin.isTTY) {
+            throw new UserError(tr`No se ha despublicado nada. Sin terminal no se puede confirmar: añade --yes.`);
+          }
+          if (!await confirm(tr`\n¿Despublicar estos ${panels.length} paneles? Los enlaces dejarán de funcionar. [s/N] `)) {
+            console.log(tr`\nNo se ha despublicado nada.`);
+            return;
+          }
+        }
+        const gone = await unpublishAll(db);
+        console.log(tr`\n${gone.length} paneles despublicados. Sus enlaces ya no funcionan.`);
+        return;
+      }
+      if (!target) {
+        const panels = await listPublishedPanels(db);
+        if (panels.length === 0) { console.log(tr`No tienes ningún panel publicado.`); return; }
+        console.log(tr`Tus paneles publicados:\n`);
+        for (const p of panels) console.log(`  ${p.projectId ?? "—"}  ${p.projectName}  ·  ${p.token}`);
+        console.log(tr`\nPara despublicar uno: estela unpublish <proyecto o token>. Todos: estela unpublish --all`);
+        return;
+      }
+      const gone = await unpublishPanel(db, target);
+      console.log(tr`Panel de ${gone.projectName} despublicado. El enlace ya no funciona.`);
+    } catch (error) {
+      if (error instanceof NoAccountError) throw new UserError(error.message);
+      throw error;
+    }
   } finally { db.close(); }
 }
 
@@ -2307,7 +2410,8 @@ async function main(): Promise<void> {
   setClientVersion(VERSION);
 
   const dbPath = str(args, "db") ?? DEFAULT_DB_PATH;
-  const command = args._.join(" ");
+  // `estela unpublish <panel>` lleva el panel suelto, sin flag: no es un subcomando.
+  const command = args._[0] === "unpublish" ? "unpublish" : args._.join(" ");
 
   // Se llama aquí, no al final: un comando que falla a medias (por ejemplo
   // "estela import" sin repositorios) debe avisar igual de que hay una
@@ -2341,6 +2445,7 @@ async function main(): Promise<void> {
     case "author":            await cmdAuthor(args, dbPath); break;
     case "share":             cmdShare(args, dbPath); break;
     case "publish":           await cmdPublish(args, dbPath); break;
+    case "unpublish":         await cmdUnpublish(args, dbPath); break;
     case "export":            await cmdExport(args, dbPath); break;
     case "report":            cmdInvoice(args, dbPath); break;
     case "login":             await cmdLogin(args, dbPath); break;

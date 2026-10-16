@@ -4,7 +4,7 @@ import { test } from "node:test";
 import type { Client, Project, TimeEntry } from "@estela/shared";
 import { money } from "@estela/shared";
 
-import { buildPanel, CREDIT_MARKER, newPanelToken } from "./panel.js";
+import { buildPanel, CREDIT_MARKER, newPanelToken, panelData, summarizePanel } from "./panel.js";
 
 const CLIENT: Client = { id: "nebula", name: "Nebula", currency: "EUR" };
 const PROJECT: Project = {
@@ -454,4 +454,32 @@ test("el script del panel es JavaScript sintácticamente válido", () => {
   // sintaxis, lanza aquí y no en el navegador de un cliente.
   assert.doesNotThrow(() => new Function(code), (error) =>
     `el script del panel no es JS válido: ${(error as Error).message}`);
+});
+
+// ── El resumen de lo que se publica ─────────────────────────────────────
+
+test("el resumen de estela publish sale de los mismos datos que el panel", () => {
+  // Un resumen calculado aparte podría callarse algo que sí viaja en el
+  // fichero. Todo lo que enseña tiene que estar en el HTML, y nada puede faltar.
+  const commit = (i: number) => ({
+    repoPath: "/r", hash: `h${i}`.padEnd(10, "0"), at: new Date(`2026-08-1${i}T12:00:00Z`),
+    authorEmail: "yo@x.com", authorName: "JDev Leon", branch: "feature/login",
+    subject: `login paso ${i}`, linesAdded: 10, linesDeleted: 1, files: ["src/auth/login-form.ts"],
+  });
+  const options = {
+    ...BASE,
+    entries: [entry("2026-08-11", 3600, { branch: "feature/login" }), entry("2026-08-13", 1800)],
+    team: TEAM,
+    commits: [commit(1), commit(2), commit(3)],
+  };
+  const html = buildPanel(options);
+  const s = summarizePanel(panelData(options));
+
+  assert.deepEqual(s.authors, TEAM.map((m) => m.name));
+  assert.ok(s.branches.length > 0 && s.files.length > 0);
+  for (const value of [...s.authors, ...s.branches, ...s.files]) {
+    assert.ok(html.includes(value), `el resumen dice "${value}" pero no está en el panel`);
+  }
+  assert.equal(s.days, 2);
+  assert.equal(s.amounts, false);
 });

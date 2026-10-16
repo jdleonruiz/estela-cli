@@ -197,6 +197,11 @@ and Teams have no limit.
 The dashboard's footer says "Hours filled in by Estela", linking to
 getestela.dev. On Pro and Teams, `--no-credit` removes that line.
 
+Before uploading, `estela publish` shows what will become public — authors,
+branches, file paths, client emails — and asks you to confirm (`--yes` skips
+it). `estela unpublish <project>` deletes the dashboard from the server and the
+link stops working; `--all` takes them all down.
+
 ## Showing what you built
 
 A badge for your project's README, with its measured hours and what the AI
@@ -318,6 +323,24 @@ If you coded by hand, your commits are still a trail: Estela infers the time
 from them and marks it as **estimated**, so you know which part of your hours is
 measured and which is assumed. The estimate errs on the short side on purpose:
 these hours end up in a report someone pays for.
+
+## Privacy
+
+On the free plan, your sessions, your code and your hours never leave your
+machine: everything lives in `~/.estela/estela.db`, and the `estela web`
+dashboard only listens on `127.0.0.1`. Estela never stores the text of your
+prompts, not even locally.
+
+The only network connection without an account is a check against npm, at most
+once a day, for a new version. Two environment variables:
+
+| Variable | Effect |
+|---|---|
+| `ESTELA_NO_UPDATE_CHECK=1` | Skips the version check (it's also skipped when `CI` is set). |
+| `ESTELA_OFFLINE=1` | No network connections at all: no version check, no banner, no account. |
+
+With an account, only what you turn on is uploaded — a dashboard, sync, Teams.
+What each feature sends, one by one: [getestela.dev/en/privacy](https://getestela.dev/en/privacy).
 
 ## Plans
 

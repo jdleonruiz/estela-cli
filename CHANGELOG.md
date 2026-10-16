@@ -4,6 +4,29 @@ Cambios visibles de cada versión del paquete `estela`. Las anteriores a la
 0.2.0 están en el historial de git, con una etiqueta por versión en
 [github.com/jdleonruiz/estela-cli](https://github.com/jdleonruiz/estela-cli/tags).
 
+## 0.2.3 — 2026-10-16
+
+### Nuevo
+- **`estela unpublish <proyecto|token>`** borra un panel del servidor: el enlace
+  deja de funcionar al momento. `--all` los quita todos (pide confirmación, o
+  `--yes`). Sin argumentos, lista tus paneles publicados.
+- **`estela publish` enseña antes de subir lo que va a quedar público**:
+  autores, ramas, rutas de ficheros, mensajes de commit, si van importes y los
+  correos del cliente. Pide confirmación; `--yes` se la salta. Sin terminal y
+  sin `--yes` no publica. El botón «Compartir» del panel web hace lo mismo en
+  dos pasos.
+- **`ESTELA_OFFLINE=1`**: Estela no abre ninguna conexión de red (ni versión,
+  ni banner, ni nada de la cuenta).
+
+### Cambios
+- **El aviso de versión nueva se puede apagar** con
+  `ESTELA_NO_UPDATE_CHECK=1`, y no se hace nunca con `CI` definida.
+- **Sin cuenta, el panel local no se conecta a nada**: el banner solo se pide
+  si hiciste `estela login`.
+- La ayuda tiene una sección «Red» con las dos variables, y el README una
+  sección de privacidad. Detalle completo en
+  [getestela.dev/privacy](https://getestela.dev/privacy).
+
 ## 0.2.2 — 2026-10-14
 
 ### Cambios

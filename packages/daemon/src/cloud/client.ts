@@ -8,6 +8,7 @@
  */
 
 import { getLang, tr } from "../i18n/index.js";
+import { isOffline } from "../offline.js";
 
 export class CloudError extends Error {
   constructor(message: string, readonly status?: number) { super(message); }
@@ -29,18 +30,47 @@ export function setClientVersion(v: string): void { clientVersion = v; }
 export async function cloudPost<T>(
   baseUrl: string, path: string, body: unknown, options: CloudPostOptions = {},
 ): Promise<T> {
+  return request<T>("POST", baseUrl, path, body, options);
+}
+
+/**
+ * Primer GET autenticado de verdad del CLI. Hasta Teams, todo lo que hablaba
+ * con la cuenta era una escritura (`cloudPost`); listar los miembros de un
+ * proyecto es la primera vez que hace falta leer algo.
+ */
+export async function cloudGet<T>(
+  baseUrl: string, path: string, options: CloudPostOptions = {},
+): Promise<T> {
+  return request<T>("GET", baseUrl, path, undefined, options);
+}
+
+/** Para borrar lo que se subió: hoy, despublicar un panel. */
+export async function cloudDelete<T>(
+  baseUrl: string, path: string, options: CloudPostOptions = {},
+): Promise<T> {
+  return request<T>("DELETE", baseUrl, path, undefined, options);
+}
+
+async function request<T>(
+  method: "GET" | "POST" | "DELETE", baseUrl: string, path: string, body: unknown, options: CloudPostOptions,
+): Promise<T> {
+  // Todas las llamadas a la cuenta pasan por aquí: con ESTELA_OFFLINE=1 no
+  // sale ninguna, y quien llama recibe un error que dice por qué.
+  if (isOffline()) {
+    throw new CloudError(tr`ESTELA_OFFLINE=1: Estela no se conecta a la red. Quita la variable para usar tu cuenta.`);
+  }
   let res: Response;
   try {
     res = await fetch(`${baseUrl}${path}`, {
-      method: "POST",
+      method,
       headers: {
-        "content-type": "application/json",
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
         "estela-version": clientVersion,
         // Para que la API conteste en el idioma de la terminal.
         "x-estela-lang": getLang(),
         ...(options.deviceToken ? { authorization: `Bearer ${options.deviceToken}` } : {}),
       },
-      body: JSON.stringify(body),
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
   } catch {
     throw new CloudError(
@@ -53,39 +83,6 @@ export async function cloudPost<T>(
     // El status viaja aparte del mensaje: quien llama necesita distinguir
     // "no tienes sesión" (401, pide login) de "cuota agotada" (402, pide
     // upgrade) sin tener que analizar el texto en español.
-    throw new CloudError(
-      typeof data["error"] === "string" ? data["error"] : tr`Error ${res.status}`, res.status);
-  }
-  return data as T;
-}
-
-/**
- * Primer GET autenticado de verdad del CLI. Hasta Teams, todo lo que hablaba
- * con la cuenta era una escritura (`cloudPost`); listar los miembros de un
- * proyecto es la primera vez que hace falta leer algo.
- */
-export async function cloudGet<T>(
-  baseUrl: string, path: string, options: CloudPostOptions = {},
-): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(`${baseUrl}${path}`, {
-      method: "GET",
-      headers: {
-        "estela-version": clientVersion,
-        // Para que la API conteste en el idioma de la terminal.
-        "x-estela-lang": getLang(),
-        ...(options.deviceToken ? { authorization: `Bearer ${options.deviceToken}` } : {}),
-      },
-    });
-  } catch {
-    throw new CloudError(
-      tr`Sin respuesta de ${baseUrl}. Puede ser tu conexión o que el servicio esté caído; ` +
-      tr`en ambos casos, nada de lo tuyo se ha perdido: vuelve a intentarlo.`);
-  }
-
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (!res.ok) {
     throw new CloudError(
       typeof data["error"] === "string" ? data["error"] : tr`Error ${res.status}`, res.status);
   }

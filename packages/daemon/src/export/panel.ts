@@ -113,6 +113,53 @@ function shortPath(file: string): string {
 }
 
 export function buildPanel(options: PanelOptions): string {
+  const data = panelData(options);
+
+  // El texto de interfaz va aparte de los datos, en su propio bloque: los datos
+  // son lo único que hay que vigilar de cerca (aquí no entra nada de IA ni de
+  // costes, y hay tests que lo comprueban), y mezclarlos con frases sueltas
+  // haría esa comprobación imposible de hacer sin falsos positivos.
+  const lang = getLang();
+  const ui: PanelUi = {
+    lang, L: panelLabels(), monthNames: MONTHS[lang], dayNames: DAYS[lang],
+    credit: options.hideCredit !== true,
+  };
+
+  return render(data, ui);
+}
+
+/** Los datos que viajan dentro del panel: lo único que se publica de tu trabajo. */
+export type PanelData = ReturnType<typeof panelData>;
+
+/**
+ * Lo que va a quedar público, contado antes de subirlo.
+ *
+ * Sale de los mismos datos que se meten en el HTML, no de un cálculo aparte:
+ * un resumen que pudiera decir algo distinto de lo que se publica no
+ * protegería a nadie. `estela publish` lo enseña y pide confirmación.
+ */
+export function summarizePanel(data: PanelData) {
+  const subjects = new Set<string>();
+  const branches = new Set<string>();
+  for (const day of data.days) {
+    for (const item of day.items) for (const c of item.commits) subjects.add(c.subject);
+  }
+  for (const f of data.features) branches.add(f.name);
+  for (const o of data.open) branches.add(o.name);
+  return {
+    project: data.project,
+    client: data.client,
+    days: data.days.length,
+    blocks: data.days.reduce((n, d) => n + d.items.length, 0),
+    commitSubjects: subjects.size,
+    authors: data.team.map((m) => m.name),
+    branches: [...branches].sort(),
+    files: data.rework.map((r) => r.file),
+    amounts: data.totalAmount !== null,
+  };
+}
+
+export function panelData(options: PanelOptions) {
   const { project, client, entries } = options;
   const showAmounts = options.withAmounts === true && options.rateAt !== undefined;
 
@@ -197,17 +244,7 @@ export function buildPanel(options: PanelOptions): string {
     site: (options.siteUrl ?? "https://getestela.dev").replace(/\/$/, ""),
   };
 
-  // El texto de interfaz va aparte de los datos, en su propio bloque: los datos
-  // son lo único que hay que vigilar de cerca (aquí no entra nada de IA ni de
-  // costes, y hay tests que lo comprueban), y mezclarlos con frases sueltas
-  // haría esa comprobación imposible de hacer sin falsos positivos.
-  const lang = getLang();
-  const ui: PanelUi = {
-    lang, L: panelLabels(), monthNames: MONTHS[lang], dayNames: DAYS[lang],
-    credit: options.hideCredit !== true,
-  };
-
-  return render(data, ui);
+  return data;
 }
 
 /** Un texto con su singular y su plural, ya traducidos. `{n}` lleva el número. */

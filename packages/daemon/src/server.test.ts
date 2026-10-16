@@ -395,3 +395,71 @@ test("/api/quota da el reparto de la semana por agente, el mismo JSON que estela
     },
   );
 });
+
+// ── Red ──────────────────────────────────────────────────────────────────
+
+/**
+ * Apunta cada llamada que el servidor local hace hacia fuera. Las que van a
+ * 127.0.0.1 (las del propio test al panel) pasan tal cual.
+ */
+async function vigilandoRed(probar: (fuera: string[]) => Promise<void>): Promise<void> {
+  const realFetch = globalThis.fetch;
+  const fuera: string[] = [];
+  globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+    const u = String(url);
+    if (u.startsWith("http://127.0.0.1")) return realFetch(u, init);
+    fuera.push(u);
+    return new Response(JSON.stringify({ enabled: true, text: "hola" }), { status: 200 });
+  }) as typeof fetch;
+  try { await probar(fuera); } finally { globalThis.fetch = realFetch; }
+}
+
+test("sin cuenta, el banner no sale a la red", async () => {
+  await vigilandoRed(async (fuera) => {
+    await conServidor(sembrar, async (base) => {
+      const r = await (await fetch(`${base}/api/banner`)).json() as { enabled: boolean };
+      assert.equal(r.enabled, false);
+      assert.deepEqual(fuera, []);
+    });
+  });
+});
+
+test("con cuenta, el banner se pide a su API", async () => {
+  await vigilandoRed(async (fuera) => {
+    await conServidor((dbPath) => {
+      sembrar(dbPath);
+      const db = openDatabase(dbPath);
+      try {
+        store.setCloudAccount(db, { accountId: "a", email: "yo@x.com", plan: "free", deviceToken: "d",
+          apiBaseUrl: "https://api.ejemplo.test", linkedAt: new Date() });
+      } finally { db.close(); }
+    }, async (base) => {
+      const r = await (await fetch(`${base}/api/banner`)).json() as { enabled: boolean };
+      assert.equal(r.enabled, true);
+      assert.deepEqual(fuera, ["https://api.ejemplo.test/public/banner"]);
+    });
+  });
+});
+
+test("con ESTELA_OFFLINE=1, ni con cuenta se pide el banner", async () => {
+  const before = process.env["ESTELA_OFFLINE"];
+  process.env["ESTELA_OFFLINE"] = "1";
+  try {
+    await vigilandoRed(async (fuera) => {
+      await conServidor((dbPath) => {
+        sembrar(dbPath);
+        const db = openDatabase(dbPath);
+        try {
+          store.setCloudAccount(db, { accountId: "a", email: "yo@x.com", plan: "free", deviceToken: "d",
+            apiBaseUrl: "https://api.ejemplo.test", linkedAt: new Date() });
+        } finally { db.close(); }
+      }, async (base) => {
+        const r = await (await fetch(`${base}/api/banner`)).json() as { enabled: boolean };
+        assert.equal(r.enabled, false);
+        assert.deepEqual(fuera, []);
+      });
+    });
+  } finally {
+    if (before === undefined) delete process.env["ESTELA_OFFLINE"]; else process.env["ESTELA_OFFLINE"] = before;
+  }
+});

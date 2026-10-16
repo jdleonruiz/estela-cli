@@ -233,6 +233,11 @@ export function recordPublication(
   `).run(projectId, token, iso(at), baseUrl);
 }
 
+/** Tras despublicar: el proyecto deja de constar como publicado en esta máquina. */
+export function forgetPublication(db: DatabaseSync, token: string): void {
+  db.prepare("DELETE FROM publications WHERE token = ?").run(token);
+}
+
 /**
  * Estado de las publicaciones.
  *
