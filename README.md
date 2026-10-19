@@ -306,6 +306,16 @@ won't overwrite it: `--force` replaces it, `--append` shows yours after
 Estela's. `estela statusline uninstall` removes it (and puts yours back if
 you used `--append`).
 
+The status line only runs in Claude Code in the terminal: the VS Code
+extension doesn't show it.
+
+Since 0.2.4, the status line stores your 5-hour and weekly percentages locally
+(`~/.estela/rate-limits.jsonl`) so `estela plan` can analyse them. Nothing leaves
+your machine. Only what Claude Code sends is kept — each percentage, its reset
+time and the Claude Code version — at most every 5 minutes unless a figure moves,
+and for 120 days. Transcripts don't carry these percentages, so the history
+starts the day you install 0.2.4.
+
 ## Hours no import will infer
 
 Meetings, travel, research, and development without an agent that didn't leave

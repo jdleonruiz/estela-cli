@@ -9,6 +9,7 @@ import * as store from "./db/store.js";
 import { breakdown, weekStart, type QuotaBucket } from "./metrics/quota.js";
 import { normalizePath } from "./paths.js";
 import { folderName, gitRoot, ownerResolver } from "./project-of.js";
+import { recordSample } from "./rate-history.js";
 import { loadCache, rememberLimits, saveCache } from "./statusline-cache.js";
 import { renderStatus, stripAnsi, type StatusData, type StatusInput, parseStatusInput } from "./statusline.js";
 import { isScratchpad, parseTranscriptLine, resolveScratchpads } from "./watchers/claude.js";
@@ -49,6 +50,10 @@ export async function runStatusline(argv: readonly string[]): Promise<void> {
         sevenDay: { usedPercentage: input.sevenDay, resetsAt: input.sevenDayResetsAt ?? null },
       }, now);
     } catch { /* es una caché: sin ella, la línea sale con lo que llegó */ }
+    // El historial de porcentajes para `estela plan`. No lanza nunca.
+    if (text.trim()) {
+      try { recordSample(flags.db, JSON.parse(text) as unknown, now); } catch { /* entrada rota: ya lo cubre lo de abajo */ }
+    }
     const data = computeStatus({ ...input, ...limits }, flags.db, now);
     const ours = renderStatus(data, { columns, color: flags.color, reserved });
     process.stdout.write((extra ? `${ours}${flags.color ? "\x1b[90m | \x1b[0m" : " | "}${extra}` : ours) + "\n");

@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import type { RateSample } from "./rate-history.js";
+
 /**
  * `statusline.json`, junto a la base: lo que la status line recuerda entre
  * llamadas.
@@ -10,6 +12,9 @@ import { dirname, join } from "node:path";
  *    (porcentaje y reinicio) y cuándo se vio. La status line lo enseña al
  *    arrancar una sesión, antes de que lleguen datos nuevos, y `estela quota`
  *    usa el reinicio de la 5 h para saber dónde empieza de verdad la ventana.
+ *  - `lastSample`, `prunedAt`, `noLimitsAt`: del historial de
+ *    `rate-limits.jsonl` (ver rate-history.ts), para decidir si se guarda una
+ *    muestra sin tener que leer el fichero.
  *
  * Es una caché: si se pierde o se corrompe, todo sigue funcionando, solo que
  * relee más o vuelve a estimar.
@@ -27,6 +32,12 @@ export interface StatuslineCache {
   files: Record<string, { offset: number; seenAt: string }>;
   fiveHour?: SeenLimit;
   sevenDay?: SeenLimit;
+  /** La última muestra guardada en rate-limits.jsonl. */
+  lastSample?: RateSample;
+  /** Cuándo se quitaron por última vez las muestras de más de 120 días. */
+  prunedAt?: string;
+  /** La última vez que llegó una entrada sin rate_limits (API key, o sesión recién abierta). */
+  noLimitsAt?: string;
 }
 
 const MAX_FILES = 30;

@@ -2063,6 +2063,7 @@ function cmdStatuslineInstall(args: Args): void {
   }
   if (plan.status === "already") {
     console.log(tr`La status line de Estela ya está instalada en ${path}.`);
+    console.log(tr`Solo en Claude Code en la terminal: la extensión de VS Code no enseña la status line.`);
     return;
   }
   if (plan.status === "conflict") {
@@ -2088,6 +2089,9 @@ function cmdStatuslineInstall(args: Args): void {
       ? tr`Status line de Estela instalada en lugar de: ${plan.previous ?? ""}`
       : tr`Status line de Estela instalada en ${path}.`);
   console.log(tr`Se verá en la próxima sesión de Claude Code (o al reiniciar la actual).`);
+  // Comprobado: la extensión de VS Code no ejecuta la status line. Sin este
+  // aviso, quien trabaja ahí cree que está instalada y no la ve nunca.
+  console.log(tr`Solo en Claude Code en la terminal: la extensión de VS Code no enseña la status line.`);
   if (!estelaOnPath()) {
     console.log(tr`\nAviso: "estela" no está en tu PATH, así que Claude Code no podrá ejecutarla.`);
     console.log(tr`Instálala de forma global: npm install -g estela`);

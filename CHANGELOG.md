@@ -4,6 +4,21 @@ Cambios visibles de cada versión del paquete `estela`. Las anteriores a la
 0.2.0 están en el historial de git, con una etiqueta por versión en
 [github.com/jdleonruiz/estela-cli](https://github.com/jdleonruiz/estela-cli/tags).
 
+## 0.2.4 — 2026-10-19
+
+### Nuevo
+- **Historial de límites**: la status line guarda en local
+  (`~/.estela/rate-limits.jsonl`) los porcentajes de 5 h y semana que manda
+  Claude Code, con su reinicio y la versión de Claude Code. Nada más: ni sesión,
+  ni rutas, ni proyectos. Una muestra como mucho cada 5 minutos, salvo que un
+  porcentaje se mueva un punto o empiece una ventana nueva; se borran las de más
+  de 120 días. Es lo que analizará `estela plan`. Nada sale de tu máquina.
+  Los transcripts no traen estos porcentajes: el historial empieza hoy.
+
+### Cambios
+- `estela statusline install` avisa de que la status line solo se ve en Claude
+  Code en la terminal: la extensión de VS Code no la enseña.
+
 ## 0.2.3 — 2026-10-16
 
 ### Nuevo

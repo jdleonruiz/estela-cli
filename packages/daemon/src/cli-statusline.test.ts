@@ -257,6 +257,7 @@ test("install fusiona en ~/.claude/settings.json con copia; uninstall lo deja co
 
   const i = estela(home, ["statusline", "install"]);
   assert.equal(i.code, 0, i.out + i.err);
+  assert.match(i.out, /la extensión de VS Code no enseña la status line/);
   const tras = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
   assert.deepEqual(tras["statusLine"], { type: "command", command: "estela statusline", padding: 0 });
   assert.deepEqual(tras["permissions"], { allow: ["Bash(ls)"] });
@@ -352,4 +353,24 @@ test("una sesión nueva sin rate_limits enseña los últimos que mandó Claude C
   // Una 5 h cuyo reinicio ya pasó no se enseña al arrancar; la semana sí.
   estela(home, nc, con(90, 41, enHoras(-1)));
   assert.match(estela(home, nc, entrada(repo)).out, /^estela · ACME › Web · hoy 0m · semana 41 %\n$/);
+});
+
+test("con rate_limits guarda una muestra en rate-limits.jsonl, y la línea sale igual", () => {
+  const { home, repo, db } = entorno();
+  proyecto(db, repo);
+  const r = estela(home, nc, entrada(repo, {
+    session_id: "s-secreta", version: "2.1.302",
+    rate_limits: { five_hour: { used_percentage: 62, resets_at: 1760910000 }, seven_day: { used_percentage: 38, resets_at: 1761300000 } },
+  }));
+  assert.match(r.out, /semana 38 % · 5 h 62 %/);
+  const lineas = readFileSync(join(home, ".estela", "rate-limits.jsonl"), "utf8").trim().split("\n");
+  assert.equal(lineas.length, 1);
+  const m = JSON.parse(lineas[0]!) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(m).sort(), ["cc", "src", "ts", "w5", "w5_reset", "w7", "w7_reset"]);
+  assert.equal(m["w5"], 62);
+  assert.doesNotMatch(lineas[0]!, /s-secreta|repos/);
+
+  estela(home, nc, entrada(repo));
+  assert.equal(readFileSync(join(home, ".estela", "rate-limits.jsonl"), "utf8").trim().split("\n").length, 1,
+    "sin rate_limits no se añade nada");
 });

@@ -303,6 +303,16 @@ antes deja una copia. Si ya tienes una status line no la pisa: `--force` la
 sustituye y `--append` enseña la tuya detrás de la de Estela. `estela
 statusline uninstall` la quita (y te devuelve la tuya si usaste `--append`).
 
+La status line solo se ejecuta en Claude Code en la terminal: la extensión de
+VS Code no la enseña.
+
+Desde la 0.2.4, la status line guarda en local tus porcentajes de 5 h y semana
+(`~/.estela/rate-limits.jsonl`) para que `estela plan` pueda analizarlos. Nada
+sale de tu máquina. Solo se guarda lo que manda Claude Code (cada porcentaje,
+su reinicio y la versión de Claude Code), como mucho cada 5 minutos salvo que
+una cifra se mueva, y durante 120 días. Los transcripts no traen estos
+porcentajes, así que el historial empieza el día que instalas la 0.2.4.
+
 ## Horas que ningún import va a deducir
 
 Reuniones, desplazamientos, investigación, y desarrollo sin agente que tampoco

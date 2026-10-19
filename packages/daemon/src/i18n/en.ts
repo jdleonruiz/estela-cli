@@ -1094,4 +1094,7 @@ export const EN: Record<string, string> = {
   // ── ESTELA_OFFLINE ──
   "ESTELA_OFFLINE=1: Estela no se conecta a la red. Quita la variable para usar tu cuenta.":
     "ESTELA_OFFLINE=1: Estela doesn't connect to the network. Unset it to use your account.",
+  // ── statusline install: VS Code ──
+  "Solo en Claude Code en la terminal: la extensión de VS Code no enseña la status line.":
+    "Only in Claude Code in the terminal: the VS Code extension doesn't show the status line.",
 };
