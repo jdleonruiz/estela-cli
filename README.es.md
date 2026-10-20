@@ -271,6 +271,53 @@ ventana de 5 h es una estimación: no se sabe cómo redondean su inicio, y lo qu
 uses en claude.ai u otro equipo también cuenta, pero no está en este. Copilot
 queda fuera porque no guarda tokens fiables. Todo se calcula en tu máquina.
 
+## ¿Te sirve tu plan de Claude?
+
+```sh
+estela plan set max5            # pro | max5 | max20; añade --since AAAA-MM-DD si ya lo tenías antes de hoy
+estela plan                     # últimos 28 días; --days N, --json, --no-color
+```
+
+Responde a «¿el plan de Claude que pago me sobra o me falta?» con tus datos: los
+porcentajes de 5 h y semana que Claude Code manda a la status line (guardados
+desde la 0.2.4, solo en la terminal), y nada más. Ejemplo (datos inventados):
+
+```
+estela plan · Max 5x (desde 2026-10-01) · 26 días con datos
+
+Ventanas de 5 h      41 ventanas · pico mediano 22 % · p90 38 % · máximo 61 %
+Topes (≥95 %)        0
+Semana               pico mediano 34 % · máximo 47 % · 0 semanas ≥ 90 %
+Bloqueos (429)       0 de 5 h · 0 semanales, según los transcripts de Claude Code
+
+Si estuvieras en…
+  Pro (20 $)         p90 equivalente 190 % · te habría bloqueado en 29 de 41 ventanas
+  Max 20x (200 $)    sin topes, igual que ahora
+
+Recomendación        Tu plan actual encaja con tu uso.
+```
+
+- **Nunca inventa ni estima el límite de un plan.** Los otros planes se comparan
+  solo en la ventana de 5 h, con el multiplicador por sesión que publica
+  Anthropic (Max 5x = 5 × Pro, Max 20x = 20 × Pro;
+  [fuente](https://support.claude.com/en/articles/11049741-what-is-the-max-plan)):
+  el pico equivalente es tu pico × tu multiplicador ÷ el del otro plan. Anthropic
+  no publica la relación del límite semanal entre planes, así que esa comparación
+  no se hace. Nunca dice cuánto te queda.
+- Una ventana con pico de 95 % o más es un tope. El tiempo parado tras un tope
+  (desde la primera muestra al 99 % hasta el reinicio) es una cota superior: no
+  sabemos si seguías trabajando.
+- «Bloqueos (429)» son las respuestas de límite que Claude Code dejó en sus
+  transcripts. Son oficiales y llegan a antes de la 0.2.4, pero no traen
+  porcentaje: se enseñan aparte y no entran en el cálculo.
+- Con menos de 7 días de datos no hay recomendación; de 7 a 13 es provisional.
+  Tras un cambio de plan solo cuenta lo de después.
+- Los precios son los de la web de Anthropic a la fecha que se indica:
+  compruébalos. Anthropic puede cambiar los límites: repítelo cada mes.
+
+`--json` da las mismas cifras con una estructura estable (`version: 1`). Los
+campos están en la sección en inglés del [README](README.md#is-your-claude-plan-the-right-one).
+
 ## Una línea bajo cada sesión de Claude Code
 
 ```sh

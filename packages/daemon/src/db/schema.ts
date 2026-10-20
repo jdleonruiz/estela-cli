@@ -268,6 +268,16 @@ CREATE TABLE IF NOT EXISTS personal_sync_state (
   entity_type   TEXT PRIMARY KEY,
   synced_up_to  TEXT NOT NULL DEFAULT ''
 );
+
+-- El plan de Claude que declara quien usa Estela (estela plan set): el JSON
+-- de la status line no lo dice. Una fila por cambio, para conservar el
+-- historial; el vigente es el de 'since' más reciente.
+CREATE TABLE IF NOT EXISTS claude_plans (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  plan        TEXT NOT NULL,
+  since       TEXT NOT NULL,
+  declared_at TEXT NOT NULL
+);
 `;
 
 /**

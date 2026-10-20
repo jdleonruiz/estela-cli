@@ -1097,4 +1097,93 @@ export const EN: Record<string, string> = {
   // ── statusline install: VS Code ──
   "Solo en Claude Code en la terminal: la extensión de VS Code no enseña la status line.":
     "Only in Claude Code in the terminal: the VS Code extension doesn't show the status line.",
+  // ── estela plan ──
+  "--days tiene que ser un número entero de 1 a {0}.":
+    "--days has to be a whole number from 1 to {0}.",
+  "Plan desconocido: \"{0}\". Usa pro, max5 o max20.":
+    "Unknown plan: \"{0}\". Use pro, max5 or max20.",
+  "--since tiene que ser una fecha AAAA-MM-DD.":
+    "--since has to be a YYYY-MM-DD date.",
+  "Plan declarado: {0}, desde {1}. El análisis solo usa lo guardado desde esa fecha.":
+    "Plan declared: {0}, since {1}. The analysis only uses what was stored from that date.",
+  "Si ya lo tenías antes, indica desde cuándo: estela plan set {0} --since AAAA-MM-DD":
+    "If you had it before, say since when: estela plan set {0} --since YYYY-MM-DD",
+  "Ventanas de 5 h":
+    "5-hour windows",
+  "ninguna completa todavía":
+    "none yet",
+  "{0} ventanas · pico mediano {1} % · p90 {2} % · máximo {3} %":
+    "{0} windows · median peak {1}% · p90 {2}% · max {3}%",
+  "Topes (≥95 %)":
+    "Caps (≥95%)",
+  "Parado tras topes":
+    "Stopped after caps",
+  "hasta {0} (estimado: no sabemos si seguías trabajando)":
+    "up to {0} (estimated: we don't know if you kept working)",
+  "Semana":
+    "Week",
+  "sin datos de la semana":
+    "no weekly data",
+  "pico mediano {0} % · máximo {1} % · {2} semanas ≥ 90 %":
+    "median peak {0}% · max {1}% · {2} weeks ≥ 90%",
+  "Bloqueos (429)":
+    "Blocks (429)",
+  "{0} de 5 h · {1} semanales, según los transcripts de Claude Code":
+    "{0} 5-hour · {1} weekly, from Claude Code's transcripts",
+  "Si estuvieras en…":
+    "If you were on…",
+  "Datos de {0} días. La recomendación necesita al menos 14.":
+    "{0} days of data. The recommendation needs at least 14.",
+  "Recomendación (provisional, {0} días)":
+    "Recommendation (provisional, {0} days)",
+  "Recomendación":
+    "Recommendation",
+  "Límite semanal entre planes: Anthropic no publica la relación. No lo estimamos.":
+    "Weekly limit between plans: Anthropic doesn't publish the ratio. We don't estimate it.",
+  "Basado en el multiplicador por sesión publicado por Anthropic:":
+    "Based on the per-session multiplier published by Anthropic:",
+  "Anthropic puede cambiar los límites; repite el análisis cada mes.":
+    "Anthropic may change the limits; run this again every month.",
+  "Precios según la web de Anthropic a {0}; compruébalo: {1}":
+    "Prices from Anthropic's website as of {0}; check them: {1}",
+  "Esa fecha tiene más de {0} días: los precios pueden estar desactualizados.":
+    "That date is more than {0} days old: prices may be out of date.",
+  "(desde {0})":
+    "(since {0})",
+  "{0} días con datos":
+    "{0} days with data",
+  "sin topes, igual que ahora":
+    "no caps, same as now",
+  "p90 equivalente {0} % · habrías evitado {1} de {2} topes (con el uso que llegó a registrarse)":
+    "equivalent p90 {0}% · you'd have avoided {1} of {2} caps (with the usage that got recorded)",
+  "p90 equivalente {0} % · no te habría bloqueado en ninguna de las {1} ventanas":
+    "equivalent p90 {0}% · wouldn't have blocked you in any of the {1} windows",
+  "p90 equivalente {0} % · te habría bloqueado en {1} de {2} ventanas":
+    "equivalent p90 {0}% · would have blocked you in {1} of {2} windows",
+  "Vas justo con tu plan. Con {0} habrías evitado {1} de {2} topes.":
+    "Your plan is tight for you. With {0} you'd have avoided {1} of {2} caps.",
+  "Vas justo con tu plan.":
+    "Your plan is tight for you.",
+  "Con los datos de estas {0} semanas, el plan {1} te habría bastado en todas las ventanas de 5 h.":
+    "Based on these {0} weeks of data, the {1} plan would have been enough in every 5-hour window.",
+  "El plan {0} te habría bastado casi siempre: te habría bloqueado {1} veces en estas semanas.":
+    "The {0} plan would have been enough almost always: it would have blocked you {1} times in these weeks.",
+  "Tu plan actual encaja con tu uso.":
+    "Your current plan fits your usage.",
+  "{0} menos al mes, según la web de Anthropic a {1}; compruébalo.":
+    "{0} less per month, per Anthropic's website as of {1}; check it.",
+  "{0} más al mes, según la web de Anthropic a {1}; compruébalo.":
+    "{0} more per month, per Anthropic's website as of {1}; check it.",
+  "estela plan compara tu uso real de Claude con los otros planes. Primero dime cuál pagas:":
+    "estela plan compares your real Claude usage with the other plans. First tell it which one you pay for:",
+  "Si ya lo tenías antes de hoy, añade desde cuándo: --since AAAA-MM-DD":
+    "If you had it before today, add since when: --since YYYY-MM-DD",
+  "Este análisis solo funciona con planes Pro o Max.":
+    "This analysis only works with Pro or Max plans.",
+  "Aún no hay datos. Instala la status line (estela statusline install) y vuelve en unos días.":
+    "No data yet. Install the status line (estela statusline install) and come back in a few days.",
+  "Solo se recogen en Claude Code en la terminal: la extensión de VS Code no ejecuta la status line.":
+    "They're only collected in Claude Code in the terminal: the VS Code extension doesn't run the status line.",
+  "{0} $":
+    "${0}",
 };

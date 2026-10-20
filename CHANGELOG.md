@@ -4,6 +4,26 @@ Cambios visibles de cada versión del paquete `estela`. Las anteriores a la
 0.2.0 están en el historial de git, con una etiqueta por versión en
 [github.com/jdleonruiz/estela-cli](https://github.com/jdleonruiz/estela-cli/tags).
 
+## 0.3.0 — 2026-10-19
+
+### Nuevo
+- **`estela plan`**: ¿el plan de Claude que pagas te sobra o te falta? Con el
+  historial de la status line (0.2.4) y el multiplicador por sesión que publica
+  Anthropic: ventanas de 5 h (pico mediano, p90, máximo, topes ≥95 %, tiempo
+  parado estimado como cota superior), semanas, y cuánto te habría bloqueado
+  cada otro plan en la ventana de 5 h. El límite semanal entre planes no se
+  compara: Anthropic no lo publica. Recomendación con reglas conservadoras;
+  provisional con 7–13 días de datos y ninguna con menos de 7. `--days`,
+  `--json` con estructura estable y `--no-color`.
+- **`estela plan set pro|max5|max20 [--since AAAA-MM-DD]`**: declara tu plan.
+  Se guarda el historial de cambios; el análisis solo usa lo de después del
+  último.
+- **Bloqueos 429**: `estela plan` cuenta, aparte, las respuestas de límite que
+  Claude Code dejó en sus transcripts, también de antes de la 0.2.4. Los lee una
+  vez y luego solo lo nuevo (`~/.estela/plan-blocks.json`).
+- Precios de los planes en un solo fichero, con fuente y fecha; avisa si la
+  fecha tiene más de 90 días.
+
 ## 0.2.4 — 2026-10-19
 
 ### Nuevo

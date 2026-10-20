@@ -1106,3 +1106,30 @@ export function setAiConsent(
       requested = excluded.requested, decision = excluded.decision, decided_at = excluded.decided_at
   `).run(projectId, requested ? 1 : 0, decision, decision === "pending" ? null : iso(new Date()));
 }
+
+// ---------------------------------------------------------------------------
+// Plan de Claude declarado (estela plan set)
+// ---------------------------------------------------------------------------
+
+export interface DeclaredPlan {
+  readonly plan: string;
+  readonly since: Date;
+}
+
+/** El plan vigente: el de `since` más reciente. null si nunca se declaró. */
+export function getClaudePlan(db: DatabaseSync): DeclaredPlan | null {
+  const row = db.prepare("SELECT plan, since FROM claude_plans ORDER BY since DESC, id DESC LIMIT 1")
+    .get() as { plan: string; since: string } | undefined;
+  return row ? { plan: row.plan, since: new Date(row.since) } : null;
+}
+
+/** Añade un cambio de plan; los anteriores se conservan. */
+export function setClaudePlan(db: DatabaseSync, plan: string, since: Date, at: Date = new Date()): void {
+  db.prepare("INSERT INTO claude_plans (plan, since, declared_at) VALUES (?, ?, ?)")
+    .run(plan, iso(since), iso(at));
+}
+
+export function listClaudePlans(db: DatabaseSync): DeclaredPlan[] {
+  return (db.prepare("SELECT plan, since FROM claude_plans ORDER BY since, id").all() as { plan: string; since: string }[])
+    .map((r) => ({ plan: r.plan, since: new Date(r.since) }));
+}

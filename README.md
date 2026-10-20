@@ -273,6 +273,61 @@ anything you use on claude.ai or another machine counts too but isn't on this
 one. Copilot is left out because it doesn't record reliable tokens. Everything
 is calculated on your machine.
 
+## Is your Claude plan the right one?
+
+```sh
+estela plan set max5            # pro | max5 | max20; add --since YYYY-MM-DD if you had it before today
+estela plan                     # last 28 days; --days N, --json, --no-color
+```
+
+Answers "is the Claude plan I pay for too big or too small?" with your own data:
+the 5-hour and weekly percentages Claude Code sends to the status line (stored
+since 0.2.4, only in the terminal), and nothing else. Example (made-up data):
+
+```
+estela plan · Max 5x (since 2026-10-01) · 26 days with data
+
+5-hour windows       41 windows · median peak 22% · p90 38% · max 61%
+Caps (≥95%)          0
+Week                 median peak 34% · max 47% · 0 weeks ≥ 90%
+Blocks (429)         0 5-hour · 0 weekly, from Claude Code's transcripts
+
+If you were on…
+  Pro ($20)          equivalent p90 190% · would have blocked you in 29 of 41 windows
+  Max 20x ($200)     no caps, same as now
+
+Recommendation       Your current plan fits your usage.
+```
+
+- **It never invents or estimates a plan's limit.** Other plans are compared only
+  on the 5-hour window, using the per-session multiplier Anthropic publishes
+  (Max 5x = 5 × Pro, Max 20x = 20 × Pro;
+  [source](https://support.claude.com/en/articles/11049741-what-is-the-max-plan)):
+  an equivalent peak is your peak × your multiplier ÷ the other plan's. Anthropic
+  doesn't publish the weekly limit between plans, so that comparison isn't made.
+  It never says how much you have left.
+- A window with a peak of 95% or more is a cap. The time stopped after a cap
+  (from the first sample at 99% to the reset) is an upper bound: we don't know if
+  you kept working.
+- "Blocks (429)" are the rate-limit responses Claude Code wrote in its
+  transcripts. They're official and go back before 0.2.4, but carry no
+  percentage, so they're shown apart and don't enter the calculation.
+- With fewer than 7 days of data there's no recommendation; from 7 to 13 it's
+  provisional. After a plan change only data since then counts.
+- Prices are Anthropic's website prices on the date in the output; check them.
+  Anthropic may change limits: run it again every month.
+
+`--json` returns the same figures with a stable structure (`version: 1`): `plan`,
+`period` (`from`, `to`, `days`, `daysWithData`, `samples`), `dataState`
+(`none` | `insufficient` | `provisional` | `ok`), `fiveHour` (`windows`,
+`medianPeak`, `p90Peak`, `maxPeak`, `caps`, `stoppedMinutesUpperBound`), `week`
+(`weeks`, `medianPeak`, `maxPeak`, `weeksAtOrAbove90`), `blocks429`,
+`alternatives[]` (`plan`, `direction`, `monthlyUsd`, `monthlyDiffUsd`,
+`p90Equivalent`, `maxEquivalent`, `blockedWindows`, `capsAvoided`),
+`recommendation` (`kind`: `tight` | `enough` | `almost` | `fits`, `plan`,
+`provisional`, `text`, or `null`), `weeklyBetweenPlans: "not_published"`,
+`sources` and `plans`. New fields may be added; none change meaning.
+
 ## A line under every Claude Code session
 
 ```sh

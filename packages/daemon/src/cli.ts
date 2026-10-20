@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -37,6 +38,12 @@ import { invoiceToPdf } from "./export/invoice-pdf.js";
 import { buildShareReport } from "./export/share.js";
 import { startServer } from "./server.js";
 import { checkForUpdate } from "./updateCheck.js";
+import { analyzePlan } from "./metrics/plan.js";
+import { blocksCachePath, scanBlocks } from "./plan-blocks.js";
+import { planById, type ClaudePlanId } from "./plan-prices.js";
+import { planToJson, renderNoData, renderNoPlan, renderPlanReport, type BlockCounts } from "./plan-report.js";
+import { historyPath, KEEP_DAYS, pruneSamples, readSamples } from "./rate-history.js";
+import { loadCache } from "./statusline-cache.js";
 import {
   listPublishedPanels, NoAccountError, preparePanel, unpublishAll, unpublishPanel, uploadPanel,
   type PanelSummary, type PublishResult,
@@ -147,6 +154,15 @@ estela — registro de horas para desarrollo asistido por IA
         Copilot queda fuera: no guarda tokens fiables. Antes de calcular
         lee los transcripts desde el lunes (--no-refresh lo evita).
         A diferencia de ai-cost, que reparte dinero, esto reparte tokens.
+
+  estela plan [--days <n>] [--json] [--no-color]
+  estela plan set pro|max5|max20 [--since AAAA-MM-DD]
+        ¿El plan de Claude que pagas te sobra o te falta? Analiza los
+        porcentajes de 5 h y semana que Claude Code manda a la status line
+        (solo en la terminal) y los compara con los otros planes usando el
+        multiplicador por sesión que publica Anthropic. El límite semanal
+        entre planes no se compara: no se publica. Primero declara tu plan
+        con "plan set". Por defecto, los últimos 28 días.
   estela statusline install [--force | --append]
         Una línea bajo cada sesión de Claude Code: proyecto, horas medidas
         hoy, la parte de tu consumo de la semana que es de este proyecto y,
@@ -348,6 +364,15 @@ estela — time tracking for AI-assisted development
         left out: it doesn't record reliable tokens. Before calculating it reads transcripts since Monday
         (--no-refresh skips that). Unlike ai-cost, which splits money, this
         splits tokens.
+
+  estela plan [--days <n>] [--json] [--no-color]
+  estela plan set pro|max5|max20 [--since YYYY-MM-DD]
+        Is your Claude plan too big or too small? It analyses the 5-hour
+        and weekly percentages Claude Code sends to the status line (only
+        in the terminal) and compares them with the other plans using the
+        per-session multiplier Anthropic publishes. The weekly limit isn't
+        compared across plans: it isn't published. Declare your plan first
+        with "plan set". Defaults to the last 28 days.
   estela statusline install [--force | --append]
         A line under every Claude Code session: project, hours measured
         today, this project's share of your usage this week and, if Claude
@@ -1512,6 +1537,82 @@ async function cmdUnpublish(args: Args, dbPath: string): Promise<void> {
 }
 
 /**
+ * `estela plan`: ¿el plan de Claude que pagas es el que te conviene?
+ *
+ * Solo con lo que manda Claude Code a la status line (rate-limits.jsonl) y el
+ * multiplicador por sesión que publica Anthropic. Ver metrics/plan.ts.
+ */
+function cmdPlan(args: Args, dbPath: string): void {
+  const db = openDatabase(dbPath);
+  try {
+    const declared = store.getClaudePlan(db);
+    const json = args.flags["json"] === true;
+    if (!declared || !planById(declared.plan)) {
+      if (json) console.log(JSON.stringify({ version: 1, plan: null }, null, 2));
+      else console.log(renderNoPlan());
+      return;
+    }
+    const days = str(args, "days") === undefined ? 28 : Number(str(args, "days"));
+    if (!Number.isInteger(days) || days < 1 || days > KEEP_DAYS) {
+      throw new UserError(tr`--days tiene que ser un número entero de 1 a ${KEEP_DAYS}.`);
+    }
+
+    const now = new Date();
+    const file = historyPath(dbPath);
+    try { pruneSamples(file, now); } catch { /* sin rotar se analiza igual */ }
+    const all = readSamples(file);
+    const analysis = analyzePlan({ samples: all, plan: declared.plan as ClaudePlanId, since: declared.since, now, days });
+
+    // Los 429 que Claude Code dejó en sus transcripts, en el mismo período.
+    let blocks: BlockCounts | null = null;
+    try {
+      const found = scanBlocks(join(homedir(), ".claude", "projects"), blocksCachePath(dbPath), now)
+        .filter((b) => b.at >= analysis.from.getTime() && b.at <= now.getTime());
+      blocks = { fiveHour: found.filter((b) => b.type === "five_hour").length,
+                 sevenDay: found.filter((b) => b.type === "seven_day").length };
+    } catch { /* sin transcripts legibles, la línea no sale */ }
+
+    if (json) {
+      console.log(JSON.stringify(planToJson(analysis, { blocks, now }), null, 2));
+      return;
+    }
+    const color = args.flags["no-color"] !== true && !process.env["NO_COLOR"] && process.stdout.isTTY === true;
+    if (analysis.dataState === "none") {
+      // Sin ninguna muestra nunca, y la status line vio entradas sin rate_limits: API key.
+      const apiKey = all.length === 0 && loadCache(dbPath).noLimitsAt !== undefined;
+      console.log(renderNoData(analysis, apiKey, color));
+      return;
+    }
+    console.log(renderPlanReport(analysis, { color, now, blocks }));
+  } finally { db.close(); }
+}
+
+/** `estela plan set pro|max5|max20 [--since AAAA-MM-DD]`. */
+function cmdPlanSet(args: Args, dbPath: string): void {
+  const id = args._[2] ?? "";
+  const plan = planById(id);
+  if (!plan) throw new UserError(tr`Plan desconocido: "${id}". Usa pro, max5 o max20.`);
+  const sinceText = str(args, "since");
+  let since = new Date();
+  if (sinceText !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sinceText) || Number.isNaN(new Date(`${sinceText}T00:00:00`).getTime())) {
+      throw new UserError(tr`--since tiene que ser una fecha AAAA-MM-DD.`);
+    }
+    since = new Date(`${sinceText}T00:00:00`);
+  }
+  const db = openDatabase(dbPath);
+  try {
+    store.setClaudePlan(db, plan.id, since);
+    const d = since;
+    const fecha = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    console.log(tr`Plan declarado: ${plan.name}, desde ${fecha}. El análisis solo usa lo guardado desde esa fecha.`);
+    if (sinceText === undefined) {
+      console.log(tr`Si ya lo tenías antes, indica desde cuándo: estela plan set ${plan.id} --since AAAA-MM-DD`);
+    }
+  } finally { db.close(); }
+}
+
+/**
  * `estela sync enable --project <id>` — opt-in explícito, proyecto por
  * proyecto. Sin esta fila, ese proyecto no sale de esta máquina nunca, sea
  * cual sea el plan de la cuenta.
@@ -2415,7 +2516,10 @@ async function main(): Promise<void> {
 
   const dbPath = str(args, "db") ?? DEFAULT_DB_PATH;
   // `estela unpublish <panel>` lleva el panel suelto, sin flag: no es un subcomando.
-  const command = args._[0] === "unpublish" ? "unpublish" : args._.join(" ");
+  const command = args._[0] === "unpublish" ? "unpublish"
+    // `estela plan set max5`: el plan va suelto, como el panel de unpublish.
+    : args._[0] === "plan" && args._[1] === "set" ? "plan set"
+    : args._.join(" ");
 
   // Se llama aquí, no al final: un comando que falla a medias (por ejemplo
   // "estela import" sin repositorios) debe avisar igual de que hay una
@@ -2450,6 +2554,8 @@ async function main(): Promise<void> {
     case "share":             cmdShare(args, dbPath); break;
     case "publish":           await cmdPublish(args, dbPath); break;
     case "unpublish":         await cmdUnpublish(args, dbPath); break;
+    case "plan":              cmdPlan(args, dbPath); break;
+    case "plan set":          cmdPlanSet(args, dbPath); break;
     case "export":            await cmdExport(args, dbPath); break;
     case "report":            cmdInvoice(args, dbPath); break;
     case "login":             await cmdLogin(args, dbPath); break;
