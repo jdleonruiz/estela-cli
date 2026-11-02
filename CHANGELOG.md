@@ -4,6 +4,36 @@ Cambios visibles de cada versión del paquete `estela`. Las anteriores a la
 0.2.0 están en el historial de git, con una etiqueta por versión en
 [github.com/jdleonruiz/estela-cli](https://github.com/jdleonruiz/estela-cli/tags).
 
+## 0.3.2 — 2026-11-02
+
+### Nuevo
+- **Informes sin importes.** Lo ya emitido se vuelve a descargar con o sin tarifa
+  e importes, desde "Ya facturado" en el panel. Al cortar, la casilla de importes
+  ahora también decide cómo sale ese PDF. En la terminal, `estela report --pdf`
+  acepta `--no-amounts`.
+
+### Arreglos
+- **Un commit de una sesión cuyo transcript ya se borró no genera horas otra
+  vez.** Claude Code limpia sus transcripts antiguos, y al reimportar sus commits
+  parecían trabajo sin agente: se sumaban horas estimadas a un trabajo ya medido
+  e incluso ya facturado. Si has facturado desde la 0.3.0, revisa los bloques de
+  commits sin facturar antes del siguiente informe.
+
+## 0.3.1 — 2026-10-23
+
+### Cambios
+- **Un import ya no cambia un día aprobado.** Aprobar es dar la cifra por buena
+  (y a menudo ya se ha compartido): un cambio en cómo se calculan las horas se
+  aplica a lo que viene. Lo facturado ya estaba protegido. Para recalcular un
+  día, se desaprueba.
+
+### Arreglos
+- **Un commit hecho en la raíz del repositorio ya no suma tiempo estimado
+  encima de una sesión abierta en una subcarpeta.** Al descartar los bloques
+  deducidos de commits que se solapan con una sesión de agente se exigía la
+  misma ruta exacta; ahora cuenta como el mismo repositorio una subcarpeta,
+  igual que al asociar commits a sesiones. Se sumaban 25 minutos de más.
+
 ## 0.3.0 — 2026-10-19
 
 ### Nuevo

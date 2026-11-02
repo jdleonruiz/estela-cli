@@ -644,6 +644,33 @@ test("un ajuste a mano no se pierde al reimportar", () => {
   } finally { db.close(); }
 });
 
+test("un día aprobado no lo cambia un reimport; desaprobado, sí", () => {
+  // Aprobar es dar la cifra por buena, y a menudo ya se compartió con el
+  // cliente: un cambio en cómo se calculan las horas no puede reescribirla.
+  const path = tempDb();
+  entradaDeAgente(path, 3660);
+  const db = openDatabase(path);
+  const reimport = (seconds: number) => store.saveTimeEntry(db, {
+    id: "te_fija", projectId: "web",
+    startedAt: new Date("2026-09-23T09:00:00.000Z"),
+    endedAt: new Date("2026-09-23T10:00:00.000Z"),
+    seconds, description: "otra descripción", billable: true,
+    invoiceId: null, aiCost: { microUsd: 0 }, agentSeconds: seconds,
+    commitHashes: [], agents: [], source: "agent", kind: "development", branch: "main",
+  });
+  const fila = () => db.prepare("SELECT seconds, description, approved FROM time_entries WHERE id = 'te_fija'")
+    .get() as { seconds: number; description: string; approved: number };
+  try {
+    db.prepare("UPDATE time_entries SET approved = 1 WHERE id = 'te_fija'").run();
+    reimport(2160);
+    assert.deepEqual({ ...fila() }, { seconds: 3660, description: "feat: cartera de servicios", approved: 1 });
+
+    db.prepare("UPDATE time_entries SET approved = 0 WHERE id = 'te_fija'").run();
+    reimport(2160);
+    assert.equal(fila().seconds, 2160);
+  } finally { db.close(); }
+});
+
 test("sin ajuste, el reimport sigue mandando", () => {
   const path = tempDb();
   entradaDeAgente(path, 3600);

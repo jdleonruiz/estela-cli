@@ -74,6 +74,23 @@ test("el trabajo ya cubierto por un agente no se cuenta dos veces", () => {
   assert.equal(withoutOverlap(aparte, agent).length, 1);
 });
 
+test("una sesión en una subcarpeta también tapa el commit hecho en la raíz del repo", () => {
+  // Visto con datos reales: sesión en repo/src/UI a las 14:05:43 y commit en
+  // repo a las 14:05:44. Con la ruta exacta, el bloque deducido del commit
+  // (25 min antes) no se descartaba y se sumaba encima de la sesión medida.
+  const sesion = (repo: string): WorkBlock[] => [{
+    startedAt: new Date("2026-10-22T19:05:43Z"), endedAt: new Date("2026-10-22T19:07:54Z"),
+    seconds: 131, repoPath: repo, branch: "main", turnCount: 2,
+    aiCost: { microUsd: 0 }, models: [], sessionIds: [], commits: [], unpricedModels: [],
+  }];
+  const delCommit = sessionizeCommits([commit("a", "2026-10-22T19:05:44Z", "/w/repo")]);
+  assert.equal(withoutOverlap(delCommit, sesion("/w/repo/src/UI")).length, 0, "subcarpeta del repo");
+  assert.equal(withoutOverlap(delCommit, sesion("/w/repo")).length, 0, "el propio repo");
+  assert.equal(withoutOverlap(delCommit, sesion("/w/repo-otro")).length, 1, "otro repo con nombre parecido, no");
+  assert.equal(withoutOverlap(sessionizeCommits([commit("b", "2026-10-22T19:05:44Z", "/w/repo/sub")]),
+    sesion("/w/repo")).length, 0, "y al revés: commit de un subrepo, sesión en la raíz");
+});
+
 test("el lead-in por defecto subestima: nunca imputa una jornada entera", () => {
   // Estas horas se facturan. Ante la duda, quedarse corto.
   const blocks = sessionizeCommits([commit("a", "2026-08-27T18:00:00Z")]);

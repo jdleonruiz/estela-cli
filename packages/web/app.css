@@ -900,6 +900,7 @@ main.wide { max-width: 1180px; }
    subraye y que se centre como el resto. */
 .invoice-dl{flex:0 0 auto;text-decoration:none;display:inline-flex;
   align-items:center;padding:9px 18px;font-size:.9rem}
+.invoice-dls{flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap}
 @media(max-width:620px){
   .invoice-row{flex-wrap:wrap}
   .invoice-main{flex:1 1 100%}

@@ -21,6 +21,8 @@ export interface InvoicePdfOptions {
   };
   /** Coste real de IA imputado al periodo (cuota amortizada). Solo informativo. */
   readonly amortizedAiCost?: Money;
+  /** Sin tarifa ni importes: solo las horas. Por defecto, con importes. */
+  readonly withAmounts?: boolean;
   readonly footer?: string;
 }
 
@@ -41,6 +43,9 @@ export function invoiceToPdf(
   // Los importes van con el locale del documento, no con el de la terminal: el
   // cliente lee "€1.254,79" o "€1,254.79" según SU idioma.
   const money = (m: Money) => formatMoney(m, moneyLocale(getLang()));
+  const withAmounts = options.withAmounts !== false;
+  // Sin tarifa ni importe, el tiempo pasa a ser la última columna.
+  const colTime = withAmounts ? COL_TIME : COL_AMOUNT;
   let y = M;
 
   // --- Cabecera -------------------------------------------------------------
@@ -90,9 +95,11 @@ export function invoiceToPdf(
   // --- Cabecera de tabla ----------------------------------------------------
   const header = () => {
     doc.text(M, y, tr`CONCEPTO`, "Helvetica-Bold", 8, 0.45);
-    doc.textRight(COL_TIME, y, tr`TIEMPO`, "Helvetica-Bold", 8, 0.45);
-    doc.textRight(COL_RATE, y, tr`TARIFA`, "Helvetica-Bold", 8, 0.45);
-    doc.textRight(COL_AMOUNT, y, tr`IMPORTE`, "Helvetica-Bold", 8, 0.45);
+    doc.textRight(colTime, y, tr`TIEMPO`, "Helvetica-Bold", 8, 0.45);
+    if (withAmounts) {
+      doc.textRight(COL_RATE, y, tr`TARIFA`, "Helvetica-Bold", 8, 0.45);
+      doc.textRight(COL_AMOUNT, y, tr`IMPORTE`, "Helvetica-Bold", 8, 0.45);
+    }
     y += 7;
     doc.line(M, y, COL_AMOUNT, y, 0.8, 0.3);
     y += 15;
@@ -100,12 +107,12 @@ export function invoiceToPdf(
   header();
 
   // --- Conceptos ------------------------------------------------------------
-  // La columna TIEMPO se alinea a la derecha en COL_TIME, así que su texto crece
+  // La columna TIEMPO se alinea a la derecha en colTime, así que su texto crece
   // hacia la izquierda. Hay que restar el más ancho de esos textos, no un hueco
   // fijo, o la descripción se le mete encima.
   const widestTime = invoice.lines.reduce(
     (max, l) => Math.max(max, PdfDocument.measure(formatDuration(l.seconds), "Helvetica", 10)), 0);
-  const maxDescWidth = COL_TIME - M - widestTime - 14;
+  const maxDescWidth = colTime - M - widestTime - 14;
 
   for (const line of invoice.lines) {
     if (y > BOTTOM - 60) {
@@ -116,9 +123,11 @@ export function invoiceToPdf(
 
     const text = PdfDocument.truncate(line.description, "Helvetica", 10, maxDescWidth);
     doc.text(M, y, text, "Helvetica", 10);
-    doc.textRight(COL_TIME, y, formatDuration(line.seconds), "Helvetica", 10, 0.2);
-    doc.textRight(COL_RATE, y, `${money(line.hourlyRate)}/h`, "Helvetica", 10, 0.4);
-    doc.textRight(COL_AMOUNT, y, money(line.amount), "Helvetica", 10);
+    doc.textRight(colTime, y, formatDuration(line.seconds), "Helvetica", 10, 0.2);
+    if (withAmounts) {
+      doc.textRight(COL_RATE, y, `${money(line.hourlyRate)}/h`, "Helvetica", 10, 0.4);
+      doc.textRight(COL_AMOUNT, y, money(line.amount), "Helvetica", 10);
+    }
     y += 9;
     doc.line(M, y, COL_AMOUNT, y, 0.4, 0.9);
     y += 12;
@@ -132,11 +141,11 @@ export function invoiceToPdf(
   y += 18;
 
   doc.text(M, y, invoice.lines.length === 1 ? tr`1 concepto` : tr`${invoice.lines.length} conceptos`, "Helvetica", 9, 0.4);
-  doc.textRight(COL_TIME, y, formatDuration(invoice.totalSeconds), "Helvetica-Bold", 10);
-  doc.textRight(COL_AMOUNT, y, money(invoice.subtotal), "Helvetica", 10);
+  doc.textRight(colTime, y, formatDuration(invoice.totalSeconds), "Helvetica-Bold", 10);
+  if (withAmounts) doc.textRight(COL_AMOUNT, y, money(invoice.subtotal), "Helvetica", 10);
   y += 18;
 
-  if (invoice.aiCostBilled) {
+  if (withAmounts && invoice.aiCostBilled) {
     doc.text(M, y,
       tr`Coste de IA repercutido (1 USD = ${invoice.usdFxRate} ${invoice.currency})`,
       "Helvetica", 9, 0.4);
@@ -144,11 +153,13 @@ export function invoiceToPdf(
     y += 18;
   }
 
-  y += 4;
-  doc.rect(rightCol - 20, y - 14, COL_AMOUNT - rightCol + 20, 32, 0.94);
-  doc.text(rightCol - 8, y + 2, tr`VALOR`, "Helvetica-Bold", 11);
-  doc.textRight(COL_AMOUNT - 8, y + 3, money(invoice.total), "Helvetica-Bold", 14);
-  y += 46;
+  if (withAmounts) {
+    y += 4;
+    doc.rect(rightCol - 20, y - 14, COL_AMOUNT - rightCol + 20, 32, 0.94);
+    doc.text(rightCol - 8, y + 2, tr`VALOR`, "Helvetica-Bold", 11);
+    doc.textRight(COL_AMOUNT - 8, y + 3, money(invoice.total), "Helvetica-Bold", 14);
+    y += 46;
+  }
 
   // Aquí había una "NOTA INTERNA (no se comparte)" con el consumo de IA del
   // periodo. Se quitó: esa frase era un deseo, no un mecanismo. Este PDF es

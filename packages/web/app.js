@@ -1469,8 +1469,12 @@ function renderReports() {
           <div class="report-hours">${fmtDuration(f.totalSeconds)}</div>
           <div class="report-amount">${importe}</div>
         </div>
-        <a class="btn-main invoice-dl" download
-           href="/api/invoices/${encodeURIComponent(f.number)}/pdf">${tr("invoices.download")}</a>
+        <div class="invoice-dls">
+          <a class="btn-main invoice-dl" download
+             href="/api/invoices/${encodeURIComponent(f.number)}/pdf">${tr("invoices.withAmounts")}</a>
+          <a class="chip invoice-dl" download
+             href="/api/invoices/${encodeURIComponent(f.number)}/pdf?amounts=0">${tr("invoices.withoutAmounts")}</a>
+        </div>
       </div>`;
     }).join("") + "</div>");
   }
@@ -1535,6 +1539,7 @@ function renderReports() {
       const projectId = form.dataset.project;
       const cutoff = form.querySelector(".rep-to").value;
       const author = form.querySelector(".rep-author").value;
+      const withAmounts = form.querySelector(".rep-amounts").checked;
       const row = (state.reportsOverview?.unbilled || []).find((r) => r.projectId === projectId);
       const proyecto = row ? row.projectName : projectId;
 
@@ -1542,7 +1547,7 @@ function renderReports() {
 
       btn.disabled = true;
       try {
-        await cutoffAndInvoice(projectId, cutoff, author);
+        await cutoffAndInvoice(projectId, cutoff, author, withAmounts);
         toast(tr("toast.invoiced"));
         await loadReports();
       } catch (error) {
@@ -1561,11 +1566,11 @@ function renderReports() {
  * con un enlace sintético — el mismo patrón que usa cualquier app sin
  * framework para esto.
  */
-async function cutoffAndInvoice(projectId, cutoff, author) {
+async function cutoffAndInvoice(projectId, cutoff, author, withAmounts) {
   const res = await fetch("/api/invoice", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId, cutoff, author }),
+    body: JSON.stringify({ projectId, cutoff, author, withAmounts }),
   });
   if (!res.ok) {
     let message = `Error ${res.status}`;

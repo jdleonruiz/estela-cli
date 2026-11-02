@@ -163,6 +163,29 @@ test("un corte desde la web marca las horas como facturadas y devuelve el PDF", 
   });
 });
 
+test("lo emitido se vuelve a descargar con y sin importes, y el corte respeta la elección", async () => {
+  await conServidor(sembrar, async (base) => {
+    const corte = await fetch(`${base}/api/invoice`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "web", cutoff: "2099-12-31", author: "", withAmounts: false }),
+    });
+    assert.equal(corte.status, 200);
+    assert.match(corte.headers.get("Content-Disposition") ?? "", /-sin-importes\.pdf"/);
+    assert.ok(!Buffer.from(await corte.arrayBuffer()).toString("latin1").includes("IMPORTE"));
+
+    const { invoices } = await (await fetch(`${base}/api/invoices`)).json() as { invoices: { number: string }[] };
+    const numero = invoices[0]!.number;
+
+    const con = await fetch(`${base}/api/invoices/${numero}/pdf`);
+    assert.match(con.headers.get("Content-Disposition") ?? "", new RegExp(`filename="${numero}\\.pdf"`));
+    assert.ok(Buffer.from(await con.arrayBuffer()).toString("latin1").includes("IMPORTE"));
+
+    const sin = await fetch(`${base}/api/invoices/${numero}/pdf?amounts=0`);
+    assert.match(sin.headers.get("Content-Disposition") ?? "", /-sin-importes\.pdf"/);
+    assert.ok(!Buffer.from(await sin.arrayBuffer()).toString("latin1").includes("IMPORTE"));
+  });
+});
+
 test("cortar un proyecto que no existe da 404, no un PDF vacío", async () => {
   await conServidor(sembrar, async (base) => {
     const res = await fetch(`${base}/api/invoice`, {

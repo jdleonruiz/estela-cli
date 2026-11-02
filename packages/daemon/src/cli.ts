@@ -24,8 +24,7 @@ import { amortize, feeForMonth, monthOf, shareForProject } from "./billing/amort
 import { badgeMarkdown, badgeText, badgeUrl } from "./export/badge.js";
 import { receiptData, renderReceipt } from "./export/receipt.js";
 import { issueInvoice, InvoiceError, marginOf, rateAt, renderInvoice } from "./billing/invoice.js";
-import { attachCommits, describeBlock, groupByBranchAndDay, sessionize,
-         sessionizeCommits, withoutOverlap } from "./billing/sessionize.js";
+import { attachCommits, describeBlock, groupByBranchAndDay, sessionize } from "./billing/sessionize.js";
 import { DEFAULT_DB_PATH, openDatabase } from "./db/schema.js";
 import * as store from "./db/store.js";
 import { seedDemo } from "./demo.js";
@@ -63,7 +62,7 @@ import { DAYS, MONTHS } from "./export/dates.js";
 import { HISTORY_WEEKS, quotaToJson, weekStart, type AgentQuota, type QuotaBreakdown,
          type QuotaBucket, type QuotaReport } from "./metrics/quota.js";
 import { loadQuotaReport, refreshQuotaTurns } from "./quota.js";
-import { planEntries, type AssignmentPlan } from "./billing/assign.js";
+import { commitOnlyBlocks, planEntries, type AssignmentPlan } from "./billing/assign.js";
 import { backupName, claudeSettingsPath, estelaOnPath, planInstall, planUninstall } from "./statusline-install.js";
 import { kindLabel } from "./i18n/labels.js";
 
@@ -256,9 +255,11 @@ estela — registro de horas para desarrollo asistido por IA
                 [--pdf <fichero.pdf>] [--csv <fichero.csv>] [--fx <tipo>]
                 [--number <nº>]
                 [--from-name <tu nombre>] [--from-email <email>]
-                [--from-tax-id <tu NIF/CIF>]
+                [--from-tax-id <tu NIF/CIF>] [--no-amounts]
         Informe de horas y commits para respaldar tu trabajo. No es una
         factura: Estela no emite documentos fiscales.
+        --no-amounts saca el PDF sin tarifa ni importes. En el panel, lo ya
+        emitido se vuelve a descargar con o sin ellos.
         --number fija el número del informe; sin él se numera solo y
         correlativo por año (INF-${new Date().getFullYear()}-001, -002...).
         Los --from-* son tus datos como emisor, en la cabecera del PDF.
@@ -468,9 +469,11 @@ estela — time tracking for AI-assisted development
                 [--pdf <file.pdf>] [--csv <file.csv>] [--fx <rate>]
                 [--number <no.>]
                 [--from-name <your name>] [--from-email <email>]
-                [--from-tax-id <your tax ID>]
+                [--from-tax-id <your tax ID>] [--no-amounts]
         Report of hours and commits to back up your work. It isn't an
         invoice: Estela doesn't issue tax documents.
+        --no-amounts leaves the rate and amounts out of the PDF. In the panel,
+        issued reports can be downloaded again with or without them.
         --number sets the report number; without it, reports are numbered
         automatically and sequentially per year (INF-${new Date().getFullYear()}-001, -002...).
         The --from-* flags are your details as the issuer, in the PDF header.
@@ -877,7 +880,7 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
     // compañero se convertirían en tiempo facturable a tu nombre.
     const commitsAll = onlyMine(await allCommits(db), mine);
     const fromAgents = attachCommits(sessionize(turns), commitsAll);
-    const fromCommits = withoutOverlap(sessionizeCommits(commitsAll), fromAgents);
+    const fromCommits = commitOnlyBlocks(db, commitsAll, fromAgents);
     const raw = [...fromAgents, ...fromCommits];
     if (fromCommits.length) {
       console.log(tr`  ${fromCommits.length} bloques deducidos solo de commits (sin agente)`);
@@ -2462,6 +2465,7 @@ function cmdInvoice(args: Args, dbPath: string): void {
           },
         } : {}),
         ...(invoice.aiAmortized ? { amortizedAiCost: invoice.aiAmortized } : {}),
+        withAmounts: args.flags["no-amounts"] !== true,
       }));
       writeFileSync(pdfPath, pdf);
       console.log(tr`\nPDF: ${pdfPath}  (${(pdf.length / 1024).toFixed(1)} KB, ${invoice.lines.length} conceptos)`);

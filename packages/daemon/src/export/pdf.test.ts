@@ -143,6 +143,16 @@ test("el informe en PDF incluye los datos clave", () => {
   assert.ok(pdf.length > 1500);
 });
 
+test("sin importes salen las horas y ninguna cifra de dinero", () => {
+  const con = invoiceToPdf(invoice(3), CLIENT, PROJECT).toString("latin1");
+  for (const marca of ["TARIFA", "IMPORTE", "VALOR", "/h)"]) assert.ok(con.includes(marca), marca);
+
+  const sin = invoiceToPdf(invoice(3), CLIENT, PROJECT, { withAmounts: false }).toString("latin1");
+  for (const marca of ["TARIFA", "IMPORTE", "VALOR", "/h)"]) assert.ok(!sin.includes(marca), `sobra ${marca}`);
+  assert.ok(sin.includes("INFORME DE HORAS"));
+  assert.ok(sin.includes("TIEMPO"), "las horas siguen ah\u00ed");
+});
+
 test("muchos conceptos generan varias páginas en vez de desbordar", () => {
   const una = invoiceToPdf(invoice(5), CLIENT, PROJECT);
   const muchas = invoiceToPdf(invoice(80), CLIENT, PROJECT);

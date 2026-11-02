@@ -356,13 +356,23 @@ export function sessionizeCommits(
  *
  * Sin esto se contaría dos veces el mismo rato: el agente ya cubrió esas horas
  * y el commit que las cerró generaría otro bloque encima.
+ *
+ * Mismo repositorio quiere decir lo mismo que en `attachCommits`: la carpeta
+ * del commit (la raíz) o una subcarpeta suya. Antes se exigía la ruta exacta,
+ * y una sesión abierta en `repo/src/UI` no tapaba el commit hecho en `repo`:
+ * se sumaban 25 minutos estimados encima de una sesión medida.
  */
 export function withoutOverlap(
   commitBlocks: readonly WorkBlock[],
   agentBlocks: readonly WorkBlock[],
 ): WorkBlock[] {
   return commitBlocks.filter((c) => !agentBlocks.some((a) =>
-    a.repoPath === c.repoPath &&
+    sameRepo(a.repoPath, c.repoPath) &&
     a.startedAt.getTime() < c.endedAt.getTime() &&
     c.startedAt.getTime() < a.endedAt.getTime()));
+}
+
+function sameRepo(a: string | null, b: string | null): boolean {
+  if (a === b) return true;
+  return !!a && !!b && (isSameOrInside(a, b) || isSameOrInside(b, a));
 }

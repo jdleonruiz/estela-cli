@@ -1,11 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import type { TimeEntry } from "@estela/shared";
+import type { CommitRecord, TimeEntry } from "@estela/shared";
 import { extractWorkItems, localDate } from "@estela/shared";
 
 import * as store from "../db/store.js";
 import { ownerResolver } from "../project-of.js";
-import { describeBlock, groupByBranchAndDay, type WorkBlock } from "./sessionize.js";
+import { describeBlock, groupByBranchAndDay, sessionize, sessionizeCommits, withoutOverlap,
+         type WorkBlock } from "./sessionize.js";
 
 /**
  * De bloques de trabajo a imputaciones: a qué proyecto va cada uno y con qué
@@ -51,6 +52,22 @@ export function entryId(projectId: string, day: string, branch: string | null): 
   // de duplicar. La fecha, la LOCAL: la misma que usa el servidor.
   const slug = (branch ?? "sin-rama").replace(/[^a-zA-Z0-9]+/g, "-");
   return `te_${projectId}_${day}_${slug}`;
+}
+
+/**
+ * Los bloques deducidos solo de commits: los que no se solapan con ninguna
+ * sesión de agente, tampoco con las que ya no están en el disco.
+ *
+ * Claude Code limpia sus transcripts antiguos, así que lo escaneado no es todo
+ * lo que hubo. Comparar solo con eso convertía los commits de esas sesiones en
+ * trabajo sin agente, y sumaba horas estimadas a un trabajo ya medido. La base
+ * guarda todos los turnos: `saveTurns` no borra nada.
+ */
+export function commitOnlyBlocks(
+  db: DatabaseSync, commits: readonly CommitRecord[], agentBlocks: readonly WorkBlock[],
+): WorkBlock[] {
+  const saved = sessionize(store.turnsBetween(db, new Date(0), new Date("9999-12-31")));
+  return withoutOverlap(sessionizeCommits(commits), [...agentBlocks, ...saved]);
 }
 
 export function planEntries(

@@ -8,8 +8,7 @@ import { billableAmount, extractWorkItems, formatWorkItem, localDate, roundSecon
 
 import { amortize, monthOf, shareForProject } from "./billing/amortize.js";
 import { InvoiceError, issueInvoice, rateAt } from "./billing/invoice.js";
-import { attachCommits, describeBlock, groupByBranchAndDay, sessionize,
-         sessionizeCommits, withoutOverlap } from "./billing/sessionize.js";
+import { attachCommits, describeBlock, groupByBranchAndDay, sessionize } from "./billing/sessionize.js";
 import { DEFAULT_DB_PATH, openDatabase } from "./db/schema.js";
 import * as store from "./db/store.js";
 import { buildShareReport } from "./export/share.js";
@@ -28,7 +27,7 @@ import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
 import { documentLang, tr, withLang } from "./i18n/index.js";
 import { baseName } from "./paths.js";
 import { localizeDescription } from "./billing/localize.js";
-import { planEntries } from "./billing/assign.js";
+import { commitOnlyBlocks, planEntries } from "./billing/assign.js";
 import { quotaToJson } from "./metrics/quota.js";
 import { loadQuotaReport } from "./quota.js";
 import { kindLabel } from "./i18n/labels.js";
@@ -123,7 +122,7 @@ async function importOnce(dbPath: string): Promise<number> {
     // Solo tus commits producen horas tuyas.
     const commits = onlyMine(allRepoCommits, mine);
     const fromAgents = attachCommits(sessionize(turns), commits);
-    const fromCommits = withoutOverlap(sessionizeCommits(commits), fromAgents);
+    const fromCommits = commitOnlyBlocks(db, commits, fromAgents);
 
     // Las mismas reglas que `estela import` (billing/assign.ts). Las horas de
     // subcarpetas y worktrees solo se recuperan si ya se confirmó una vez
@@ -599,13 +598,14 @@ async function api(
     const reimpresion = /^\/api\/invoices\/([A-Za-z0-9-]+)\/pdf$/.exec(path);
     if (reimpresion && req.method === "GET") {
       return sendStoredInvoicePdf(db, res, reimpresion[1]!,
-        url.searchParams.get("author") ?? "");
+        url.searchParams.get("author") ?? "", url.searchParams.get("amounts") !== "0");
     }
 
     if (path === "/api/invoice" && req.method === "POST") {
       const body = await readJson(req);
       return sendInvoice(db, res, String(body["projectId"] ?? ""),
-        String(body["cutoff"] ?? ""), typeof body["author"] === "string" ? body["author"] : "");
+        String(body["cutoff"] ?? ""), typeof body["author"] === "string" ? body["author"] : "",
+        body["withAmounts"] !== false);
     }
 
     if (path === "/api/entry" && req.method === "POST") {
@@ -1482,7 +1482,7 @@ function sendReport(
  * papel de agosto cuando se pide en diciembre.
  */
 function sendStoredInvoicePdf(
-  db: Db, res: ServerResponse, number: string, author: string,
+  db: Db, res: ServerResponse, number: string, author: string, withAmounts: boolean,
 ): void {
   const invoice = store.getInvoice(db, number);
   if (!invoice) return json(res, 404, { error: "Esa factura no existe." });
@@ -1499,18 +1499,24 @@ function sendStoredInvoicePdf(
     invoiceToPdf(invoice, client, project, {
       ...(author ? { issuer: { name: author } } : {}),
       ...(invoice.aiAmortized ? { amortizedAiCost: invoice.aiAmortized } : {}),
+      withAmounts,
     }));
 
   res.writeHead(200, {
     "Content-Type": "application/pdf",
-    "Content-Disposition": `attachment; filename="${invoice.number}.pdf"`,
+    "Content-Disposition": `attachment; filename="${invoicePdfName(invoice.number, withAmounts)}"`,
     "Content-Length": pdf.length,
   });
   res.end(pdf);
 }
 
+/** Con otro nombre, para no confundir al guardarlos juntos cuál lleva importes. */
+function invoicePdfName(number: string, withAmounts: boolean): string {
+  return withAmounts ? `${number}.pdf` : `${number}-sin-importes.pdf`;
+}
+
 function sendInvoice(
-  db: Db, res: ServerResponse, projectId: string, cutoffRaw: string, author: string,
+  db: Db, res: ServerResponse, projectId: string, cutoffRaw: string, author: string, withAmounts: boolean,
 ): void {
   const project = store.getProject(db, projectId);
   if (!project) return json(res, 404, { error: tr`No existe el proyecto "${projectId}".` });
@@ -1553,9 +1559,10 @@ function sendInvoice(
     invoiceToPdf(invoice, client, project, {
       ...(author ? { issuer: { name: author } } : {}),
       ...(invoice.aiAmortized ? { amortizedAiCost: invoice.aiAmortized } : {}),
+      withAmounts,
     }));
 
-  const filename = `${invoice.number}.pdf`;
+  const filename = invoicePdfName(invoice.number, withAmounts);
   res.writeHead(200, {
     "Content-Type": "application/pdf",
     "Content-Disposition": `attachment; filename="${filename}"`,

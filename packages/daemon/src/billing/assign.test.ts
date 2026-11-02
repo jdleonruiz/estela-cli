@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import type { AgentTurn } from "@estela/shared";
+import type { AgentTurn, CommitRecord } from "@estela/shared";
 import { localDate } from "@estela/shared";
 
 import { openDatabase } from "../db/schema.js";
 import * as store from "../db/store.js";
 import { normalizePath } from "../paths.js";
-import { entryId, planEntries } from "./assign.js";
+import { commitOnlyBlocks, entryId, planEntries } from "./assign.js";
 import { sessionize } from "./sessionize.js";
 
 /**
@@ -127,4 +127,21 @@ test("una sesión del worktree a la misma hora que la del repo no suma nada: se 
   const plan = planEntries(db, sessionize([...sesion(main, dia(9), 30), ...sesion(wt, dia(9), 30)]), { recover: true });
   assert.equal(plan.recovered.size, 0);
   assert.equal(plan.entries.length, 1);
+});
+
+test("un commit de una sesión cuyo transcript ya se borró no genera horas otra vez", () => {
+  // Visto con datos reales: Claude Code limpia sus transcripts antiguos. Al
+  // reimportar, las sesiones de agosto ya no aparecían y sus commits parecían
+  // trabajo sin agente: 3 h estimadas de un trabajo ya facturado.
+  const { main, db } = escenario();
+  const inicio = new Date(2026, 7, 20, 10, 0);
+  const commit: CommitRecord = {
+    repoPath: n(main), hash: "abc", at: new Date(2026, 7, 20, 10, 20), authorEmail: "yo@ejemplo.com",
+    authorName: "Yo", branch: "fix/otra", subject: "feat: algo", linesAdded: 1, linesDeleted: 0, files: [],
+  };
+
+  assert.equal(commitOnlyBlocks(db, [commit], []).length, 1, "sin sesión conocida, el commit es lo único que hay");
+
+  store.saveTurns(db, sesion(main, inicio, 30));
+  assert.equal(commitOnlyBlocks(db, [commit], []).length, 0, "la sesión sigue en la base aunque no en el disco");
 });

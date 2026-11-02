@@ -572,8 +572,14 @@ export function saveTimeEntry(
     -- Y lo ya facturado es historia. Sin esta condición, un reimport
     -- recalculaba filas que respaldan una factura emitida y dejaba el panel
     -- diciendo una cosa y el PDF del cliente otra.
+    --
+    -- Lo aprobado, igual: aprobar un día es dar por buena esa cifra, y a
+    -- menudo ya se ha compartido (un panel publicado, un avance al cliente).
+    -- Un cambio en cómo se calculan las horas se aplica a lo que viene, no
+    -- reescribe lo que ya se dio por bueno. Para recalcularlo, se desaprueba.
     WHERE time_entries.source IN ('agent', 'commit')
       AND time_entries.invoice_id IS NULL
+      AND time_entries.approved = 0
   `).run(id, entry.projectId, iso(entry.startedAt), localDate(entry.startedAt),
          iso(entry.endedAt), entry.seconds,
          entry.description, entry.billable ? 1 : 0, entry.invoiceId,

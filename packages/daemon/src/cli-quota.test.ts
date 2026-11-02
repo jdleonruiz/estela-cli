@@ -40,7 +40,11 @@ function estela(home: string, lang: "es" | "en", ...args: string[]) {
 function sembrarCuota(dbPath: string): void {
   const ahora = new Date();
   const lunes = weekStart(ahora);
-  const enEstaSemana = new Date((lunes.getTime() + ahora.getTime()) / 2);
+  // Su ventana de 5 h no puede acabar justo antes del turno reciente: ese turno
+  // caería en una ventana ya cerrada y no quedaría ninguna abierta. Con semana
+  // de sobra, al empezar el lunes; si no, a la mitad, y siguen abiertas las dos.
+  const semana = ahora.getTime() - lunes.getTime();
+  const enEstaSemana = semana >= 5.5 * 3600_000 ? lunes : new Date(lunes.getTime() + semana / 2);
   const haceSemanas = (n: number) => new Date(lunes.getTime() - n * 7 * 86_400_000 + 3600_000);
   let n = 0;
   const t = (agent: AgentKind, at: Date, repo: string, cacheRead: number): AgentTurn => ({
@@ -214,6 +218,10 @@ function statusline(home: string, db: string, resetsAt: Date): void {
 test("con el resets_at que guardó la status line, quota dice 'ventana actual' sin 'estimada'", () => {
   const { home, db } = entorno();
   sembrarCuota(db);
+  // El lunes de madrugada, el turno de Codex cae en una ventana abierta, y una
+  // ventana estimada de otro agente cambia el aviso que se comprueba aquí.
+  const conn = openDatabase(db);
+  try { conn.prepare("DELETE FROM agent_turns WHERE agent = 'codex'").run(); } finally { conn.close(); }
   const reinicio = new Date(Date.now() + 2 * 3600_000);
   statusline(home, db, reinicio);
   assert.ok(existsSync(join(home, "statusline.json")), "la status line lo guardó junto a la base");
