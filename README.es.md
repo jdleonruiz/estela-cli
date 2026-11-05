@@ -116,9 +116,9 @@ Hay dos tropiezos que ocurren antes de que Estela llegue a arrancar:
   terminal de administrador. `where.exe npm` debe mostrar una única ruta.
 
 Una sesión en una subcarpeta o en un worktree de git cuenta para el proyecto
-de su repositorio. Si un import fuera a sumar horas a lo ya importado, Estela
-te enseña cuántas por proyecto y pregunta antes (`estela import --yes` no
-pregunta); nunca mueve horas entre proyectos ni toca un día aprobado.
+de su repositorio. Dos ramas a la vez en un proyecto se reparten ese rato, así que
+el total es tiempo real; proyectos distintos no se reparten. Un import nunca mueve
+horas entre proyectos ni toca un día aprobado.
 
 ## Informar a un cliente
 

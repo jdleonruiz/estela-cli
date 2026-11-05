@@ -31,7 +31,7 @@ import { seedDemo } from "./demo.js";
 import { diagnose, renderFindings } from "./doctor.js";
 import { applySetup, planSetup, summarize, summaryLine } from "./setup.js";
 import { invoiceToCsv, timeEntriesToCsv } from "./export/csv.js";
-import { normalizePath } from "./paths.js";
+import { isSameOrInside, normalizePath } from "./paths.js";
 import { CLOCKIFY_DATE_FORMATS, type ClockifyDateFormat, timeEntriesToClockifyCsv } from "./export/clockify.js";
 import { invoiceToPdf } from "./export/invoice-pdf.js";
 import { buildShareReport } from "./export/share.js";
@@ -62,7 +62,7 @@ import { DAYS, MONTHS } from "./export/dates.js";
 import { HISTORY_WEEKS, quotaToJson, weekStart, type AgentQuota, type QuotaBreakdown,
          type QuotaBucket, type QuotaReport } from "./metrics/quota.js";
 import { loadQuotaReport, refreshQuotaTurns } from "./quota.js";
-import { commitOnlyBlocks, planEntries, type AssignmentPlan } from "./billing/assign.js";
+import { commitOnlyBlocks, knownTurns, planEntries, type AssignmentPlan } from "./billing/assign.js";
 import { backupName, claudeSettingsPath, estelaOnPath, planInstall, planUninstall } from "./statusline-install.js";
 import { kindLabel } from "./i18n/labels.js";
 
@@ -73,12 +73,12 @@ estela — registro de horas para desarrollo asistido por IA
         Primera ejecución: detecta tus agentes y repositorios, y reconstruye
         tu historial. Dos minutos, sin preguntas y sin cuenta.
 
-  estela import [--since YYYY-MM-DD] [--repo <ruta>] [--yes]
+  estela import [--since YYYY-MM-DD] [--repo <ruta>]
         Reconstruye tu historial desde los transcripts de los agentes y git.
         Una sesión en una subcarpeta o en un worktree cuenta para el
-        proyecto de su repo. La primera vez que eso suma horas a lo ya
-        importado, te enseña cuántas y pregunta (--yes no pregunta). Nunca
-        mueve horas de un proyecto a otro ni toca un día aprobado.
+        proyecto de su repo. Dos ramas a la vez en un proyecto se reparten
+        ese rato: el total es tiempo real. Nunca mueve horas de un proyecto
+        a otro ni toca un día aprobado.
 
   estela client add --id <id> --name <nombre> --currency <EUR|USD|...>
                     [--tax-id <NIF/CIF>] [--email <a@b.com>]
@@ -285,12 +285,12 @@ estela — time tracking for AI-assisted development
         First run: detects your agents and repositories, and rebuilds your
         history. Two minutes, no questions, no account.
 
-  estela import [--since YYYY-MM-DD] [--repo <path>] [--yes]
+  estela import [--since YYYY-MM-DD] [--repo <path>]
         Rebuilds your history from agent transcripts and git. A session in a
-        subfolder or a worktree counts for its repo's project. The first
-        time that adds hours to what was already imported, it shows how many
-        and asks (--yes skips the question). It never moves hours from one
-        project to another or touches an approved day.
+        subfolder or a worktree counts for its repo's project. Two branches
+        at once in a project share that time: the total is real time. It
+        never moves hours from one project to another or touches an approved
+        day.
 
   estela client add --id <id> --name <name> --currency <EUR|USD|...>
                     [--tax-id <tax ID>] [--email <a@b.com>]
@@ -760,19 +760,6 @@ async function cmdSetup(args: Args, dbPath: string): Promise<void> {
   } finally { db.close(); }
 }
 
-/** La vista previa de la primera recuperación: horas por proyecto. */
-function printRecoveryPreview(db: ReturnType<typeof openDatabase>, plan: AssignmentPlan): void {
-  console.log(tr`\nEstela ahora reconoce las sesiones en subcarpetas y worktrees de un repositorio.`);
-  console.log(tr`Estas horas no estaban imputadas y se sumarían a su proyecto:\n`);
-  for (const [projectId, seconds] of [...plan.recovered].sort((a, b) => b[1] - a[1])) {
-    const name = store.getProject(db, projectId)?.name ?? projectId;
-    console.log(`  ${name.padEnd(30)} +${formatDuration(seconds)}`);
-  }
-  console.log(tr`\n  Nada de lo ya imputado cambia de proyecto, y los días aprobados no se tocan.`);
-  printRecoveryBlocked(db, plan.blocked);
-  console.log("");
-}
-
 /** Lo que se recuperaría en días aprobados o facturados: se avisa, no se aplica. */
 function printRecoveryBlocked(db: ReturnType<typeof openDatabase>, blocked: AssignmentPlan["blocked"]): void {
   if (blocked.length === 0) return;
@@ -863,7 +850,13 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
       savedCommits += store.saveCommits(db, await readCommits(root,
         since ? { since } : {}));
     }
-    const mine = await myEmailsByRepo(db, repos);
+    // Todo lo conocido, no solo lo leído ahora (ver knownTurns). Con --repo, solo
+    // ese repo, que es lo que se ha pedido.
+    const known = knownTurns(db, turns).filter((t) =>
+      !repoPaths || (t.repoPath !== null && repoPaths.some((p) => isSameOrInside(t.repoPath!, p))));
+    // Los correos también de los repos sin sesión reciente: sin ellos, un día
+    // antiguo se recalcularía sin sus commits y perdería la descripción.
+    const mine = await myEmailsByRepo(db, new Set([...repos, ...known.flatMap((t) => t.repoPath ?? [])]));
     if (rescued > 0) {
       console.log(tr`  ${rescued} turnos de scratchpad devueltos a su repositorio`);
     }
@@ -879,36 +872,19 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
     // Solo TUS commits derivan horas tuyas. Sin este filtro, los commits de un
     // compañero se convertirían en tiempo facturable a tu nombre.
     const commitsAll = onlyMine(await allCommits(db), mine);
-    const fromAgents = attachCommits(sessionize(turns), commitsAll);
+    const fromAgents = attachCommits(sessionize(known), commitsAll);
     const fromCommits = commitOnlyBlocks(db, commitsAll, fromAgents);
     const raw = [...fromAgents, ...fromCommits];
     if (fromCommits.length) {
       console.log(tr`  ${fromCommits.length} bloques deducidos solo de commits (sin agente)`);
     }
 
-    // Horas de sesiones en subcarpetas y worktrees, que antes se quedaban sin
-    // proyecto (ver billing/assign.ts). La primera vez que cambian horas ya
-    // importadas se enseñan antes y se pide confirmación; en una base nueva no
-    // hay nada que cambiar, así que se aplica sin preguntar.
-    const marca = join(dirname(dbPath), ".recover-git-root");
-    const habiaHoras = (db.prepare("SELECT COUNT(*) AS n FROM time_entries").get() as { n: number }).n > 0;
-    let plan = planEntries(db, raw, { recover: true });
-    const conRaiz = plan;
-    const recuperable = [...plan.recovered.values()].reduce((a, b) => a + b, 0);
-    if (!existsSync(marca) && habiaHoras && recuperable > 0) {
-      printRecoveryPreview(db, plan);
-      const ok = args.flags["yes"] === true || await confirm(tr`¿Imputar estas horas? [s/N] `);
-      if (!ok) {
-        plan = planEntries(db, raw, { recover: false });
-        console.log(tr`  No se ha tocado nada. Cuando quieras: estela import --yes\n`);
-      } else {
-        writeFileSync(marca, new Date().toISOString());
-      }
-    } else {
-      try { writeFileSync(marca, new Date().toISOString()); } catch { /* sin marca, se volverá a preguntar */ }
-    }
+    // Sesiones en subcarpetas y worktrees incluidas: ver billing/assign.ts.
+    const plan = planEntries(db, raw);
 
     for (const { entry } of plan.entries) store.saveTimeEntry(db, entry);
+    // Con --repo el plan no ve el resto de proyectos: nada de retirar.
+    const retired = repoPaths ? 0 : store.deleteStaleEntries(db, plan.stale);
     const entries = plan.entries.length;
     const unassigned = plan.unassigned;
 
@@ -916,18 +892,24 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
       tr`Bloques: ${raw.length} detectados → ${plan.grouped} tras agrupar por rama y día · ` +
       tr`${entries} imputados · ${unassigned} sin proyecto`);
     const aplicadas = [...plan.recovered.values()].reduce((a, b) => a + b, 0);
-    if (aplicadas > 0 && existsSync(marca)) {
+    if (aplicadas > 0) {
       console.log(tr`  ${formatDuration(aplicadas)} recuperadas de sesiones en subcarpetas y worktrees`);
     }
     printRecoveryBlocked(db, plan.blocked);
-    // Si no se confirmó, parte de "sin proyecto" son sesiones de subcarpetas y
-    // worktrees: a esas no les falta registrarse, les falta el --yes.
-    const porRaiz = unassigned - conRaiz.unassigned;
-    if (porRaiz > 0) {
-      console.log(tr`\n${porRaiz} de esos bloques son de subcarpetas o worktrees de un proyecto: estela import --yes los imputa.`);
+    if (retired > 0) {
+      console.log(tr`  ${retired} imputaciones retiradas: sus horas ya estaban en otra rama del mismo día`);
     }
-    if (unassigned - porRaiz > 0) {
-      console.log(tr`\nHay ${unassigned - porRaiz} bloques sin proyecto asignado. Regístralos con:`);
+    // Estas no se tocan, pero conviene saberlo antes de facturar lo que las repite.
+    const pendientes = plan.protectedDuplicates.filter((id) => {
+      const row = db.prepare("SELECT invoice_id FROM time_entries WHERE id = ?").get(id) as { invoice_id: string | null } | undefined;
+      return row?.invoice_id === null;
+    });
+    if (pendientes.length) {
+      console.log(tr`\n${pendientes.length} imputaciones aprobadas o ajustadas repiten horas de otra rama. Revísalas antes de facturar:`);
+      for (const id of pendientes.slice(0, 10)) console.log(`  ${id}`);
+    }
+    if (unassigned > 0) {
+      console.log(tr`\nHay ${unassigned} bloques sin proyecto asignado. Regístralos con:`);
       console.log(tr`  estela project add --id <id> --client <id> --name <nombre> --repo <ruta>`);
     }
   } finally {
@@ -2401,7 +2383,9 @@ function cmdInvoice(args: Args, dbPath: string): void {
     const cutoffAt = new Date(`${cutoffRaw}T23:59:59Z`);
     if (Number.isNaN(cutoffAt.getTime())) throw new UserError(tr`Fecha inválida: ${cutoffRaw}`);
 
-    const dryRun = args.flags["dry-run"] === true;
+    // Si va seguida de otra palabra, parseArgs la toma como su valor. Una opción
+    // que protege no puede dejar de hacerlo por eso: se emitía el informe de verdad.
+    const dryRun = "dry-run" in args.flags;
     const number = str(args, "number") ?? store.nextInvoiceNumber(db, "INF");
     const fx = str(args, "fx");
 
@@ -2465,7 +2449,7 @@ function cmdInvoice(args: Args, dbPath: string): void {
           },
         } : {}),
         ...(invoice.aiAmortized ? { amortizedAiCost: invoice.aiAmortized } : {}),
-        withAmounts: args.flags["no-amounts"] !== true,
+        withAmounts: !("no-amounts" in args.flags),
       }));
       writeFileSync(pdfPath, pdf);
       console.log(tr`\nPDF: ${pdfPath}  (${(pdf.length / 1024).toFixed(1)} KB, ${invoice.lines.length} conceptos)`);
@@ -2513,6 +2497,13 @@ async function main(): Promise<void> {
   // datos ni comprobar el resto de argumentos para responder algo tan simple.
   if (args.flags["version"] === true) {
     console.log(VERSION);
+    return;
+  }
+
+  // Igual de pronto: sin esto, "estela import --help" ignoraba la opción y
+  // ejecutaba el comando de verdad. Pedir ayuda no puede tocar los datos.
+  if ("help" in args.flags || argv.includes("-h")) {
+    console.log(helpText());
     return;
   }
 

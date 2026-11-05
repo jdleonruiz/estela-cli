@@ -244,6 +244,11 @@ export interface Project {
    */
   readonly closedAt: Date | null;
   /**
+   * Cuándo se archivó, o `null`/ausente si está activo. A diferencia de cerrar,
+   * archivar lo quita del panel y deja de captar horas. Se puede restaurar.
+   */
+  readonly archivedAt?: Date | null;
+  /**
    * El gestor de tareas del proyecto (Jira, Azure Boards, GitHub...), para
    * reconocer sus tickets en ramas y commits. Sin él solo se reconoce lo
    * inequívoco. Ver `workitems.ts`.

@@ -117,9 +117,9 @@ Two things trip people up before Estela even starts:
   administrator terminal. `where.exe npm` should list a single path.
 
 A session in a subfolder or a git worktree counts for its repository's
-project. If an import would add hours to what you had already imported, Estela
-shows you how many per project and asks first (`estela import --yes` skips the
-question); it never moves hours between projects or touches an approved day.
+project. Two branches at once in the same project share that time, so the total
+is real time; different projects don't share. An import never moves hours between
+projects or touches an approved day.
 
 ## Reporting to a client
 

@@ -171,7 +171,6 @@ export function groupByBranchAndDay(
   for (const bucket of groups.values()) {
     bucket.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
     const first = bucket[0]!;
-    const last = bucket[bucket.length - 1]!;
 
     // Ni el lapso de principio a fin —entre bloques hubo huecos en los que no
     // estabas trabajando, y facturarlos sería cobrar de más— ni la suma de
@@ -205,7 +204,9 @@ export function groupByBranchAndDay(
 
     merged.push({
       startedAt: first.startedAt,
-      endedAt: last.endedAt,
+      // El último en empezar no es siempre el último en acabar: una sesión en
+      // una subcarpeta puede caer entera dentro de la del repo.
+      endedAt: new Date(Math.max(...bucket.map((b) => b.endedAt.getTime()))),
       seconds,
       repoPath: first.repoPath,
       branch: first.branch,
@@ -361,15 +362,20 @@ export function sessionizeCommits(
  * del commit (la raíz) o una subcarpeta suya. Antes se exigía la ruta exacta,
  * y una sesión abierta en `repo/src/UI` no tapaba el commit hecho en `repo`:
  * se sumaban 25 minutos estimados encima de una sesión medida.
+ *
+ * Un worktree vive fuera del repositorio y las rutas no lo dicen: `rootOf` da
+ * la raíz de cada carpeta, y es esa la que se compara.
  */
 export function withoutOverlap(
   commitBlocks: readonly WorkBlock[],
   agentBlocks: readonly WorkBlock[],
+  rootOf: (path: string) => string = (path) => path,
 ): WorkBlock[] {
+  const root = (path: string | null) => (path ? rootOf(path) : null);
   return commitBlocks.filter((c) => !agentBlocks.some((a) =>
-    sameRepo(a.repoPath, c.repoPath) &&
     a.startedAt.getTime() < c.endedAt.getTime() &&
-    c.startedAt.getTime() < a.endedAt.getTime()));
+    c.startedAt.getTime() < a.endedAt.getTime() &&
+    sameRepo(root(a.repoPath), root(c.repoPath))));
 }
 
 function sameRepo(a: string | null, b: string | null): boolean {

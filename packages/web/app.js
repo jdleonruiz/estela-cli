@@ -1010,12 +1010,37 @@ function renderProjects(data, orphans) {
     <input type="date" class="rate-from" value="${localToday()}">
     <button type="submit" class="chip">${tr("common.save")}</button>
   </form>
+  <div class="pcard-actions">
+    <button type="button" class="chip project-archive" data-project="${esc(p.id)}"
+            data-name="${esc(p.name)}" data-unbilled="${p.unbilledSeconds}">${tr("projects.archive")}</button>
+  </div>
 </div>`);
   }
 
   if (!data.projects.length) {
     parts.push(`<div class="empty"><h2>${tr("projects.empty.title")}</h2>
       <p>${tr("projects.empty.body")}</p></div>`);
+  }
+
+  // Lo archivado queda a mano y plegado: no estorba, pero se puede recuperar.
+  if ((data.archived || []).length) {
+    parts.push(`<details class="archived">
+  <summary>${tr("projects.archived.title", { n: data.archived.length })}</summary>
+  ${data.archived.map((p) => `<div class="archived-row">
+    <div>
+      <div class="pcard-name">${esc(p.name)}</div>
+      <div class="pcard-meta">${tr("projects.meta", {
+        client: esc(p.clientName), duration: fmtDuration(p.seconds), blocks: tr("blocks", { n: p.blocks }),
+      })}</div>
+      ${p.deleteBlocker ? `<div class="addform-hint">${tr(`projects.delete.blocked.${p.deleteBlocker}`)}</div>` : ""}
+    </div>
+    <div class="row-inline">
+      <button type="button" class="chip project-restore" data-project="${esc(p.id)}">${tr("projects.restore")}</button>
+      ${p.deleteBlocker ? "" : `<button type="button" class="chip project-delete" data-project="${esc(p.id)}"
+        data-name="${esc(p.name)}" data-blocks="${p.blocks}" data-seconds="${p.seconds}">${tr("projects.delete")}</button>`}
+    </div>
+  </div>`).join("")}
+</details>`);
   }
 
   // Repos con trabajo capturado que no pertenecen a nadie. Es la lista más
@@ -1153,6 +1178,48 @@ function wireProjects() {
   });
 
   // Copiar el enlace, sin salir de aquí.
+  document.querySelectorAll(".project-archive").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const unbilled = Number(btn.dataset.unbilled);
+      const aviso = unbilled > 0 ? tr("projects.archive.unbilled", { duration: fmtDuration(unbilled) }) : "";
+      if (!window.confirm(tr("projects.archive.confirm", { name: btn.dataset.name }) + aviso)) return;
+      try {
+        await api("/api/project-archive", { method: "POST", body: JSON.stringify({ projectId: btn.dataset.project }) });
+        await loadProjects();
+        toast(tr("toast.projectArchived"));
+      } catch (error) { toast(error.message); }
+    });
+  });
+
+  document.querySelectorAll(".project-restore").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        await api("/api/project-restore", { method: "POST", body: JSON.stringify({ projectId: btn.dataset.project }) });
+        await loadProjects();
+        toast(tr("toast.projectRestored"));
+      } catch (error) { toast(error.message); btn.disabled = false; }
+    });
+  });
+
+  // Eliminar no tiene vuelta atrás: se escribe el nombre, como en cualquier
+  // herramienta donde un clic de más cuesta datos.
+  document.querySelectorAll(".project-delete").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const escrito = window.prompt(tr("projects.delete.confirm", {
+        name: btn.dataset.name, duration: fmtDuration(Number(btn.dataset.seconds)),
+        blocks: tr("blocks", { n: Number(btn.dataset.blocks) }),
+      }));
+      if (escrito === null) return;
+      try {
+        await api("/api/project-delete", { method: "POST",
+          body: JSON.stringify({ projectId: btn.dataset.project, confirmName: escrito }) });
+        await loadProjects();
+        toast(tr("toast.projectDeleted"));
+      } catch (error) { toast(error.message); }
+    });
+  });
+
   // Vincular un repositorio ya detectado a un proyecto que existe. Es lo que
   // le faltaba a quien acepta una invitación: el proyecto queda creado pero
   // vacío, y la única salida era la terminal.

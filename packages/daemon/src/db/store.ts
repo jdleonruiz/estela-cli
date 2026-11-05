@@ -110,6 +110,7 @@ export function getProject(db: DatabaseSync, id: string): Project | null {
     aiCostPolicy: row["ai_cost_policy"] as Project["aiCostPolicy"],
     kind: (row["kind"] as Project["kind"]) ?? "client",
     closedAt: row["closed_at"] ? new Date(row["closed_at"] as string) : null,
+    archivedAt: row["archived_at"] ? new Date(row["archived_at"] as string) : null,
     tracker: row["tracker"] ? JSON.parse(row["tracker"] as string) as WorkItemTracker : null,
   };
 }
@@ -141,8 +142,45 @@ export function reopenProject(db: DatabaseSync, id: string): void {
   db.prepare("UPDATE projects SET closed_at = NULL WHERE id = ?").run(id);
 }
 
+/** Archiva un proyecto: sale del panel y deja de captar. No borra nada. */
+export function archiveProject(db: DatabaseSync, id: string, at: Date = new Date()): void {
+  db.prepare("UPDATE projects SET archived_at = ? WHERE id = ? AND archived_at IS NULL").run(iso(at), id);
+}
+
+export function restoreProject(db: DatabaseSync, id: string): void {
+  db.prepare("UPDATE projects SET archived_at = NULL WHERE id = ?").run(id);
+}
+
+export function listArchivedProjects(db: DatabaseSync): Project[] {
+  const rows = db.prepare("SELECT id FROM projects WHERE archived_at IS NOT NULL ORDER BY name").all() as { id: string }[];
+  return rows.map((r) => getProject(db, r.id)!);
+}
+
+/** Por qué no se puede eliminar un proyecto, o null si se puede. */
+export function projectDeleteBlocker(db: DatabaseSync, id: string): "invoiced" | "shared" | null {
+  const count = (sql: string) => (db.prepare(sql).get(id) as { n: number }).n;
+  if (count("SELECT COUNT(*) AS n FROM invoices WHERE project_id = ?") > 0) return "invoiced";
+  if (count("SELECT COUNT(*) AS n FROM time_entries WHERE project_id = ? AND invoice_id IS NOT NULL") > 0) return "invoiced";
+  // Lo que hay fuera de esta máquina se quedaría sin dueño aquí.
+  if (count("SELECT COUNT(*) AS n FROM publications WHERE project_id = ?") > 0) return "shared";
+  if (count("SELECT COUNT(*) AS n FROM project_sync WHERE project_id = ?") > 0) return "shared";
+  return null;
+}
+
+/**
+ * Elimina un proyecto y sus imputaciones, tarifas y vínculos. Los turnos y los
+ * commits se quedan: son de la máquina, no del proyecto, y si el repo se vuelve
+ * a registrar sus horas reaparecen. Lo facturado o compartido no se elimina.
+ */
+export function deleteProject(db: DatabaseSync, id: string): void {
+  const blocker = projectDeleteBlocker(db, id);
+  if (blocker) throw new Error(`project ${id} cannot be deleted: ${blocker}`);
+  db.prepare("DELETE FROM projects WHERE id = ?").run(id);
+}
+
+/** Los proyectos a la vista. Los archivados, con `listArchivedProjects`. */
 export function listProjects(db: DatabaseSync): Project[] {
-  const rows = db.prepare("SELECT id FROM projects ORDER BY name").all() as { id: string }[];
+  const rows = db.prepare("SELECT id FROM projects WHERE archived_at IS NULL ORDER BY name").all() as { id: string }[];
   return rows.map((r) => getProject(db, r.id)!).filter(Boolean);
 }
 
@@ -285,8 +323,20 @@ export function authorsByRepo(db: DatabaseSync): Map<string, string[]> {
 
 /** Encuentra el proyecto al que pertenece una ruta de repositorio. */
 export function projectForRepo(db: DatabaseSync, repoPath: string): string | null {
-  const rows = db.prepare("SELECT project_id, repo_path FROM project_repos")
-    .all() as { project_id: string; repo_path: string }[];
+  return matchRepo(db, repoPath, `SELECT r.project_id, r.repo_path FROM project_repos r
+    JOIN projects p ON p.id = r.project_id WHERE p.archived_at IS NULL`);
+}
+
+/**
+ * Como `projectForRepo`, contando los archivados. Para lo que ofrece registrar
+ * un repo: uno archivado ya tiene dueño, y ofrecerlo otra vez lo resucitaría.
+ */
+export function ownerOfRepo(db: DatabaseSync, repoPath: string): string | null {
+  return matchRepo(db, repoPath, "SELECT project_id, repo_path FROM project_repos");
+}
+
+function matchRepo(db: DatabaseSync, repoPath: string, sql: string): string | null {
+  const rows = db.prepare(sql).all() as { project_id: string; repo_path: string }[];
   // El prefijo más largo gana: permite anidar un subproyecto dentro de un monorepo.
   // isSameOrInside y no startsWith: en Windows la misma carpeta llega con \ o
   // con /, y con la unidad en mayúscula o minúscula.
@@ -515,6 +565,21 @@ export function clearEntryAdjustment(db: DatabaseSync, id: string, at: Date = ne
         adjust_reason = NULL, adjusted_at = NULL, updated_at = ?
     WHERE id = ?
   `).run(iso(at), id);
+}
+
+/**
+ * Retira imputaciones repetidas (ver `findDuplicates` en billing/assign.ts).
+ * Repite aquí las condiciones de `saveTimeEntry`: lo escrito a mano, lo aprobado,
+ * lo facturado y lo ajustado no se borra desde ningún camino.
+ */
+export function deleteStaleEntries(db: DatabaseSync, ids: readonly string[]): number {
+  const stmt = db.prepare(`
+    DELETE FROM time_entries WHERE id = ?
+      AND source IN ('agent', 'commit') AND invoice_id IS NULL
+      AND approved = 0 AND adjust_reason IS NULL`);
+  let deleted = 0;
+  for (const id of ids) deleted += Number(stmt.run(id).changes);
+  return deleted;
 }
 
 export function saveTimeEntry(
@@ -1046,7 +1111,8 @@ export function listTeamSyncedProjects(db: DatabaseSync): ProjectSync[] {
 export function listPersonalSyncCandidates(db: DatabaseSync): string[] {
   const rows = db.prepare(`
     SELECT id FROM projects
-    WHERE id NOT IN (SELECT project_id FROM project_sync WHERE scope = 'team')
+    WHERE archived_at IS NULL
+      AND id NOT IN (SELECT project_id FROM project_sync WHERE scope = 'team')
   `).all() as { id: string }[];
   return rows.map((r) => r.id);
 }

@@ -27,10 +27,14 @@ import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
 import { documentLang, tr, withLang } from "./i18n/index.js";
 import { baseName } from "./paths.js";
 import { localizeDescription } from "./billing/localize.js";
-import { commitOnlyBlocks, planEntries } from "./billing/assign.js";
+import { commitOnlyBlocks, knownTurns, planEntries } from "./billing/assign.js";
 import { quotaToJson } from "./metrics/quota.js";
 import { loadQuotaReport } from "./quota.js";
 import { kindLabel } from "./i18n/labels.js";
+
+
+/** Las imputaciones de un proyecto archivado no salen en ninguna vista del panel. */
+const VISIBLE = "project_id NOT IN (SELECT id FROM projects WHERE archived_at IS NOT NULL)";
 
 /**
  * Servidor local del dashboard.
@@ -106,7 +110,11 @@ async function importOnce(dbPath: string): Promise<number> {
       if (!root) continue;
       store.saveCommits(db, await readCommits(root, {}));
     }
-    const mine = await myEmailsByRepo(db, repos);
+    // Todo lo conocido, no solo lo leído ahora (ver knownTurns), y los correos
+    // de todos esos repos: sin ellos, un día antiguo perdería sus commits.
+    const known = knownTurns(db, turns);
+    const mine = await myEmailsByRepo(db, new Set([...repos, ...store.allProjectRepoPaths(db),
+      ...known.flatMap((t) => t.repoPath ?? [])]));
 
     const allRepoCommits = (db.prepare("SELECT * FROM commits").all() as Record<string, unknown>[])
       .map((r) => ({
@@ -121,19 +129,16 @@ async function importOnce(dbPath: string): Promise<number> {
     let imputed = 0;
     // Solo tus commits producen horas tuyas.
     const commits = onlyMine(allRepoCommits, mine);
-    const fromAgents = attachCommits(sessionize(turns), commits);
+    const fromAgents = attachCommits(sessionize(known), commits);
     const fromCommits = commitOnlyBlocks(db, commits, fromAgents);
 
-    // Las mismas reglas que `estela import` (billing/assign.ts). Las horas de
-    // subcarpetas y worktrees solo se recuperan si ya se confirmó una vez
-    // desde la terminal: el panel no cambia horas importadas en segundo plano
-    // sin que nadie haya visto antes qué iba a cambiar.
-    const recover = existsSync(join(dirname(dbPath), ".recover-git-root"));
-    const plan = planEntries(db, [...fromAgents, ...fromCommits], { recover });
+    // Las mismas reglas que `estela import` (billing/assign.ts).
+    const plan = planEntries(db, [...fromAgents, ...fromCommits]);
     for (const { entry } of plan.entries) {
       store.saveTimeEntry(db, entry);
       imputed++;
     }
+    store.deleteStaleEntries(db, plan.stale);
     return imputed;
   } finally {
     db.close();
@@ -333,7 +338,7 @@ async function api(
       const projectId = url.searchParams.get("project");
       const rows = db.prepare(`
         SELECT local_date AS d, COUNT(*) AS n FROM time_entries
-        WHERE approved = 0 AND invoice_id IS NULL
+        WHERE approved = 0 AND invoice_id IS NULL AND ${VISIBLE}
           ${projectId ? "AND project_id = ?" : ""}
         GROUP BY local_date ORDER BY local_date DESC
       `).all(...(projectId ? [projectId] : [])) as { d: string; n: number }[];
@@ -362,6 +367,50 @@ async function api(
     if (path === "/api/projects" && req.method === "POST") {
       const body = await readJson(req);
       return json(res, 200, { id: createProject(db, body) });
+    }
+
+    if (path === "/api/project-archive" && req.method === "POST") {
+      const body = await readJson(req);
+      const projectId = String(body["projectId"] ?? "");
+      if (!store.getProject(db, projectId)) {
+        return json(res, 404, { error: tr`No existe el proyecto "${projectId}".` });
+      }
+      store.archiveProject(db, projectId);
+      return json(res, 200, { ok: true });
+    }
+
+    if (path === "/api/project-restore" && req.method === "POST") {
+      const body = await readJson(req);
+      const projectId = String(body["projectId"] ?? "");
+      if (!store.getProject(db, projectId)) {
+        return json(res, 404, { error: tr`No existe el proyecto "${projectId}".` });
+      }
+      store.restoreProject(db, projectId);
+      // Lo trabajado mientras estuvo archivado sigue en los turnos: se imputa ya.
+      const status = await runImport(dbPath);
+      return json(res, 200, { ok: true, importing: status.pending === true });
+    }
+
+    /* Borrar no tiene vuelta atrás: se exige haberlo archivado antes y escribir
+       su nombre, también aquí y no solo en la página. */
+    if (path === "/api/project-delete" && req.method === "POST") {
+      const body = await readJson(req);
+      const projectId = String(body["projectId"] ?? "");
+      const project = store.getProject(db, projectId);
+      if (!project) return json(res, 404, { error: tr`No existe el proyecto "${projectId}".` });
+      if (!project.archivedAt) return json(res, 409, { error: tr`Archiva el proyecto antes de eliminarlo.` });
+      if (String(body["confirmName"] ?? "") !== project.name) {
+        return json(res, 400, { error: tr`El nombre no coincide: no se ha eliminado nada.` });
+      }
+      const blocker = store.projectDeleteBlocker(db, projectId);
+      if (blocker === "invoiced") {
+        return json(res, 409, { error: tr`Tiene horas facturadas: se puede archivar, pero no eliminar.` });
+      }
+      if (blocker === "shared") {
+        return json(res, 409, { error: tr`Está publicado o sincronizado: se puede archivar, pero no eliminar.` });
+      }
+      store.deleteProject(db, projectId);
+      return json(res, 200, { ok: true });
     }
 
     /* Con quién está compartido cada panel. El panel local no habla con la
@@ -652,6 +701,7 @@ function buildOverview(db: Db, from = "", to = "") {
            SUM(ai_micro_usd) AS micro,
            SUM(approved) AS approved
     FROM time_entries
+    WHERE ${VISIBLE}
     GROUP BY date
     ORDER BY date DESC
     LIMIT 30
@@ -676,7 +726,7 @@ function buildOverview(db: Db, from = "", to = "") {
     SELECT project_id, SUM(seconds) AS seconds, SUM(ai_micro_usd) AS micro, COUNT(*) AS blocks,
            MIN(local_date) AS first_day, MAX(local_date) AS last_day
     FROM time_entries
-    WHERE billable = 1 AND invoice_id IS NULL
+    WHERE billable = 1 AND invoice_id IS NULL AND ${VISIBLE}
       ${ranged ? "AND local_date >= ? AND local_date <= ?" : ""}
     GROUP BY project_id
   `).all(...(ranged ? [from, to] : [])) as { project_id: string; seconds: number; micro: number; blocks: number;
@@ -709,7 +759,7 @@ function buildOverview(db: Db, from = "", to = "") {
     ? (db.prepare(`
         SELECT COALESCE(SUM(seconds),0) AS seconds, COUNT(*) AS blocks
         FROM time_entries
-        WHERE billable = 1 AND invoice_id IS NULL
+        WHERE billable = 1 AND invoice_id IS NULL AND ${VISIBLE}
           AND (local_date < ? OR local_date > ?)
       `).get(from, to) as { seconds: number; blocks: number })
     : { seconds: 0, blocks: 0 };
@@ -746,7 +796,7 @@ function buildSummary(db: Db, from: string, to: string) {
            MAX(local_date)   AS last_day,
            COUNT(DISTINCT local_date) AS days
     FROM time_entries
-    WHERE local_date >= ? AND local_date <= ?
+    WHERE local_date >= ? AND local_date <= ? AND ${VISIBLE}
     GROUP BY project_id
   `).all(from, to) as {
     project_id: string; seconds: number; micro: number; blocks: number;
@@ -797,7 +847,7 @@ function buildSummary(db: Db, from: string, to: string) {
   const byDay = db.prepare(`
     SELECT local_date AS date, SUM(seconds) AS seconds
     FROM time_entries
-    WHERE local_date >= ? AND local_date <= ?
+    WHERE local_date >= ? AND local_date <= ? AND ${VISIBLE}
     GROUP BY local_date ORDER BY local_date
   `).all(from, to) as { date: string; seconds: number }[];
 
@@ -873,7 +923,7 @@ async function buildTeam(db: Db, from: string, to: string, projectId: string | n
   // de qué fiarse, y ninguna otra cifra de la pantalla lo dice.
   const composition = db.prepare(`
     SELECT project_id, source, SUM(seconds) AS seconds
-    FROM time_entries WHERE local_date >= ? AND local_date <= ?
+    FROM time_entries WHERE local_date >= ? AND local_date <= ? AND ${VISIBLE}
     GROUP BY project_id, source
   `).all(from, to) as { project_id: string; source: string; seconds: number }[];
 
@@ -1001,7 +1051,7 @@ function buildDay(db: Db, date: string) {
     SELECT t.*, i.number AS invoice_number
     FROM time_entries t
     LEFT JOIN invoices i ON i.id = t.invoice_id
-    WHERE t.local_date = ?
+    WHERE t.local_date = ? AND t.${VISIBLE}
     ORDER BY t.started_at
   `).all(date) as Record<string, unknown>[];
 
@@ -1263,6 +1313,16 @@ function buildProjects(db: Db) {
       staleBlocks: pub.staleBlocks,
       daysAgo: Math.floor((Date.now() - pub.publishedAt.getTime()) / 86_400_000),
     })),
+    archived: store.listArchivedProjects(db).map((p) => {
+      const totals = db.prepare(
+        "SELECT COUNT(*) AS blocks, SUM(seconds) AS seconds FROM time_entries WHERE project_id = ?"
+      ).get(p.id) as { blocks: number; seconds: number | null };
+      return {
+        id: p.id, name: p.name, clientName: clients.get(p.clientId)?.name ?? "—",
+        blocks: totals.blocks, seconds: totals.seconds ?? 0,
+        deleteBlocker: store.projectDeleteBlocker(db, p.id),
+      };
+    }),
     projects: store.listProjects(db).map((p) => {
       const client = clients.get(p.clientId);
       const rates = store.getRates(db, p.id);
@@ -1288,6 +1348,9 @@ function buildProjects(db: Db) {
         hourlyMinor: current?.amount ?? null,
         blocks: totals.blocks,
         seconds: totals.seconds ?? 0,
+        unbilledSeconds: (db.prepare(
+          "SELECT COALESCE(SUM(seconds), 0) AS s FROM time_entries WHERE project_id = ? AND billable = 1 AND invoice_id IS NULL"
+        ).get(p.id) as { s: number }).s,
         // El historial completo: subir la tarifa no reescribe lo ya trabajado,
         // así que conviene poder verlo.
         rateHistory: rates.map((r) => ({
@@ -1310,7 +1373,7 @@ function unassignedRepos(db: Db) {
   `).all() as { repo_path: string; turns: number; last_at: string }[];
 
   return rows
-    .filter((r) => store.projectForRepo(db, r.repo_path) === null)
+    .filter((r) => store.ownerOfRepo(db, r.repo_path) === null)
     .slice(0, 40)
     .map((r) => ({
       path: r.repo_path,
@@ -1343,6 +1406,10 @@ function createProject(db: Db, body: Record<string, unknown>): string {
   }
 
   const id = String(body["id"] ?? "").trim() || slug(name);
+  // Volver a crearlo no lo sacaría del archivo: quedaría oculto y sin explicación.
+  if (store.getProject(db, id)?.archivedAt) {
+    throw new Error(tr`Ya hay un proyecto archivado con ese nombre: restáuralo.`);
+  }
   const repo = String(body["repoPath"] ?? "").trim();
   const kind = (String(body["kind"] ?? "client")) as "client" | "employment" | "internal";
 

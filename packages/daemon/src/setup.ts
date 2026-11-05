@@ -85,7 +85,7 @@ export async function planSetup(
 
   const plans: SetupPlan[] = [];
   for (const root of roots) {
-    const already = store.projectForRepo(db, root);
+    const already = store.ownerOfRepo(db, root);
     const { id, name } = projectFromRepo(root);
 
     if (already) {

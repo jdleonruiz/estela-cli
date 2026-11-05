@@ -1022,26 +1022,28 @@ export const EN: Record<string, string> = {
   "La ventana de 5 h es la que da Claude Code; el reparto solo incluye lo usado en esta máquina.":
     "The 5-hour window is the one Claude Code reports; the split only includes what was used on this machine.",
   // ── import: horas de subcarpetas y worktrees ──
-  "\nEstela ahora reconoce las sesiones en subcarpetas y worktrees de un repositorio.":
-    "\nEstela now recognizes sessions in a repository's subfolders and worktrees.",
-  "Estas horas no estaban imputadas y se sumarían a su proyecto:\n":
-    "These hours weren't assigned and would be added to their project:\n",
-  "\n  Nada de lo ya imputado cambia de proyecto, y los días aprobados no se tocan.":
-    "\n  Nothing already assigned changes project, and approved days aren't touched.",
   "\n  Sin tocar, porque ese día ya está aprobado o facturado:":
     "\n  Left alone, because that day is already approved or invoiced:",
   "    {0} · {1}: {2} recuperables. Revísalo con: estela entries --project {3}":
     "    {0} · {1}: {2} recoverable. Review it with: estela entries --project {3}",
-  "¿Imputar estas horas? [s/N] ":
-    "Assign these hours? [y/N] ",
-  "  No se ha tocado nada. Cuando quieras: estela import --yes\n":
-    "  Nothing was changed. Whenever you want: estela import --yes\n",
+  "  {0} imputaciones retiradas: sus horas ya estaban en otra rama del mismo día":
+    "  {0} entries removed: their hours were already in another branch that day",
+  "\n{0} imputaciones aprobadas o ajustadas repiten horas de otra rama. Revísalas antes de facturar:":
+    "\n{0} approved or adjusted entries repeat hours from another branch. Review them before invoicing:",
+  "Archiva el proyecto antes de eliminarlo.":
+    "Archive the project before deleting it.",
+  "El nombre no coincide: no se ha eliminado nada.":
+    "The name doesn't match: nothing was deleted.",
+  "Tiene horas facturadas: se puede archivar, pero no eliminar.":
+    "It has invoiced hours: it can be archived, but not deleted.",
+  "Está publicado o sincronizado: se puede archivar, pero no eliminar.":
+    "It's published or synced: it can be archived, but not deleted.",
+  "Ya hay un proyecto archivado con ese nombre: restáuralo.":
+    "There's already an archived project with that name: restore it.",
   "  {0} recuperadas de sesiones en subcarpetas y worktrees":
     "  {0} recovered from sessions in subfolders and worktrees",
   "{0} (sin proyecto)":
     "{0} (no project)",
-  "\n{0} de esos bloques son de subcarpetas o worktrees de un proyecto: estela import --yes los imputa.":
-    "\n{0} of those blocks are from a project's subfolders or worktrees: estela import --yes assigns them.",
   // ── publish: resumen antes de subir, y unpublish ──
   "No se ha publicado nada. Sin terminal no se puede confirmar: añade --yes para publicar.":
     "Nothing was published. Without a terminal there's no way to confirm: add --yes to publish.",

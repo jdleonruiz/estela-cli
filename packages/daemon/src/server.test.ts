@@ -486,3 +486,94 @@ test("con ESTELA_OFFLINE=1, ni con cuenta se pide el banner", async () => {
     if (before === undefined) delete process.env["ESTELA_OFFLINE"]; else process.env["ESTELA_OFFLINE"] = before;
   }
 });
+
+/** Un proyecto "web" con horas de hoy, y otro que no se toca. */
+function dosProyectos(dbPath: string) {
+  const db = openDatabase(dbPath);
+  store.upsertClient(db, { id: "c", name: "C", currency: "EUR" });
+  for (const id of ["web", "otro"]) {
+    store.upsertProject(db, { id, clientId: "c", name: id, repoPaths: [`/x/${id}`], billable: true,
+      roundingMinutes: 0, aiCostPolicy: "absorbed", kind: "client" });
+    store.saveTimeEntry(db, {
+      id: `te_${id}`, projectId: id, startedAt: new Date(), endedAt: new Date(Date.now() + 3600_000), seconds: 3600,
+      description: "x", billable: true, invoiceId: null, aiCost: { microUsd: 0 }, agentSeconds: 3600, commitHashes: [],
+      agents: [], source: "agent", kind: "development", branch: "main", workItems: [],
+    });
+  }
+  db.close();
+}
+
+const post = (base: string, ruta: string, body: unknown) =>
+  fetch(`${base}${ruta}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+test("archivar quita el proyecto del panel y conserva sus horas; restaurar lo devuelve", async () => {
+  await conServidor(dosProyectos, async (base) => {
+    assert.equal((await post(base, "/api/project-archive", { projectId: "web" })).status, 200);
+
+    const datos = await (await fetch(`${base}/api/projects`)).json() as { projects: { id: string }[]; archived: { id: string; seconds: number }[] };
+    assert.deepEqual(datos.projects.map((p) => p.id), ["otro"]);
+    assert.deepEqual(datos.archived.map((p) => [p.id, p.seconds]), [["web", 3600]]);
+
+    const pendientes = await (await fetch(`${base}/api/pending-days`)).json() as { days: { blocks: number }[] };
+    assert.equal(pendientes.days[0]!.blocks, 1, "solo el otro proyecto");
+
+    const orfanos = await (await fetch(`${base}/api/unassigned`)).json() as { repos: unknown[] };
+    assert.deepEqual(orfanos.repos, []);
+
+    const creado = await post(base, "/api/projects", { name: "web", clientId: "c" });
+    assert.notEqual(creado.status, 200, "volver a crearlo no lo saca del archivo");
+
+    assert.equal((await post(base, "/api/project-restore", { projectId: "web" })).status, 200);
+    const despues = await (await fetch(`${base}/api/projects`)).json() as { projects: { id: string }[]; archived: unknown[] };
+    assert.deepEqual(despues.projects.map((p) => p.id).sort(), ["otro", "web"]);
+    assert.deepEqual(despues.archived, []);
+  });
+});
+
+test("eliminar exige archivar antes y escribir el nombre", async () => {
+  let ruta = "";
+  await conServidor((p) => { ruta = p; dosProyectos(p); }, async (base) => {
+    assert.equal((await post(base, "/api/project-delete", { projectId: "web", confirmName: "web" })).status, 409);
+    await post(base, "/api/project-archive", { projectId: "web" });
+    assert.equal((await post(base, "/api/project-delete", { projectId: "web", confirmName: "otra cosa" })).status, 400);
+    assert.equal((await post(base, "/api/project-delete", { projectId: "web" })).status, 400);
+
+    let db = openDatabase(ruta);
+    assert.equal(store.getTimeEntries(db, "web").length, 1, "nada eliminado todavía");
+    db.close();
+
+    assert.equal((await post(base, "/api/project-delete", { projectId: "web", confirmName: "web" })).status, 200);
+    db = openDatabase(ruta);
+    assert.equal(store.getProject(db, "web"), null);
+    assert.equal(store.getTimeEntries(db, "web").length, 0);
+    assert.equal(store.getTimeEntries(db, "otro").length, 1, "el otro no se toca");
+    db.close();
+  });
+});
+
+test("un proyecto con facturas o publicado no se elimina, pero se archiva", async () => {
+  let ruta = "";
+  await conServidor((p) => {
+    ruta = p; dosProyectos(p);
+    const db = openDatabase(p);
+    db.exec(`INSERT INTO invoices (id, number, client_id, project_id, issued_at, cutoff_at, period_start, currency,
+             subtotal_minor, total_minor, total_seconds, lines_json)
+             VALUES ('f', 'INF-1', 'c', 'web', '2026-01-02', '2026-01-02', '2026-01-01', 'EUR', 100, 100, 3600, '[]')`);
+    db.exec("UPDATE time_entries SET invoice_id = 'f' WHERE id = 'te_web'");
+    db.exec("INSERT INTO publications (project_id, token, published_at) VALUES ('otro', 't', '2026-01-02')");
+    db.close();
+  }, async (base) => {
+    for (const id of ["web", "otro"]) {
+      assert.equal((await post(base, "/api/project-archive", { projectId: id })).status, 200);
+      assert.equal((await post(base, "/api/project-delete", { projectId: id, confirmName: id })).status, 409);
+    }
+    const datos = await (await fetch(`${base}/api/projects`)).json() as { archived: { id: string; deleteBlocker: string }[] };
+    assert.deepEqual(datos.archived.map((p) => [p.id, p.deleteBlocker]).sort(), [["otro", "shared"], ["web", "invoiced"]]);
+
+    const db = openDatabase(ruta);
+    assert.equal(store.getTimeEntries(db, "web").length, 1);
+    db.close();
+    // Lo emitido se sigue pudiendo descargar.
+    assert.equal((await fetch(`${base}/api/invoices/INF-1/pdf`)).status, 200);
+  });
+});

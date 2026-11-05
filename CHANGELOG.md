@@ -4,6 +4,49 @@ Cambios visibles de cada versión del paquete `estela`. Las anteriores a la
 0.2.0 están en el historial de git, con una etiqueta por versión en
 [github.com/jdleonruiz/estela-cli](https://github.com/jdleonruiz/estela-cli/tags).
 
+## 0.3.4 — 2026-11-04
+
+### Nuevo
+- **Quitar proyectos desde el panel.** Cada proyecto tiene un botón Archivar: sale
+  del panel y deja de captar horas, sin borrar nada. Si tiene horas sin facturar,
+  avisa antes. Mientras esté archivado, esas horas no se pueden facturar.
+- **Restaurar.** Los archivados quedan en una sección plegada. Al restaurar uno
+  vuelve al panel con lo que trabajaste mientras tanto.
+- **Eliminar definitivamente.** Solo desde un archivado y escribiendo su nombre
+  exacto. Borra el proyecto y sus imputaciones; las sesiones y los commits se
+  conservan, y su repo vuelve a aparecer como repo sin proyecto. No se puede
+  eliminar un proyecto con facturas, publicado o sincronizado con un equipo: esos
+  solo se archivan, y sus facturas se siguen descargando. Archivar no retira un
+  panel ya publicado: sigue en línea hasta `estela unpublish`.
+
+## 0.3.3 — 2026-11-04
+
+### Cambios
+- **Dos ramas a la vez cuentan tiempo real.** Si dos chats trabajan al mismo
+  tiempo en ramas distintas de un proyecto, ese rato se reparte entre las dos: una
+  hora de reloj son 30 min en cada rama, no una hora en cada una. Lo aprobado o
+  facturado conserva su cifra, y las demás no cobran ese rato. Si cobras un precio
+  pactado, ajusta la imputación con su motivo: lo medido se queda al lado.
+- **Las sesiones en worktrees y subcarpetas cuentan sin confirmar.** `estela
+  import --yes` ya no hace falta, y el panel las cuenta igual que la terminal.
+
+### Arreglos
+- **Un cambio de rama a mitad de sesión ya no cobra dos veces.** La imputación
+  cuyas horas pasaron a otra rama se retira. Si está aprobada, ajustada o
+  facturada no se toca y `estela import` avisa para que la revises.
+- **Borrar un transcript ya no reduce horas.** Con un commit fuera de la sesión,
+  4 h medidas se convertían en 25 min estimados. Lo mismo pasaba con `--since`.
+- **Un commit hecho desde un worktree no suma horas a un día ya medido.**
+- **`--help` y `-h` ya no ejecutan el comando.** Y `--dry-run` y `--no-amounts`
+  siguen protegiendo aunque les siga otra palabra: antes se ignoraban, y podía
+  emitirse un informe de verdad o un PDF con importes.
+
+### Al actualizar
+La primera importación recalcula lo que no está aprobado ni facturado, y las
+imputaciones retiradas no se recuperan. Antes de instalar, copia la base:
+`cp ~/.estela/estela.db ~/.estela/estela.db.antes-0.3.3`. Revisa también las horas
+pendientes antes del siguiente informe.
+
 ## 0.3.2 — 2026-11-02
 
 ### Nuevo

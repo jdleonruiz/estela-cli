@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS projects (
   ai_budget_micro_usd INTEGER,
   -- NULL = activo. Ver la migración 12 para por qué cerrar no bloquea nada.
   closed_at         TEXT,
+  -- NULL = visible. Archivado: fuera del panel y sin captar horas.
+  archived_at       TEXT,
   -- Gestor de tareas en JSON ({"system":"jira","prefixes":["PROJ"]}). NULL =
   -- sin configurar: solo se reconocen los tickets inequívocos.
   tracker           TEXT
@@ -292,6 +294,13 @@ CREATE TABLE IF NOT EXISTS claude_plans (
  * empezar no es una opción de mantenimiento.
  */
 const MIGRATIONS: readonly { version: number; describe: string; run: (db: DatabaseSync) => void }[] = [
+  {
+    version: 17,
+    describe: "archivar proyectos",
+    run: (db) => {
+      addColumn(db, "projects", "archived_at", "TEXT");
+    },
+  },
   {
     version: 16,
     describe: "rutas de Windows iguales vengan de donde vengan",
