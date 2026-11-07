@@ -4,6 +4,84 @@ Cambios visibles de cada versión del paquete `estela`. Las anteriores a la
 0.2.0 están en el historial de git, con una etiqueta por versión en
 [github.com/jdleonruiz/estela-cli](https://github.com/jdleonruiz/estela-cli/tags).
 
+## 0.4.1 — 2026-11-07
+
+### Nuevo
+- **GitLab en `estela delivery`.** Con `--system gitlab`, lo planificado frente
+  a lo entregado, lo pedido por cada cliente y el informe de `estela summary`
+  salen de GitLab, leído con `glab` (también en un servidor propio). Como con
+  GitHub, es la única llamada fuera de tu máquina, `--offline` la evita, y sin
+  `glab` se explica y se usa lo guardado o lo que dice git. GitLab no distingue
+  una issue cerrada hecha de una cerrada sin hacer: cerrada cuenta como
+  entregada, salvo si se movió a otro proyecto. Qué issues cierra una MR se lee
+  de su descripción ("Closes #12").
+
+### Corregido
+- **El Resumen del panel ya cuadra a la vista con Informes.** Cada proyecto dice
+  ahora qué parte de lo trabajado en el periodo ya está facturada (y en qué
+  factura) y cuánto falta por facturar, con la misma cifra que da Informes. Y
+  la cabecera lleva las fechas del periodo.
+- **Resumen e Informes ya no comparten periodo.** Elegir "Todo lo pendiente" en
+  Informes cambiaba en silencio el Resumen a 3 meses, con "Este mes" todavía
+  marcado.
+- **Las merge requests de GitLab ya no se confunden con las issues.** GitLab
+  numera aparte la issue #45 y la MR !45, y Estela las guardaba con la misma
+  clave, así que `ai-cost --by item` podía juntar el coste de las dos. Ahora una
+  MR es `!45`. La migración reescribe solo los merges guardados (se leen de git);
+  ninguna imputación cambia.
+
+## 0.4.0 — 2026-11-06
+
+### Nuevo
+- **Coste de IA por entrega.** `estela ai-cost --by branch|item` reparte el coste
+  y las horas por rama, o por ticket y PR, con filtros de proyecto, cliente y
+  periodo, y salida en `--json` o `--csv`. Cada fila separa el coste a precio de
+  API de la cuota realmente pagada, y dice en qué se basa la atribución. Lo que
+  no tiene base va a "Sin atribuir", sin repartirlo. Sin `--by`, `ai-cost` sale
+  igual que antes.
+- **Gasto sin entrega.** `estela ai-cost --undelivered` suma, por proyecto, el
+  coste de las sesiones sin ningún commit y el de las ramas sin fusionar tras
+  N días (`--stale-days`, 14 por defecto), en cifra y en % del gasto. Es una
+  señal para revisar, no un juicio: lo que no se puede saber (una rama borrada
+  que pudo ser un squash, sesiones de antes de tu primer commit en el repo) se
+  enseña aparte y no cuenta.
+- **Planificado frente a entregado.** `estela delivery` compara lo planificado
+  en GitHub (una etiqueta o un milestone) con lo entregado en el periodo, y pone
+  al lado de cada bloque su coste de IA. Lee GitHub con `gh`, solo en proyectos
+  con `--system github`, y guarda lo leído para repetirlo sin conexión. Sin
+  `gh`, lo explica y enseña lo entregado según git. La etiqueta del plan se fija
+  con `estela project tracker --plan-label`.
+- **Lo que pidió cada cliente.** `estela delivery --by client` da el gasto de IA
+  del periodo en las peticiones de cada cliente (issues y PRs con la etiqueta
+  `cliente:<nombre>`) frente al resto, sin repartir a ojo lo que sirvió a
+  varios. `estela client alias` une cada nombre de etiqueta con un cliente de
+  Estela, y `estela project tracker --client-label` cambia el prefijo. Sin
+  ingresos ni contratos: solo une el gasto con quién lo pidió.
+- **Informe para finanzas.** `estela summary` junta en Markdown, CSV o JSON lo
+  pagado en IA por cliente y proyecto, lo entregado, lo pedido por cada cliente
+  y lo que no llegó a entregarse, con los detalles técnicos al final. Un mes
+  cerrado suma exactamente su cuota: los meses son los de tu reloj, no los de
+  UTC. No llama a nada fuera de tu máquina.
+- **Los PR se reconocen por su merge.** El import guarda los commits de merge
+  ("Merge pull request #31 from …", y los de GitLab), que unen cada rama con su
+  PR aunque la rama ya se haya borrado.
+
+### Arreglos
+- **Una rama fusionada con squash ya no cuenta como sin fusionar** en
+  `--undelivered`, si `estela delivery` leyó su PR de GitHub.
+- **Una sesión que cambia de rama ya no se apunta entera a la última.** El
+  bloque se parte en el momento del cambio, y cada rama se lleva sus horas y su
+  coste. El total del día no cambia. Los días aprobados, facturados o ajustados
+  se quedan como estaban.
+
+### Al actualizar
+La base gana tres tablas (los commits de merge, lo leído de GitHub y los alias de
+cliente), y el primer import rellena la de merges. Lo ya imputado no cambia,
+salvo en días abiertos donde una sesión cambió de rama sin pausa: ahí ese rato se
+reparte entre sus ramas, con el mismo total del día. Lo aprobado, facturado o
+ajustado se queda como estaba. Antes de instalar, copia la base:
+`cp ~/.estela/estela.db ~/.estela/estela.db.antes-0.4.0`.
+
 ## 0.3.4 — 2026-11-04
 
 ### Nuevo

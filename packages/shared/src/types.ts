@@ -341,6 +341,8 @@ export interface TimeEntry {
    * base siempre viene, aunque sea vacío.
    */
   readonly workItems?: readonly string[];
+  /** Si los tickets se pusieron a mano (`estela entry link`). Solo al leer de la base. */
+  readonly workItemsManual?: boolean;
 }
 
 export interface InvoiceLine {

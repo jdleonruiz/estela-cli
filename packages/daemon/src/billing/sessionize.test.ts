@@ -236,3 +236,18 @@ test("sin rama en la sesión, la toma del commit más reciente de ese rato", () 
   ]);
   assert.equal(bloque!.branch, "feature/1234-login");
 });
+
+test("un cambio de rama sin pausa parte el bloque sin perder ni sumar tiempo; HEAD no es una rama", () => {
+  const turno = (min: number, branch: string | null, i: number): AgentTurn => ({
+    agent: "claude-code", turnId: `rama-${i}`, sessionId: "s", at: new Date(Date.UTC(2026, 9, 5, 10, min)),
+    model: "claude-sonnet-4-6", repoPath: "/r", branch, producerVersion: null,
+    tokens: { input: 10, output: 10, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 },
+  });
+  const turnos = [turno(0, "a", 0), turno(10, "a", 1), turno(12, "HEAD", 2), turno(20, null, 3),
+                  turno(25, "b", 4), turno(40, "b", 5)];
+  const bloques = sessionize(turnos);
+  assert.deepEqual(bloques.map((b) => [b.branch, b.seconds / 60, b.turnCount, b.continuesPrevious ?? false]),
+    [["a", 25, 4, false], ["b", 17, 2, true]]);
+  // El mismo rato que el bloque sin partir: de 10:00 a 10:40 más la cola de 2 min.
+  assert.equal(bloques.reduce((s, b) => s + b.seconds, 0), 42 * 60);
+});

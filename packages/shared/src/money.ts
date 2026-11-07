@@ -14,7 +14,7 @@
 export type Currency = "EUR" | "USD" | "GBP" | "MXN" | "COP" | "ARS" | "CLP" | "PEN" | "BRL";
 
 /** Decimales de la unidad menor por moneda (ISO 4217). */
-const MINOR_UNIT_DIGITS: Record<Currency, number> = {
+export const MINOR_UNIT_DIGITS: Record<Currency, number> = {
   EUR: 2, USD: 2, GBP: 2, MXN: 2, COP: 2, ARS: 2, CLP: 0, PEN: 2, BRL: 2,
 };
 

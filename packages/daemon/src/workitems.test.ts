@@ -52,11 +52,15 @@ test("una clave se enseña como la escribe cada gestor, y se lee de vuelta", () 
   assert.equal(formatWorkItem("jira:PROJ-12"), "PROJ-12");
   assert.equal(formatWorkItem("azure:1234"), "AB#1234");
   assert.equal(formatWorkItem("github:12"), "#12");
+  assert.equal(formatWorkItem("gitlab:12"), "#12");
+  assert.equal(formatWorkItem("gitlab:!45"), "!45", "una merge request de GitLab se enseña como en GitLab");
 
   assert.equal(parseWorkItem("proj-12"), "jira:PROJ-12");
   assert.equal(parseWorkItem("AB#1234"), "azure:1234");
   assert.equal(parseWorkItem("1234", azure), "azure:1234");
   assert.equal(parseWorkItem("#12", github), "github:12");
+  assert.equal(parseWorkItem("!45", { system: "gitlab", prefixes: [] }), "gitlab:!45");
+  assert.equal(parseWorkItem("!45", github), null, "! solo existe en GitLab");
   // Un número suelto sin gestor no se sabe de quién es.
   assert.equal(parseWorkItem("1234"), null);
   assert.equal(parseWorkItem("1234", jira), null);

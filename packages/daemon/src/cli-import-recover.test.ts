@@ -225,7 +225,7 @@ test("--since no recalcula los días anteriores con la mitad de sus datos", () =
   assert.equal(leer(), antes);
 });
 
-test("una sesión en otra rama tras importar no duplica horas, por la CLI y por el panel", () => {
+test("una sesión que sigue en otra rama tras importar reparte el rato, sin duplicar horas", () => {
   const home = mkdtempSync(join(tmpdir(), "estela-rama-"));
   mkdirSync(join(home, ".estela"));
   const db = join(home, ".estela", "estela.db");
@@ -237,7 +237,8 @@ test("una sesión en otra rama tras importar no duplica horas, por la CLI y por 
   estela(home, "import");
   sesion(transcript, repo, new Date(2026, 9, 5, 11, 5), 30, "b");
   const r = estela(home, "import");
-  assert.match(r.out, /1 imputaciones retiradas/);
-  assert.ok(ramas(db).includes("b"));
-  assert.ok(!ramas(db).includes("a"), "la rama a estaba dentro del bloque de b");
+  assert.doesNotMatch(r.out, /imputaciones retiradas/);
+  // Cada rama con su parte; el total, el mismo rato de reloj.
+  // "main" es el commit de enero del repo, otro día.
+  assert.deepEqual(ramas(db).sort(), ["a", "b", "main"]);
 });

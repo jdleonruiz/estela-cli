@@ -189,16 +189,34 @@ function importar(db: ReturnType<typeof escenario>["db"], blocks: ReturnType<typ
 const filas = (db: ReturnType<typeof escenario>["db"]) =>
   store.getTimeEntries(db, "web").map((e) => `${e.branch}:${Math.round(e.seconds / 60)}`).sort();
 
-test("cambiar de rama a mitad de sesión no deja la misma hora en dos imputaciones", () => {
+test("cambiar de rama a mitad de sesión reparte el rato entre las dos, sin contarlo dos veces", () => {
   const { main, db } = escenario();
   const antes = sesion(main, dia(5), 60, "a");
   importar(db, sessionize(antes));
   assert.deepEqual(filas(db), ["a:61"]);
 
-  // Sigue la misma sesión en otra rama: el bloque entero pasa a llamarse "b".
+  // Sigue la misma sesión en otra rama: "a" llega hasta el primer turno de "b",
+  // y el total es el mismo rato de reloj (91 min) que antes iba entero a "b".
   const plan = importar(db, sessionize([...antes, ...sesion(main, dia(5, 11), 30, "b")]));
-  assert.equal(plan.stale.length, 1);
-  assert.deepEqual(filas(db), ["b:91"], "61 min de la rama a estaban ya dentro de b");
+  assert.deepEqual(plan.stale, []);
+  assert.deepEqual(filas(db), ["a:60", "b:31"]);
+});
+
+test("en un día cerrado, el bloque partido por la rama se queda como estaba", () => {
+  // Facturado con el bloque entero en "b": partirlo ahora crearía "a" al lado
+  // y esas horas contarían dos veces.
+  for (const cerrar of ["approved = 1", "adjust_reason = 'x'", "invoice_id = 'f'"]) {
+    const { main, db } = escenario();
+    const turnos = [...sesion(main, dia(5), 60, "a"), ...sesion(main, dia(5, 11), 30, "b")];
+    const [a, b] = sessionize(turnos);
+    const entero = { ...a!, branch: "b", endedAt: b!.endedAt, seconds: 91 * 60 };
+    store.saveTimeEntry(db, planEntries(db, [entero]).entries[0]!.entry);
+    db.exec("PRAGMA foreign_keys = OFF");
+    db.exec(`UPDATE time_entries SET ${cerrar}`);
+    const plan = importar(db, sessionize(turnos));
+    assert.deepEqual(plan.protectedDuplicates, [], cerrar);
+    assert.deepEqual(filas(db), ["b:91"], cerrar);
+  }
 });
 
 test("una imputación aprobada, ajustada o facturada no se retira nunca: se avisa", () => {

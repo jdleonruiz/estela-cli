@@ -104,6 +104,85 @@ export async function readCommits(
   return commits;
 }
 
+/** Un commit de merge: qué rama se integró y, si lo dice, con qué PR. */
+export interface MergeRecord {
+  readonly repoPath: string;
+  readonly hash: string;
+  readonly at: Date;
+  readonly sourceBranch: string | null;
+  /** `github:12` o `gitlab:!45` (las MR de GitLab llevan `!`). `null` en un merge local sin PR. */
+  readonly ref: string | null;
+  readonly subject: string;
+}
+
+/**
+ * Commits de merge de todas las ramas.
+ *
+ * Es lo único en git que une una rama con su PR sin preguntar a GitHub: el
+ * mensaje lo escribe la plataforma con un formato fijo. Un squash no deja
+ * merge (solo "Título (#12)" en la rama principal), así que de él no se sabe
+ * qué rama fue.
+ */
+export async function readMerges(
+  repoPath: string, options: { since?: Date } = {},
+): Promise<MergeRecord[]> {
+  const root = await repoRoot(repoPath);
+  if (!root) return [];
+
+  const format = RECORD + ["%H", "%aI", "%s", "%b"].join(SEP);
+  const args = ["log", "--all", "--merges", `--pretty=format:${format}`];
+  if (options.since) args.push(`--since=${options.since.toISOString()}`);
+
+  let stdout: string;
+  try {
+    ({ stdout } = await run("git", args, { cwd: root, maxBuffer: 64 * 1024 * 1024 }));
+  } catch {
+    return [];
+  }
+
+  const merges: MergeRecord[] = [];
+  for (const chunk of stdout.split(RECORD)) {
+    const [hash, iso, subject = "", body = ""] = chunk.split(SEP);
+    if (!hash || !iso) continue;
+    const at = new Date(iso);
+    if (Number.isNaN(at.getTime())) continue;
+    const { sourceBranch, ref } = parseMergeMessage(subject.trim(), body);
+    merges.push({ repoPath: root, hash: hash.trim(), at, sourceBranch, ref, subject: subject.trim() });
+  }
+  return merges;
+}
+
+/**
+ * La rama y el PR de un mensaje de merge, con los formatos que escriben las
+ * plataformas y git:
+ *
+ *   Merge pull request #12 from ana/feat/login          (GitHub)
+ *   Merge branch 'feat/login' into 'main' + "See merge request grupo/app!45"  (GitLab)
+ *   Merge branch 'feat/login' [into main]               (git, sin PR)
+ *
+ * Cualquier otro mensaje (alguien lo reescribió) no se adivina.
+ */
+export function parseMergeMessage(
+  subject: string, body = "",
+): { sourceBranch: string | null; ref: string | null } {
+  const github = /^Merge pull request #(\d+) from (\S+)/.exec(subject);
+  if (github) {
+    // "from <dueño>/<rama>": la rama puede llevar barras, el dueño no.
+    const from = github[2]!;
+    const slash = from.indexOf("/");
+    return { sourceBranch: slash === -1 ? from : from.slice(slash + 1), ref: `github:${github[1]}` };
+  }
+
+  const branch = /^Merge (?:remote-tracking )?branch '([^']+)'/.exec(subject);
+  if (branch) {
+    const gitlab = /See merge request \S*!(\d+)/.exec(body);
+    const name = branch[1]!.replace(/^origin\//, "");
+    return { sourceBranch: name, ref: gitlab ? `gitlab:!${gitlab[1]}` : null };
+  }
+
+  return { sourceBranch: null, ref: null };
+}
+
 /**
  * Raíz del repositorio.
  *
@@ -172,6 +251,27 @@ export async function mergedBranches(path: string): Promise<Set<string>> {
     }
   }
   return merged;
+}
+
+/**
+ * Ramas que existen hoy, locales y remotas, sin el prefijo del remoto. `null`
+ * si el repositorio no se puede leer (se borró o se movió): entonces no se sabe.
+ */
+export async function branchNames(path: string): Promise<Set<string> | null> {
+  const root = await repoRoot(path);
+  if (!root) return null;
+  try {
+    const { stdout } = await run("git", ["for-each-ref", "--format=%(refname)", "refs/heads", "refs/remotes"],
+                                 { cwd: root });
+    const names = new Set<string>();
+    for (const line of stdout.split("\n")) {
+      const name = line.trim().replace(/^refs\/(heads|remotes\/[^/]+)\//, "");
+      if (name && name !== "HEAD") names.add(name);
+    }
+    return names;
+  } catch {
+    return null;
+  }
 }
 
 /** Rama donde el equipo integra. `develop` gana a `main` si existe. */

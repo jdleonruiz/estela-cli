@@ -8,6 +8,8 @@ import type {
 } from "@estela/shared";
 import type { ConsumptionRow } from "../billing/amortize.js";
 import type { QuotaTurn } from "../metrics/quota.js";
+import type { TrackerItem } from "../delivery/source.js";
+import type { MergeRecord } from "../watchers/git.js";
 import { localDate } from "@estela/shared";
 import { costOfTurn } from "../pricing/cost.js";
 import { tr } from "../i18n/index.js";
@@ -122,7 +124,10 @@ export function getProject(db: DatabaseSync, id: string): Project | null {
  */
 export function setProjectTracker(db: DatabaseSync, projectId: string, tracker: WorkItemTracker | null): void {
   const changes = db.prepare("UPDATE projects SET tracker = ? WHERE id = ?")
-    .run(tracker ? JSON.stringify({ system: tracker.system, prefixes: tracker.prefixes }) : null, projectId).changes;
+    .run(tracker ? JSON.stringify({ system: tracker.system, prefixes: tracker.prefixes,
+                                    ...(tracker.planLabel ? { planLabel: tracker.planLabel } : {}),
+                                    ...(tracker.clientLabel ? { clientLabel: tracker.clientLabel } : {}) }) : null,
+         projectId).changes;
   if (changes === 0) throw new Error(tr`No existe el proyecto "${projectId}"`);
 }
 
@@ -489,6 +494,125 @@ export function saveCommits(db: DatabaseSync, commits: readonly CommitRecord[]):
   return inserted;
 }
 
+/** Guarda commits de merge. Devuelve cuántos son nuevos. */
+export function saveMerges(db: DatabaseSync, merges: readonly MergeRecord[]): number {
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO merges (repo_path, hash, at, source_branch, ref, subject)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  let inserted = 0;
+  db.exec("BEGIN");
+  try {
+    for (const m of merges) {
+      inserted += Number(stmt.run(normalizePath(m.repoPath), m.hash, iso(m.at),
+                                  m.sourceBranch, m.ref, m.subject).changes);
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return inserted;
+}
+
+export function listMerges(db: DatabaseSync): MergeRecord[] {
+  return (db.prepare("SELECT * FROM merges ORDER BY at").all() as Record<string, unknown>[])
+    .map((r) => ({
+      repoPath: r["repo_path"] as string,
+      hash: r["hash"] as string,
+      at: new Date(r["at"] as string),
+      sourceBranch: (r["source_branch"] as string | null) ?? null,
+      ref: (r["ref"] as string | null) ?? null,
+      subject: r["subject"] as string,
+    }));
+}
+
+/**
+ * El nombre de una etiqueta de cliente, comparable: sin mayúsculas, acentos
+ * ni separadores. "Acme Retail", "acme-retail" y "ACME_RETAIL" son el mismo.
+ */
+export function aliasKey(label: string): string {
+  return label.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+export function setClientAlias(db: DatabaseSync, label: string, clientId: string): void {
+  db.prepare(`INSERT INTO client_aliases (label, client_id) VALUES (?, ?)
+              ON CONFLICT(label) DO UPDATE SET client_id = excluded.client_id`).run(aliasKey(label), clientId);
+}
+
+export function removeClientAlias(db: DatabaseSync, label: string): boolean {
+  return db.prepare("DELETE FROM client_aliases WHERE label = ?").run(aliasKey(label)).changes > 0;
+}
+
+export function listClientAliases(db: DatabaseSync): { label: string; clientId: string }[] {
+  return (db.prepare("SELECT label, client_id FROM client_aliases ORDER BY label").all() as
+    { label: string; client_id: string }[]).map((r) => ({ label: r.label, clientId: r.client_id }));
+}
+
+/**
+ * El cliente de Estela de una etiqueta: un alias, o si no, un cliente cuyo id
+ * o nombre coincida. `null` si no se sabe: no se adivina.
+ */
+export function clientForLabel(db: DatabaseSync, label: string): string | null {
+  const key = aliasKey(label);
+  if (!key) return null;
+  const alias = db.prepare("SELECT client_id FROM client_aliases WHERE label = ?").get(key) as { client_id: string } | undefined;
+  if (alias) return alias.client_id;
+  const match = listClients(db).filter((c) => aliasKey(c.id) === key || aliasKey(c.name) === key);
+  return match.length === 1 ? match[0]!.id : null;
+}
+
+/** Guarda lo leído del gestor de tareas. Lo nuevo sustituye a lo anterior de la misma clave. */
+export function saveTrackerItems(
+  db: DatabaseSync, projectId: string, items: readonly TrackerItem[], at: Date = new Date(),
+): void {
+  const stmt = db.prepare(`
+    INSERT INTO tracker_items (project_id, kind, key, number, title, state, completed, closed_at, branch,
+                               closes, labels, milestone, url, fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(project_id, kind, key) DO UPDATE SET
+      number = excluded.number, title = excluded.title, state = excluded.state,
+      completed = excluded.completed, closed_at = excluded.closed_at, branch = excluded.branch,
+      closes = excluded.closes, labels = excluded.labels, milestone = excluded.milestone,
+      url = excluded.url, fetched_at = excluded.fetched_at
+  `);
+  db.exec("BEGIN");
+  try {
+    for (const i of items) {
+      // Las etiquetas pueden llevar comas: se separan con saltos de línea.
+      stmt.run(projectId, i.kind, i.key, i.number, i.title, i.state, i.completed ? 1 : 0,
+               i.closedAt ? iso(i.closedAt) : null, i.branch, i.closes.join(","), i.labels.join("\n"),
+               i.milestone, i.url, iso(at));
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+/** Lo guardado de un proyecto, y cuándo se leyó por última vez. */
+export function listTrackerItems(
+  db: DatabaseSync, projectId: string,
+): { items: TrackerItem[]; fetchedAt: Date | null } {
+  const rows = db.prepare("SELECT * FROM tracker_items WHERE project_id = ?").all(projectId) as Record<string, unknown>[];
+  let fetchedAt: string | null = null;
+  const items = rows.map((r) => {
+    const f = r["fetched_at"] as string;
+    if (!fetchedAt || f > fetchedAt) fetchedAt = f;
+    return {
+      key: r["key"] as string, kind: r["kind"] as TrackerItem["kind"], number: r["number"] as number,
+      title: r["title"] as string, state: r["state"] as TrackerItem["state"], completed: Boolean(r["completed"]),
+      closedAt: r["closed_at"] ? new Date(r["closed_at"] as string) : null,
+      branch: (r["branch"] as string | null) ?? null,
+      closes: String(r["closes"] || "").split(",").filter(Boolean),
+      labels: String(r["labels"] || "").split("\n").filter(Boolean),
+      milestone: (r["milestone"] as string | null) ?? null, url: r["url"] as string,
+    };
+  });
+  return { items, fetchedAt: fetchedAt ? new Date(fetchedAt) : null };
+}
+
 export function logScan(db: DatabaseSync, source: string, report: ParseReport): void {
   db.prepare(`
     INSERT INTO scan_log (
@@ -737,6 +861,7 @@ function rowToEntry(r: Record<string, unknown>): TimeEntry {
     kind: (r["kind"] as TimeEntry["kind"]) ?? "development",
     branch: (r["branch"] as string | null) ?? null,
     workItems: String(r["work_items"] || "").split(",").filter(Boolean),
+    workItemsManual: Boolean(r["work_items_manual"]),
   });
 }
 

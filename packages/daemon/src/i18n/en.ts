@@ -1188,4 +1188,315 @@ export const EN: Record<string, string> = {
     "They're only collected in Claude Code in the terminal: the VS Code extension doesn't run the status line.",
   "{0} $":
     "${0}",
+
+  // ── cli.ts, metrics/spend.ts (ai-cost --by) ──
+  "--by va como branch o item.": "--by takes branch or item.",
+  "No existe el cliente \"{0}\".": "There's no client \"{0}\".",
+  "Falta el fichero: --csv <fichero.csv>": "Missing the file: --csv <file.csv>",
+  "CSV guardado en {0}": "CSV saved to {0}",
+  "todo el historial": "all history",
+  "rama anotada por el agente": "branch recorded by the agent",
+  "rama del commit, aproximada": "commit's branch, approximate",
+  "número en el nombre de la rama": "number in the branch name",
+  "referencia en un commit": "reference in a commit",
+  "puesto a mano": "set by hand",
+  "commit de merge del PR": "the PR's merge commit",
+  "Sin atribuir (sin rama)": "Unattributed (no branch)",
+  "Sin atribuir (sin ticket ni PR)": "Unattributed (no ticket or PR)",
+  "PR {0}": "PR {0}",
+  "MR {0}": "MR {0}",
+  "Coste de IA por rama": "AI cost by branch",
+  "Coste de IA por ticket o PR": "AI cost by ticket or PR",
+  "\nNo hay horas en ese periodo.": "\nNo hours in that period.",
+  "Horas": "Hours",
+  "API": "API",
+  "Real": "Real",
+  "ramas: {0}": "branches: {0}",
+  "según: {0}": "based on: {0}",
+  "\nAPI es lo que costaría a precio de API: mide el uso, no es dinero pagado.":
+    "\nAPI is what it would cost at API prices: it measures usage, it isn't money paid.",
+  "Real es tu cuota repartida por consumo: esto sí es dinero pagado.":
+    "Real is your subscription split by usage: this is money actually paid.",
+  "Sin suscripciones registradas no hay dinero real. Si pagas cuota fija: estela subscription add":
+    "With no subscriptions recorded there's no real money. If you pay a flat fee: estela subscription add",
+  "Lo que no se puede atribuir va a \"Sin atribuir\" y no se reparte entre lo demás.":
+    "What can't be attributed goes to \"Unattributed\" and isn't spread over the rest.",
+  "* Incluye trabajo con Copilot: sus horas cuentan, pero su coste no se conoce y no está sumado.":
+    "* Includes Copilot work: its hours count, but its cost is unknown and not added.",
+  "† Algún mes no tenía suscripción registrada: el dinero real solo cuenta los meses con cuota.":
+    "† Some month had no subscription recorded: real money only counts the months with a fee.",
+  "Sin gestor configurado solo se reconocen tickets inequívocos (AB#12, PROJ-12) y los PR de los merges.":
+    "With no tracker set, only unambiguous tickets (AB#12, PROJ-12) and the PRs in merges are recognised.",
+  "Para leer #12 y feat/12-login: estela project tracker --project <id> --system github":
+    "To read #12 and feat/12-login: estela project tracker --project <id> --system github",
+  "Suscripciones en monedas distintas en el periodo ({0} y {1}). ":
+    "Subscriptions in different currencies in the period ({0} and {1}). ",
+
+  // ── cli.ts (ai-cost --undelivered) ──
+  "--by y --undelivered van por separado: son dos informes distintos.":
+    "--by and --undelivered go separately: they're two different reports.",
+  "--stale-days va como un número entero de días, 1 o más.":
+    "--stale-days takes a whole number of days, 1 or more.",
+  "Gasto de IA sin entrega · {0} · ramas sin fusionar tras {1} días":
+    "Undelivered AI spend · {0} · branches unmerged after {1} days",
+  "Es una señal para revisar, no un juicio: explorar, probar y descartar también es trabajo.":
+    "It's a signal to review, not a verdict: exploring, trying and discarding is work too.",
+  "\nNo hay gasto de IA en ese periodo.": "\nNo AI spend in that period.",
+  "% gasto": "% spend",
+  "Gasto del periodo": "Spend in the period",
+  "Sesiones sin commit ({0})": "Sessions without a commit ({0})",
+  "      {0} con commit después en su rama ({1}) · {2} sin commit después":
+    "      {0} with a later commit on their branch ({1}) · {2} with none later",
+  "      No cuentan otras {0} ({1}): son de antes de tu primer commit reconocido en el repo.":
+    "      {0} more don't count ({1}): they predate your first recognised commit in the repo.",
+  "Ramas sin fusionar tras {0} días ({1})": "Branches unmerged after {0} days ({1})",
+  "      {0} · sin actividad hace {1} días · {2}": "      {0} · idle for {1} days · {2}",
+  "      … y {0} más (--json para verlas todas)": "      … and {0} more (--json to see them all)",
+  "Sin entrega en total": "Undelivered in total",
+  "  No cuenta: {0} ramas abiertas hace menos de {1} días ({2}).":
+    "  Not counted: {0} branches active within the last {1} days ({2}).",
+  "  No cuenta: {0} ramas borradas sin merge registrado ({1}): {2}{3}":
+    "  Not counted: {0} branches deleted with no recorded merge ({1}): {2}{3}",
+  "\nSesión sin commit: un rato de un chat (sin pausas de más de 30 min) sin ningún commit tuyo en ese repo durante él ni en los 30 min siguientes.":
+    "\nSession without a commit: a stretch of one chat (no breaks over 30 min) with no commit of yours in that repo during it or in the 30 min after.",
+  "Rama sin fusionar: existe, no está integrada y lleva {0} días sin turnos ni commits. Cambia el plazo con --stale-days.":
+    "Unmerged branch: it exists, isn't integrated, and has had no turns or commits for {0} days. Change the period with --stale-days.",
+  "Una sesión sin commit no se cuenta otra vez en su rama. Las ramas principales (main, develop…) ya son entrega.":
+    "A session without a commit isn't counted again in its branch. Main branches (main, develop…) count as delivered.",
+  "API es lo que costaría a precio de API: mide el uso, no es dinero pagado. Real es tu cuota repartida por consumo.":
+    "API is what it would cost at API prices: it measures usage, it isn't money paid. Real is your subscription split by usage.",
+  "Antes de tu primer commit reconocido no se sabe si commiteabas con otro correo: esas sesiones no cuentan. Revisa tus correos con estela author.":
+    "Before your first recognised commit there's no telling whether you committed with another email: those sessions don't count. Check your emails with estela author.",
+  "Una rama borrada sin merge pudo fusionarse con squash, que no deja rastro en git: por eso no cuenta.":
+    "A branch deleted with no merge may have been squash-merged, which leaves no trace in git: that's why it doesn't count.",
+  "Un squash también hace que una rama que sigue existiendo parezca sin fusionar: revisa la lista antes de sacar conclusiones.":
+    "A squash also makes a branch that still exists look unmerged: check the list before drawing conclusions.",
+  "Incluye trabajo con Copilot: no guarda tokens, así que su coste no se conoce y no está sumado.":
+    "Includes Copilot work: it doesn't store tokens, so its cost is unknown and not added.",
+
+  // ── cli.ts (delivery, project tracker --plan-label) ──
+  "Primero el gestor: estela project tracker --project {0} --system github":
+    "Set the tracker first: estela project tracker --project {0} --system github",
+  "Lo planificado de \"{0}\" es lo que lleva la etiqueta \"{1}\".":
+    "What's planned for \"{0}\" is whatever carries the \"{1}\" label.",
+  "\"{0}\" ya no tiene etiqueta de plan.":
+    "\"{0}\" no longer has a plan label.",
+  "Falta la etiqueta: --plan-label <etiqueta> (o none para quitarla).":
+    "Missing the label: --plan-label <label> (or none to remove it).",
+  "--label y --milestone van por separado: elige una forma de marcar el plan.":
+    "--label and --milestone go separately: pick one way to mark the plan.",
+  "Este proyecto no tiene GitHub ni GitLab como gestor, así que no se lee el plan. Para leerlo:":
+    "This project uses neither GitHub nor GitLab as its tracker, so the plan isn't read. To read it:",
+  "  estela project tracker --project {0} --system github|gitlab --plan-label <etiqueta>":
+    "  estela project tracker --project {0} --system github|gitlab --plan-label <label>",
+  "La carpeta del repo de este proyecto ya no existe: {0} no tiene dónde mirar.":
+    "This project's repo folder no longer exists: {0} has nowhere to look.",
+  "--offline: no se consulta {0}.":
+    "--offline: {0} isn't queried.",
+  "{0} ({1}), leído ahora":
+    "{0} ({1}), read just now",
+  "{0}, lo guardado el {1} (sin conexión)":
+    "{0}, as saved on {1} (offline)",
+  "glab no está instalado: sin él no se puede leer el plan de GitLab. Instálalo desde https://gitlab.com/gitlab-org/cli y ejecuta: glab auth login":
+    "glab isn't installed: without it the GitLab plan can't be read. Install it from https://gitlab.com/gitlab-org/cli and run: glab auth login",
+  "glab no tiene sesión iniciada. Ejecuta: glab auth login":
+    "glab isn't logged in. Run: glab auth login",
+  "glab no reconoce un proyecto de GitLab en la carpeta del proyecto ({0}).":
+    "glab doesn't recognise a GitLab project in the project's folder ({0}).",
+  "MR !{0}":
+    "MR !{0}",
+  "git: los PR de los commits de merge y de los squash con (#N)":
+    "git: the PRs from merge commits and from squashes ending in (#N)",
+  "Sin etiqueta ni milestone de plan solo se enseña lo entregado. Indícalo con --label o --milestone,":
+    "With no plan label or milestone only what was delivered is shown. Set one with --label or --milestone,",
+  "o déjalo fijo: estela project tracker --project {0} --plan-label <etiqueta>":
+    "or keep it: estela project tracker --project {0} --plan-label <label>",
+  "Con --to hace falta --from.":
+    "--to needs --from.",
+  "gh no está instalado: sin él no se puede leer el plan de GitHub. Instálalo desde https://cli.github.com y ejecuta: gh auth login":
+    "gh isn't installed: without it the GitHub plan can't be read. Install it from https://cli.github.com and run: gh auth login",
+  "gh no tiene sesión iniciada. Ejecuta: gh auth login":
+    "gh isn't logged in. Run: gh auth login",
+  "gh no reconoce un repo de GitHub en la carpeta del proyecto ({0}).":
+    "gh doesn't recognise a GitHub repo in the project folder ({0}).",
+  "sin plan":
+    "no plan",
+  "etiqueta \"{0}\"":
+    "label \"{0}\"",
+  "milestone \"{0}\"":
+    "milestone \"{0}\"",
+  "PR #{0}":
+    "PR #{0}",
+  "Planificado frente a entregado · {0} · {1} → {2}":
+    "Planned versus delivered · {0} · {1} → {2}",
+  "Plan: {0} · Fuente: {1}":
+    "Plan: {0} · Source: {1}",
+  "  (nada)":
+    "  (nothing)",
+  "fusionado {0}":
+    "merged {0}",
+  "abierto":
+    "open",
+  "cerrado sin fusionar":
+    "closed without merging",
+  "entregada por {0}":
+    "delivered by {0}",
+  "cerrada {0}":
+    "closed {0}",
+  "abierta":
+    "open",
+  "cerrada sin hacer":
+    "closed as not done",
+  "coste según: {0}":
+    "cost based on: {0}",
+  "rama del PR":
+    "the PR's branch",
+  "número en rama o commit":
+    "number in a branch or commit",
+  "sin horas unidas":
+    "no hours linked",
+  "Total del bloque":
+    "Block total",
+  "Planificado y entregado ({0} de {1})":
+    "Planned and delivered ({0} of {1})",
+  "Planificado sin entregar ({0})":
+    "Planned, not delivered ({0})",
+  "Entregado sin planificar ({0})":
+    "Delivered, not planned ({0})",
+  "Entregado ({0})":
+    "Delivered ({0})",
+  "\nEl coste de cada línea es el de las horas unidas a ella: la rama del PR y su número en ramas, commits o a mano.":
+    "\nEach line's cost is that of the hours linked to it: the PR's branch, and its number in branches, commits or set by hand.",
+  "Incluye lo trabajado antes del periodo para esa entrega. Si una hora se une a dos líneas, el total del bloque la cuenta una vez.":
+    "It includes work done before the period for that delivery. If an hour is linked to two lines, the block total counts it once.",
+
+  // ── cli.ts (delivery --by client, client alias) ──
+  "Las peticiones de clientes de \"{0}\" llevan la etiqueta \"{1}<nombre>\".":
+    "Client requests in \"{0}\" carry the \"{1}<name>\" label.",
+  "Falta el prefijo: --client-label <prefijo> (o none para volver a \"cliente:\").":
+    "Missing the prefix: --client-label <prefix> (or none to go back to \"cliente:\").",
+  "Falta --label <nombre>":
+    "Missing --label <name>",
+  "\"{0}\" ya no apunta a ningún cliente.":
+    "\"{0}\" no longer points to any client.",
+  "\"{0}\" no tenía alias.":
+    "\"{0}\" had no alias.",
+  "Sin alias. Las etiquetas se comparan con el id y el nombre de cada cliente.":
+    "No aliases. Labels are matched against each client's id and name.",
+  "Hacen falta --client <id> y --label <nombre>.":
+    "Both --client <id> and --label <name> are needed.",
+  "La etiqueta necesita al menos una letra o un número.":
+    "The label needs at least one letter or digit.",
+  "La etiqueta \"{0}\" es {1}.":
+    "The \"{0}\" label is {1}.",
+  "--by en delivery solo admite client.":
+    "--by in delivery only takes client.",
+  "Sin GitHub ni GitLab no hay etiquetas: no se sabe qué pidió cada cliente, y todo va al resto.":
+    "Without GitHub or GitLab there are no labels: there's no telling what each client asked for, so it all goes to the rest.",
+  "Peticiones de clientes · {0} · {1} → {2}":
+    "Client requests · {0} · {1} → {2}",
+  "Etiqueta: \"{0}<nombre>\" · Fuente: {1}":
+    "Label: \"{0}<name>\" · Source: {1}",
+  "Estela no conoce ingresos ni contratos: esto solo une el gasto de IA con quién pidió el trabajo.":
+    "Estela knows nothing about revenue or contracts: this only links AI spend to who asked for the work.",
+  "\"{0}\" (sin mapear)":
+    "\"{0}\" (unmapped)",
+  "Varios: {0}":
+    "Several: {0}",
+  " · y {0} más":
+    " · and {0} more",
+  "  (ninguna petición de cliente con horas en el periodo)":
+    "  (no client request with hours in the period)",
+  "Resto (sin petición de cliente)":
+    "Rest (no client request)",
+  "Total del periodo":
+    "Period total",
+  "\nUna hora cuenta para quien pidió la issue o el PR al que se une (rama del PR, su número en ramas, commits o a mano).":
+    "\nAn hour counts for whoever asked for the issue or PR it's linked to (the PR's branch, its number in branches, commits or set by hand).",
+  "Si sirvió a peticiones de varios clientes va a \"Varios\", sin repartirla. Un PR hereda las etiquetas de las issues que cierra.":
+    "If it served requests from several clients it goes to \"Several\", unsplit. A PR inherits the labels of the issues it closes.",
+  "Para unir \"{0}\" con un cliente de Estela: estela client alias --client <id> --label \"{1}\"":
+    "To link \"{0}\" to an Estela client: estela client alias --client <id> --label \"{1}\"",
+
+  // ── export/finance.ts, cli.ts (summary) ──
+  "--format va como md, csv o json.":
+    "--format takes md, csv or json.",
+  "Informe guardado en {0}":
+    "Report saved to {0}",
+  "# Gasto en IA · {0}":
+    "# AI spend · {0}",
+  "## Resumen":
+    "## Summary",
+  "- **Pagado en IA:** {0}, la cuota de las herramientas de IA repartida según su uso.":
+    "- **Paid for AI:** {0}, the AI tools' subscription split by how it was used.",
+  "- **Gasto en IA:** {0} a precio de lista. No hay cuota registrada, así que es una estimación, no lo pagado.":
+    "- **AI spend:** {0} at list price. No subscription is recorded, so this is an estimate, not what was paid.",
+  "1 cliente":
+    "1 client",
+  "{0} clientes":
+    "{0} clients",
+  "- **Horas de trabajo con IA:** {0} en {1} de {2}.":
+    "- **Hours of AI-assisted work:** {0} across {1} for {2}.",
+  "- **Fuera de proyectos:** {0} ({1}) en trabajo que no es de ningún proyecto registrado.":
+    "- **Outside projects:** {0} ({1}) on work that belongs to no registered project.",
+  "- **Sin entregar todavía:** {0} del gasto en proyectos. Es una señal para revisar, no un juicio: explorar y descartar también es trabajo.":
+    "- **Not delivered yet:** {0} of project spend. It's a signal to review, not a verdict: exploring and discarding is work too.",
+  "## Por cliente":
+    "## By client",
+  "| Cliente | Proyecto | Horas | Gasto | % del total |":
+    "| Client | Project | Hours | Spend | % of total |",
+  "| **{0}** | **total** | **{1}** | **{2}** | **{3}** |":
+    "| **{0}** | **total** | **{1}** | **{2}** | **{3}** |",
+  "| Fuera de proyectos | — | — | {0} | {1} |":
+    "| Outside projects | — | — | {0} | {1} |",
+  "| **Total** | | **{0}** | **{1}** | **100 %** |":
+    "| **Total** | | **{0}** | **{1}** | **100 %** |",
+  "## Qué se entregó":
+    "## What was delivered",
+  "Del plan ({0}) se entregaron {1} de {2}. Lo pendiente lleva {3} de gasto; lo entregado fuera del plan, {4}.":
+    "Of the plan ({0}), {1} of {2} were delivered. What's pending has {3} of spend; what was delivered outside the plan, {4}.",
+  "| Entrega | Horas | Gasto |":
+    "| Delivery | Hours | Spend |",
+  "| … y {0} más | | |":
+    "| … and {0} more | | |",
+  "_Fuente: {0}, leído el {1} con estela delivery._":
+    "_Source: {0}, read on {1} with estela delivery._",
+  "_Fuente: el historial de git (PR fusionados). Sin GitHub ni GitLab no se sabe qué estaba planificado._":
+    "_Source: the git history (merged PRs). Without GitHub or GitLab there's no telling what was planned._",
+  "## Trabajo pedido por clientes":
+    "## Work requested by clients",
+  "Qué parte del gasto fue a peticiones concretas de un cliente. No incluye ingresos ni contratos: Estela no los conoce.":
+    "How much of the spend went to a client's specific requests. It includes no revenue or contracts: Estela doesn't know them.",
+  "| Proyecto | Quién lo pidió | Horas | Gasto |":
+    "| Project | Requested by | Hours | Spend |",
+  "{0} (sin identificar)":
+    "{0} (unidentified)",
+  "| {0} | sin petición de cliente | {1} | {2} |":
+    "| {0} | no client request | {1} | {2} |",
+  "## Gasto que no ha llegado a entregarse":
+    "## Spend that hasn't been delivered",
+  "Trabajo que todavía no está en la versión principal del producto. Es una señal para revisar, no un juicio: explorar, probar y descartar también es trabajo, y parte llegará más adelante.":
+    "Work that isn't in the main version of the product yet. It's a signal to review, not a verdict: exploring, trying and discarding is work too, and some of it will land later.",
+  "| Proyecto | Sin entregar | % del proyecto | Trabajo sin consolidar | Líneas de trabajo paradas |":
+    "| Project | Not delivered | % of project | Work not consolidated | Stalled lines of work |",
+  "## Cómo se calcula":
+    "## How it's calculated",
+  "- Las herramientas de IA (Claude Code, Codex, Copilot) dejan en el ordenador un registro de cada conversación. Estela lo lee junto con git, sin enviar nada fuera.":
+    "- AI tools (Claude Code, Codex, Copilot) leave a log of each conversation on the computer. Estela reads it together with git, without sending anything out.",
+  "- **Gasto:** la cuota mensual de las suscripciones registradas, repartida según el uso (tokens a precio de lista) de cada proyecto ese mes. El precio de lista sirve solo para repartir: con cuota fija no es lo que se paga.":
+    "- **Spend:** the monthly fee of the recorded subscriptions, split by each project's usage (tokens at list price) that month. List price is only used to split: with a flat fee it isn't what's paid.",
+  "- **Gasto:** tokens a precio de lista de cada modelo. Si se paga una cuota fija, el gasto real es la cuota: regístrala con estela subscription add.":
+    "- **Spend:** tokens at each model's list price. If a flat fee is paid, the real spend is the fee: record it with estela subscription add.",
+  "- **Valor de uso a precio de lista:** {0} en todo el periodo.":
+    "- **Usage value at list price:** {0} for the whole period.",
+  "- **Horas:** el tiempo entre mensajes de cada sesión de trabajo, sin contar pausas de más de 30 minutos. Dos tareas a la vez se reparten el mismo rato.":
+    "- **Hours:** the time between messages in each work session, leaving out breaks over 30 minutes. Two tasks at once share the same stretch of time.",
+  "- **Entregas:** las horas se unen a una issue o un PR (una MR en GitLab) por la rama del PR y por su número en ramas o commits. Lo que no se une a nada no se reparte.":
+    "- **Deliveries:** hours are linked to an issue or PR (an MR on GitLab) by the PR's branch and by its number in branches or commits. Whatever links to nothing isn't spread around.",
+  "- **Sin entregar:** sesiones sin ningún commit y ramas sin fusionar tras {0} días. Lo que no se puede saber (una rama borrada que pudo fusionarse con squash) no cuenta.":
+    "- **Not delivered:** sessions with no commit and branches unmerged after {0} days. What can't be known (a deleted branch that may have been squash-merged) isn't counted.",
+  "- Copilot no registra tokens: sus horas cuentan, pero su coste no se conoce y no está sumado.":
+    "- Copilot doesn't record tokens: its hours count, but its cost is unknown and not added.",
+  "- † Algún mes no tenía cuota registrada: el importe solo cuenta los meses con cuota.":
+    "- † Some month had no subscription recorded: the amount only counts the months with a fee.",
 };

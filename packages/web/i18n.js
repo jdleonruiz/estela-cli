@@ -128,6 +128,7 @@
       "toast.blocksApproved": { one: "1 bloque aprobado", other: "{n} bloques aprobados" },
 
       // ── Resumen ──
+      "summary.range": "{from} → {to}",
       "summary.projects": { one: "1 proyecto con actividad", other: "{n} proyectos con actividad" },
       "summary.days": { one: "1 día trabajado", other: "{n} días trabajados" },
       "summary.value": "valor del trabajo",
@@ -162,6 +163,10 @@
       "project.pendingTitle": "Ir al día más reciente con bloques sin revisar",
       "project.days": { one: "1 día", other: "{n} días" },
       "project.lastSeen": "última vez {date}",
+      "project.split.invoiced": "Ya facturado: {duration}{invoices}",
+      "project.split.pending": "Pendiente de facturar: {duration}{amount}",
+      "project.split.nothingPending": "Nada pendiente de facturar",
+      "project.split.notBillable": "No facturable: {duration}",
 
       // ── Equipo ──
       "team.people": { one: "1 persona", other: "{n} personas" },
@@ -446,6 +451,7 @@
       "toast.blocksApproved": { one: "1 block approved", other: "{n} blocks approved" },
 
       // ── Summary ──
+      "summary.range": "{from} → {to}",
       "summary.projects": { one: "1 project with activity", other: "{n} projects with activity" },
       "summary.days": { one: "1 day worked", other: "{n} days worked" },
       "summary.value": "value of work",
@@ -480,6 +486,10 @@
       "project.pendingTitle": "Go to the most recent day with unreviewed blocks",
       "project.days": { one: "1 day", other: "{n} days" },
       "project.lastSeen": "last {date}",
+      "project.split.invoiced": "Already invoiced: {duration}{invoices}",
+      "project.split.pending": "Not yet invoiced: {duration}{amount}",
+      "project.split.nothingPending": "Nothing left to invoice",
+      "project.split.notBillable": "Not billable: {duration}",
 
       // ── Team ──
       "team.people": { one: "1 person", other: "{n} people" },

@@ -123,6 +123,49 @@ CREATE TABLE IF NOT EXISTS commits (
 );
 CREATE INDEX IF NOT EXISTS idx_commits_at ON commits(at);
 
+-- Qué cliente de Estela es cada nombre de las etiquetas "cliente:<nombre>"
+-- del gestor de tareas. Sin fila, se prueba con el id y el nombre del cliente.
+CREATE TABLE IF NOT EXISTS client_aliases (
+  label      TEXT PRIMARY KEY,
+  client_id  TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE
+);
+
+-- Issues y PRs leídos del gestor de tareas (hoy, GitHub con gh) por
+-- "estela delivery". Se guardan para repetir el informe sin conexión y para
+-- saber que la rama de un PR fusionado con squash está entregada.
+CREATE TABLE IF NOT EXISTS tracker_items (
+  project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,
+  key         TEXT NOT NULL,
+  number      INTEGER NOT NULL,
+  title       TEXT NOT NULL,
+  state       TEXT NOT NULL,
+  completed   INTEGER NOT NULL,
+  closed_at   TEXT,
+  branch      TEXT,
+  closes      TEXT NOT NULL DEFAULT '',
+  labels      TEXT NOT NULL DEFAULT '',
+  milestone   TEXT,
+  url         TEXT NOT NULL DEFAULT '',
+  fetched_at  TEXT NOT NULL,
+  PRIMARY KEY (project_id, kind, key)
+);
+
+-- Commits de merge: lo único en git que dice qué rama se integró y con qué PR
+-- ("Merge pull request #12 from ana/login"). La tabla commits los descarta
+-- (--no-merges) porque no son trabajo; aquí se guardan solo para atribuir.
+CREATE TABLE IF NOT EXISTS merges (
+  repo_path      TEXT NOT NULL,
+  hash           TEXT NOT NULL,
+  at             TEXT NOT NULL,
+  -- Rama integrada, tal como la escribe el mensaje. NULL si no lo dice.
+  source_branch  TEXT,
+  -- PR o merge request (github:12, gitlab:!45). NULL en un merge local.
+  ref            TEXT,
+  subject        TEXT NOT NULL,
+  PRIMARY KEY (repo_path, hash)
+);
+
 CREATE TABLE IF NOT EXISTS time_entries (
   id              TEXT PRIMARY KEY,
   project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -294,6 +337,64 @@ CREATE TABLE IF NOT EXISTS claude_plans (
  * empezar no es una opción de mantenimiento.
  */
 const MIGRATIONS: readonly { version: number; describe: string; run: (db: DatabaseSync) => void }[] = [
+  {
+    version: 21,
+    describe: "las merge requests de GitLab como gitlab:!45, aparte de la issue #45",
+    run: (db) => {
+      // En GitLab la issue #45 y la MR !45 son cosas distintas con el mismo
+      // número. Solo se tocan los merges, que se leen de git: ninguna imputación.
+      db.exec(`UPDATE merges SET ref = 'gitlab:!' || substr(ref, 8)
+               WHERE ref LIKE 'gitlab:%' AND ref NOT LIKE 'gitlab:!%'`);
+    },
+  },
+  {
+    version: 20,
+    describe: "alias de cliente para las etiquetas cliente:<nombre>",
+    run: (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS client_aliases (
+        label      TEXT PRIMARY KEY,
+        client_id  TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE
+      )`);
+    },
+  },
+  {
+    version: 19,
+    describe: "issues y PRs del gestor de tareas, para planificado frente a entregado",
+    run: (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS tracker_items (
+        project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        kind        TEXT NOT NULL,
+        key         TEXT NOT NULL,
+        number      INTEGER NOT NULL,
+        title       TEXT NOT NULL,
+        state       TEXT NOT NULL,
+        completed   INTEGER NOT NULL,
+        closed_at   TEXT,
+        branch      TEXT,
+        closes      TEXT NOT NULL DEFAULT '',
+        labels      TEXT NOT NULL DEFAULT '',
+        milestone   TEXT,
+        url         TEXT NOT NULL DEFAULT '',
+        fetched_at  TEXT NOT NULL,
+        PRIMARY KEY (project_id, kind, key)
+      )`);
+    },
+  },
+  {
+    version: 18,
+    describe: "commits de merge, para atribuir el coste a su PR",
+    run: (db) => {
+      db.exec(`CREATE TABLE IF NOT EXISTS merges (
+        repo_path      TEXT NOT NULL,
+        hash           TEXT NOT NULL,
+        at             TEXT NOT NULL,
+        source_branch  TEXT,
+        ref            TEXT,
+        subject        TEXT NOT NULL,
+        PRIMARY KEY (repo_path, hash)
+      )`);
+    },
+  },
   {
     version: 17,
     describe: "archivar proyectos",

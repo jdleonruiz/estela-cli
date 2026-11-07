@@ -241,6 +241,112 @@ estela ai-cost
 Cache is counted separately because it's usually most of the bill — ignoring it
 underestimated spend fivefold.
 
+### What that spend delivered
+
+`--by` breaks the cost down by delivery: by branch, or by ticket and PR.
+
+```sh
+estela ai-cost --by branch --month 2026-10            # by branch
+estela ai-cost --by item --client acme --json         # by ticket or PR, for one client
+estela ai-cost --by branch --from 2026-10-01 --csv cost.csv
+```
+
+Each row has its hours and two figures: the cost at API prices, which measures
+usage, and your subscription split by usage, which is the money paid. It also
+says what the attribution is based on: the branch the agent recorded, the number
+in the branch (`feat/12-login`), a `#12` in a commit, set by hand with `estela
+entry link`, or the PR's merge commit ("Merge pull request #31 from …"). Anything
+without a basis goes whole to "Unattributed": nothing is spread by guesswork.
+
+A PR merged with squash leaves no merge in git, so its branch isn't linked to the
+PR. Copilot doesn't store tokens, so its hours count but its cost is unknown
+(marked with `*`). The report only reads what's recorded: it never recalculates
+approved or invoiced days.
+
+### Planned versus delivered
+
+```sh
+estela project tracker --project shop --system github --plan-label planned
+estela delivery --project shop --month 2026-10
+estela delivery --project shop --milestone "Sprint 4" --json
+```
+
+Three blocks, each with its hours and AI cost: what was planned and delivered in
+the period (an issue closed as completed, or closed by a merged PR), what was
+planned and not delivered, and what was delivered without being planned. Planned
+means it carries a GitHub or GitLab label or milestone. Each line's cost is that of the
+hours linked to it: the PR's branch (squash merges included) and its number in
+branches, commits or set by hand.
+
+It reads GitHub with `gh`, the official CLI, if it's installed and logged in.
+That's the only call off your machine, only for projects with `--system github`,
+and `--offline` avoids it. What it reads is saved, so the report works offline and
+`--undelivered` knows which branches were squash-merged. Without `gh` the command
+says so and shows what git says was delivered.
+
+GitLab works the same way, with `glab`, the official GitLab CLI (self-hosted
+servers too, because `glab` works out the server from the repo's remote):
+`estela project tracker --project shop --system gitlab --plan-label planned`.
+Merge requests are shown as `!45`, separately from issue `#45`. Two differences
+in the figures: GitLab doesn't say whether an issue was closed done or closed
+won't-do, so a closed issue counts as delivered (unless it was moved to another
+project); and which issues an MR closes is read from its description (`Closes #12`,
+`Fixes`, `Resolves`, `Implements`), the same words GitLab uses to close them.
+
+### What each client asked for
+
+```sh
+estela delivery --project shop --by client --month 2026-10
+estela client alias --client acme --label "acme-retail"
+```
+
+An issue or PR labelled `cliente:<name>` is that client's request, and a PR
+inherits the labels of the issues it closes. The report gives the period's AI
+spend on each client's requests, against the rest. An hour that served requests
+from two clients goes to "Several", unsplit. The label's name is matched against
+your clients' ids and names; if nothing matches, it shows as "unmapped" until you
+give it an alias. Change the prefix with `estela project tracker --client-label`.
+
+Estela knows nothing about revenue or contracts, and doesn't estimate them: it
+only links spend to who asked for the work.
+
+### The report for finance
+
+```sh
+estela summary                                     # the last closed month, in Markdown
+estela summary --month 2026-10 --out october.csv   # as CSV, for a spreadsheet
+estela summary --client acme --format json
+```
+
+For someone who doesn't code: what was paid for AI, by client and project, what
+was delivered (and the plan, if `estela delivery` read it), what each client asked
+for, and what never got delivered. The headlines talk about money and deliveries;
+tokens, sessions and list prices go at the end, under how it's calculated. A closed
+month adds up to exactly that month's fee, and the clients plus what falls outside
+projects make up the total. It never calls anything off your machine.
+
+### The spend that never got delivered
+
+```sh
+estela ai-cost --undelivered                    # all history, branches idle 14 days
+estela ai-cost --undelivered --month 2026-10 --stale-days 30 --json
+```
+
+Per project, as a figure and as a percentage of spend, two blocks that never
+overlap:
+
+- **Sessions without a commit:** a stretch of one chat with no commit of yours in
+  that repo during it or in the half hour after. The ones that did get a commit on
+  their branch later are shown apart: iterating before you're happy is work too.
+- **Unmerged branches:** they exist, aren't integrated, and have been idle for N
+  days. Only their cost that isn't already in a session without a commit.
+
+It's a signal to review, not a verdict. What can't be known isn't counted and is
+shown apart: a branch deleted with no recorded merge may have been squash-merged,
+and before your first recognised commit in a repo you may have been committing
+with another email (check it with `estela author`). A squash also makes a branch
+that still exists look unmerged.
+
 ## Which project is eating your quota
 
 On Claude Max/Pro or Codex with a subscription, the quota runs out before you

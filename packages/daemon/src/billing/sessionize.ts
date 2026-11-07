@@ -47,6 +47,12 @@ export interface WorkBlock {
    * bloque construido a mano; los de `sessionize` siempre lo traen.
    */
   readonly agents?: readonly AgentKind[];
+  /**
+   * Empieza donde acaba el bloque anterior del mismo repo, porque la sesión
+   * cambió de rama sin pausa. En un día aprobado o facturado se vuelven a
+   * juntar (ver `rejoinLockedDays`), para no cambiar lo ya cerrado.
+   */
+  readonly continuesPrevious?: boolean;
 }
 
 const DEFAULT_GAP_MINUTES = 30;
@@ -75,28 +81,49 @@ export function sessionize(
     bucket.sort((a, b) => a.at.getTime() - b.at.getTime());
 
     let current: AgentTurn[] = [];
-    const flush = () => {
-      if (current.length) blocks.push(buildBlock(current, tailMs));
+    let branch: string | null = null;
+    let continued = false;
+    const flush = (until?: Date) => {
+      if (current.length) blocks.push(buildBlock(current, tailMs, until, continued));
       current = [];
+      branch = null;
     };
 
     for (const turn of bucket) {
       const previous = current[current.length - 1];
-      if (previous && turn.at.getTime() - previous.at.getTime() > gapMs) flush();
+      if (previous && turn.at.getTime() - previous.at.getTime() > gapMs) {
+        flush();
+        continued = false;
+      } else if (previous && namedBranch(turn.branch) && branch && namedBranch(turn.branch) !== branch) {
+        // Cambio de rama sin pausa: el bloque se parte en el turno exacto del
+        // cambio, sin cola, para que la suma sea el mismo rato de reloj. Antes
+        // todo el bloque se iba a la última rama, con su coste.
+        flush(turn.at);
+        continued = true;
+      }
       current.push(turn);
+      branch ??= namedBranch(turn.branch);
     }
     flush();
+    continued = false;
   }
 
   return blocks.sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime());
 }
 
-function buildBlock(turns: readonly AgentTurn[], tailMs: number): WorkBlock {
+/** "HEAD" es un checkout sin rama (HEAD desprendido): no es un cambio de rama. */
+function namedBranch(branch: string | null): string | null {
+  return branch && branch !== "HEAD" ? branch : null;
+}
+
+function buildBlock(
+  turns: readonly AgentTurn[], tailMs: number, until?: Date, continued = false,
+): WorkBlock {
   const first = turns[0]!;
   const last = turns[turns.length - 1]!;
 
   const startedAt = first.at;
-  const endedAt = new Date(last.at.getTime() + tailMs);
+  const endedAt = until ?? new Date(last.at.getTime() + tailMs);
 
   let microUsd = 0;
   const models = new Set<string>();
@@ -126,6 +153,7 @@ function buildBlock(turns: readonly AgentTurn[], tailMs: number): WorkBlock {
     commits: [],
     unpricedModels: [...unpriced].sort(),
     agents: [...agents].sort(),
+    ...(continued ? { continuesPrevious: true } : {}),
   };
 }
 

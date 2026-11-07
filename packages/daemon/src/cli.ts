@@ -12,13 +12,13 @@ process.on("warning", (w) => {
 
 import type { DatabaseSync } from "node:sqlite";
 
-import type { Client, CloudAccount, Currency, Money, TimeEntry, TrackerSystem, WorkKind } from "@estela/shared";
+import type { Client, CloudAccount, Currency, Money, Project, TimeEntry, TrackerSystem, WorkItemTracker, WorkKind } from "@estela/shared";
 import {
   extractWorkItems, formatAiCost, formatDuration, formatMoney, formatMoneyWhole, formatWorkItem, localDate, parseMoney,
   parseWorkItem, setMoneyLocale, TRACKER_SYSTEMS, WORK_KIND_LABELS,
 } from "@estela/shared";
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 
 import { amortize, feeForMonth, monthOf, shareForProject } from "./billing/amortize.js";
 import { badgeMarkdown, badgeText, badgeUrl } from "./export/badge.js";
@@ -30,7 +30,9 @@ import * as store from "./db/store.js";
 import { seedDemo } from "./demo.js";
 import { diagnose, renderFindings } from "./doctor.js";
 import { applySetup, planSetup, summarize, summaryLine } from "./setup.js";
-import { invoiceToCsv, timeEntriesToCsv } from "./export/csv.js";
+import { invoiceToCsv, spendToCsv, timeEntriesToCsv, undeliveredToCsv } from "./export/csv.js";
+import { financeToCsv, financeToJson, financeToMarkdown, sum, type FinanceClient, type FinanceDeliveries,
+         type FinanceSummary, type FinanceUndelivered } from "./export/finance.js";
 import { isSameOrInside, normalizePath } from "./paths.js";
 import { CLOCKIFY_DATE_FORMATS, type ClockifyDateFormat, timeEntriesToClockifyCsv } from "./export/clockify.js";
 import { invoiceToPdf } from "./export/invoice-pdf.js";
@@ -38,6 +40,8 @@ import { buildShareReport } from "./export/share.js";
 import { startServer } from "./server.js";
 import { checkForUpdate } from "./updateCheck.js";
 import { analyzePlan } from "./metrics/plan.js";
+import { undeliveredSpend, shareOf, type BranchLine, type Spend, type UndeliveredReport, type UndeliveredTurn } from "./metrics/undelivered.js";
+import { realFromMonths, spendByUnit, type Basis, type SpendBy, type SpendProject, type SpendProjectReport, type SpendUnit } from "./metrics/spend.js";
 import { blocksCachePath, scanBlocks } from "./plan-blocks.js";
 import { planById, type ClaudePlanId } from "./plan-prices.js";
 import { planToJson, renderNoData, renderNoPlan, renderPlanReport, type BlockCounts } from "./plan-report.js";
@@ -53,10 +57,16 @@ import { acceptTeamInvite, inviteTeamMember, listTeamMembers, revokeTeamMember }
 import { openBillingPortal, upgradeCheckout } from "./billing.js";
 import { login, logout } from "./cloud/auth.js";
 import { CloudError, cloudGet, cloudPost, setClientVersion } from "./cloud/client.js";
-import { breakdownOfTurn } from "./pricing/cost.js";
+import { breakdownOfTurn, costOfTurn } from "./pricing/cost.js";
 import { type AgentScan, allTurns, scanAgents } from "./watchers/agents.js";
-import { gitUserEmail, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
+import { branchNames, gitUserEmail, integrationBranch, mergedBranches, readCommits, readMerges, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
+import { gitRoot } from "./project-of.js";
+import { GitHubPlanSource } from "./delivery/github.js";
+import { GitLabPlanSource } from "./delivery/gitlab.js";
+import { deliveryReport, type Cost, type DeliveryBlock, type DeliveryLine, type DeliveryReport } from "./delivery/report.js";
+import type { Availability, FetchQuery, PlanFilter, PlanSource, TrackerItem } from "./delivery/source.js";
+import { clientRequests, type Requester } from "./delivery/clients.js";
 import { detectLang, documentLang, getLang, setLang, tr, withLang, type Lang } from "./i18n/index.js";
 import { DAYS, MONTHS } from "./export/dates.js";
 import { HISTORY_WEEKS, quotaToJson, weekStart, type AgentQuota, type QuotaBreakdown,
@@ -101,10 +111,41 @@ estela — registro de horas para desarrollo asistido por IA
         vez de perder el bloque o facturarlo por sorpresa.
   estela project reopen --project <id>
   estela project tracker --project <id> [--system jira|azure|github|gitlab|none]
-                         [--prefix PROJ,OPS]
+                         [--prefix PROJ,OPS] [--plan-label <etiqueta>|none]
+                         [--client-label <prefijo>|none]
         El gestor de tareas del proyecto, para reconocer sus tickets en la
         rama y los commits (feature/1234-login, AB#1234, PROJ-12). Luego
-        "estela import" lo aplica a lo ya capturado.
+        "estela import" lo aplica a lo ya capturado. --plan-label es la
+        etiqueta que marca lo planificado para "estela delivery", y
+        --client-label el prefijo de las peticiones de clientes (cliente:).
+  estela delivery [--project <id>] [--month YYYY-MM | --from YYYY-MM-DD [--to YYYY-MM-DD]]
+                  [--label <etiqueta> | --milestone <nombre>] [--offline] [--json]
+        Planificado frente a entregado en un periodo (por defecto, este mes),
+        con el coste de IA de cada parte: lo del plan que se entregó, lo que
+        no, y lo entregado que no estaba en el plan. Lee las issues y los PR
+        de GitHub con "gh" (--system github) o las issues y las MR de GitLab
+        con "glab" (--system gitlab); es la única llamada fuera de tu
+        máquina, y --offline la evita. Sin ellos usa lo leído la última vez
+        o, si nunca se leyó, lo entregado según git.
+  estela delivery --by client [--project <id>] [--month YYYY-MM | --from …]
+        El gasto de IA del periodo en peticiones de cada cliente frente al
+        resto: una issue o un PR con la etiqueta "cliente:<nombre>" es una
+        petición de ese cliente, y un PR hereda las etiquetas de las issues
+        que cierra. Una hora que sirvió a varios va a "Varios", sin repartir.
+        No hay ingresos ni contratos: solo une el gasto con quién lo pidió.
+  estela summary [--month YYYY-MM | --from YYYY-MM-DD [--to YYYY-MM-DD]]
+                 [--client <id>] [--project <id>] [--format md|csv|json]
+                 [--out <fichero>] [--stale-days 14] [--lang es|en]
+        Informe para finanzas, en el lenguaje de quien no programa: lo
+        pagado en IA, por cliente y proyecto, lo entregado (y el plan, si
+        "estela delivery" lo leyó), lo pedido por cada cliente y lo que no
+        llegó a entregarse. Los detalles técnicos van al final. Por defecto,
+        el último mes cerrado. Con --out, el formato sale de la extensión.
+        No llama a nada fuera de tu máquina.
+  estela client alias [--client <id> --label <nombre>] [--remove --label <nombre>]
+        Qué cliente de Estela es cada nombre de las etiquetas de cliente.
+        Sin alias se compara con el id y el nombre del cliente (sin
+        mayúsculas, acentos ni guiones). Sin argumentos, lista los alias.
   estela rate set --project <id> --rate <importe> [--from YYYY-MM-DD]
   estela budget --project <id> [--amount <dólares>|none]
         Presupuesto mensual de IA. Sin --amount, consulta el actual. Alimenta
@@ -137,6 +178,24 @@ estela — registro de horas para desarrollo asistido por IA
   estela entry link --entry <id> --items PROJ-12[,AB#1234] | --clear
         Pone a mano los tickets de un bloque. El import ya no los cambia.
   estela ai-cost                      Reparto de tu cuota entre proyectos.
+  estela ai-cost --by branch|item [--project <id>] [--client <id>]
+                 [--month YYYY-MM | --from YYYY-MM-DD --to YYYY-MM-DD]
+                 [--json | --csv <fichero.csv>]
+        Coste de IA y horas de cada entrega: por rama, o por ticket y PR.
+        Dos cifras: a precio de API (mide uso) y tu cuota repartida (dinero
+        pagado). Cada fila dice en qué se basa: la rama que anotó el agente,
+        el número en la rama, #12 en un commit, lo puesto a mano o el
+        commit de merge del PR. Lo que no tiene base va a "Sin atribuir",
+        entero. Solo lee: no recalcula días aprobados ni facturados.
+  estela ai-cost --undelivered [--stale-days 14] [--project <id>] [--client <id>]
+                 [--month YYYY-MM | --from YYYY-MM-DD --to YYYY-MM-DD]
+                 [--json | --csv <fichero.csv>]
+        El gasto de IA que no ha llegado a la rama principal, por proyecto, en
+        cifra y en % del gasto: sesiones sin ningún commit tuyo (durante ella
+        ni en los 30 min siguientes) y ramas que existen, no están fusionadas
+        y llevan --stale-days días sin actividad. Es una señal para revisar,
+        no un juicio. No cuenta: las ramas borradas sin merge (pudo ser un
+        squash) ni las sesiones anteriores a tu primer commit en el repo.
   estela quota [--json] [--no-refresh] [--weighted]
         ¿Qué proyecto se come tu cuota de Claude Code o Codex? Tokens por
         proyecto en la ventana de 5 h actual y en la semana (de lunes a
@@ -313,10 +372,41 @@ estela — time tracking for AI-assisted development
         silently dropping the block or billing it by surprise.
   estela project reopen --project <id>
   estela project tracker --project <id> [--system jira|azure|github|gitlab|none]
-                         [--prefix PROJ,OPS]
+                         [--prefix PROJ,OPS] [--plan-label <label>|none]
+                         [--client-label <prefix>|none]
         The project's issue tracker, to recognise its tickets in the branch
         and commits (feature/1234-login, AB#1234, PROJ-12). Then
-        "estela import" applies it to what's already captured.
+        "estela import" applies it to what's already captured. --plan-label
+        is the label that marks what's planned, for "estela delivery", and
+        --client-label the prefix of client requests (cliente:).
+  estela delivery [--project <id>] [--month YYYY-MM | --from YYYY-MM-DD [--to YYYY-MM-DD]]
+                  [--label <label> | --milestone <name>] [--offline] [--json]
+        Planned versus delivered in a period (this month by default), with
+        the AI cost of each part: what was planned and delivered, what
+        wasn't, and what was delivered without being planned. It reads
+        GitHub issues and PRs with "gh" (--system github) or GitLab issues
+        and MRs with "glab" (--system gitlab); it's the only call off your
+        machine, and --offline avoids it. Without them it uses what was read
+        last time or, if never read, what git says was delivered.
+  estela delivery --by client [--project <id>] [--month YYYY-MM | --from …]
+        The period's AI spend on each client's requests versus the rest: an
+        issue or PR labelled "cliente:<name>" is that client's request, and a
+        PR inherits the labels of the issues it closes. An hour that served
+        several goes to "Several", unsplit. No revenue or contracts: it only
+        links spend to who asked for it.
+  estela summary [--month YYYY-MM | --from YYYY-MM-DD [--to YYYY-MM-DD]]
+                 [--client <id>] [--project <id>] [--format md|csv|json]
+                 [--out <file>] [--stale-days 14] [--lang es|en]
+        A report for finance, in the words of someone who doesn't code: what
+        was paid for AI, by client and project, what was delivered (and the
+        plan, if "estela delivery" read it), what each client asked for, and
+        what never got delivered. Technical details go at the end. Defaults
+        to the last closed month. With --out, the format comes from the
+        extension. It never calls anything off your machine.
+  estela client alias [--client <id> --label <name>] [--remove --label <name>]
+        Which Estela client each name in the client labels is. Without an
+        alias it's matched against the client's id and name (ignoring case,
+        accents and hyphens). With no arguments, lists the aliases.
   estela rate set --project <id> --rate <amount> [--from YYYY-MM-DD]
   estela budget --project <id> [--amount <dollars>|none]
         Monthly AI budget. Without --amount, shows the current one. Feeds the
@@ -349,6 +439,25 @@ estela — time tracking for AI-assisted development
   estela entry link --entry <id> --items PROJ-12[,AB#1234] | --clear
         Sets a block's tickets by hand. Imports won't change them anymore.
   estela ai-cost                      How your subscription splits across projects.
+  estela ai-cost --by branch|item [--project <id>] [--client <id>]
+                 [--month YYYY-MM | --from YYYY-MM-DD --to YYYY-MM-DD]
+                 [--json | --csv <file.csv>]
+        AI cost and hours of each delivery: by branch, or by ticket and PR.
+        Two figures: at API prices (measures usage) and your subscription
+        split by usage (money paid). Each row says what it's based on: the
+        branch the agent recorded, the number in the branch, #12 in a
+        commit, set by hand, or the PR's merge commit. Anything without a
+        basis goes to "Unattributed", whole. Read-only: it never recalculates
+        approved or invoiced days.
+  estela ai-cost --undelivered [--stale-days 14] [--project <id>] [--client <id>]
+                 [--month YYYY-MM | --from YYYY-MM-DD --to YYYY-MM-DD]
+                 [--json | --csv <file.csv>]
+        AI spend that hasn't reached the main branch, per project, as a figure
+        and as a % of spend: sessions with no commit of yours (during them or
+        in the 30 min after) and branches that exist, aren't merged, and have
+        been idle for --stale-days days. It's a signal to review, not a
+        verdict. Not counted: branches deleted with no merge (it may have been
+        a squash) and sessions before your first commit in the repo.
   estela quota [--json] [--no-refresh] [--weighted]
         Which project is eating your Claude Code or Codex quota? Tokens per
         project in the current 5-hour window and this week (Monday to
@@ -849,6 +958,7 @@ async function cmdImport(args: Args, dbPath: string): Promise<void> {
       if (!root) continue;
       savedCommits += store.saveCommits(db, await readCommits(root,
         since ? { since } : {}));
+      store.saveMerges(db, await readMerges(root, since ? { since } : {}));
     }
     // Todo lo conocido, no solo lo leído ahora (ver knownTurns). Con --repo, solo
     // ese repo, que es lo que se ha pedido.
@@ -1062,6 +1172,22 @@ function cmdProjectTracker(args: Args, dbPath: string): void {
     if (!project) throw new UserError(tr`No existe el proyecto "${projectId}".`);
 
     const system = str(args, "system");
+    if (!system && "client-label" in args.flags) {
+      if (!project.tracker) throw new UserError(tr`Primero el gestor: estela project tracker --project ${projectId} --system github`);
+      const prefix = clientLabelArg(args);
+      const { clientLabel: _, ...rest } = project.tracker;
+      store.setProjectTracker(db, projectId, prefix ? { ...rest, clientLabel: prefix } : rest);
+      console.log(tr`Las peticiones de clientes de "${project.name}" llevan la etiqueta "${prefix ?? DEFAULT_CLIENT_LABEL}<nombre>".`);
+      return;
+    }
+    if (!system && "plan-label" in args.flags) {
+      if (!project.tracker) throw new UserError(tr`Primero el gestor: estela project tracker --project ${projectId} --system github`);
+      const label = planLabelArg(args);
+      store.setProjectTracker(db, projectId, withPlanLabel(project.tracker, label));
+      console.log(label ? tr`Lo planificado de "${project.name}" es lo que lleva la etiqueta "${label}".`
+                        : tr`"${project.name}" ya no tiene etiqueta de plan.`);
+      return;
+    }
     if (!system) {
       console.log(project.tracker
         ? tr`"${project.name}" usa ${project.tracker.system}${project.tracker.prefixes.length ? " (" + project.tracker.prefixes.join(", ") + ")" : ""}.`
@@ -1080,11 +1206,64 @@ function cmdProjectTracker(args: Args, dbPath: string): void {
       if (prefixes.some((p) => !/^[A-Z][A-Z0-9]*$/.test(p))) {
         throw new UserError(tr`Prefijo inválido: tienen que ser letras y números, como PROJ u OPS.`);
       }
-      store.setProjectTracker(db, projectId, { system: system as TrackerSystem, prefixes });
+      const label = "plan-label" in args.flags ? planLabelArg(args) : project.tracker?.planLabel;
+      const clientLabel = "client-label" in args.flags ? clientLabelArg(args) : project.tracker?.clientLabel;
+      store.setProjectTracker(db, projectId, withPlanLabel(
+        { system: system as TrackerSystem, prefixes, ...(clientLabel ? { clientLabel } : {}) }, label));
       console.log(tr`"${project.name}" usa ${system}${prefixes.length ? " (" + prefixes.join(", ") + ")" : ""}.`);
     }
     console.log(tr`Para aplicarlo a lo ya capturado:  estela import`);
   } finally { db.close(); }
+}
+
+/** `--plan-label <etiqueta>`, o `none` para quitarla. */
+function planLabelArg(args: Args): string | undefined {
+  const label = str(args, "plan-label")?.trim();
+  if (!label) throw new UserError(tr`Falta la etiqueta: --plan-label <etiqueta> (o none para quitarla).`);
+  return label === "none" ? undefined : label;
+}
+
+/** `--client-label <prefijo>`, o `none` para volver al de por defecto. */
+function clientLabelArg(args: Args): string | undefined {
+  const prefix = str(args, "client-label")?.trim();
+  if (!prefix) throw new UserError(tr`Falta el prefijo: --client-label <prefijo> (o none para volver a "cliente:").`);
+  return prefix === "none" ? undefined : prefix;
+}
+
+/**
+ * `estela client alias` — qué cliente de Estela es cada nombre de las
+ * etiquetas `cliente:<nombre>`. Sin alias se prueba con el id y el nombre del
+ * cliente; si no coincide ninguno, el informe lo enseña sin mapear.
+ */
+function cmdClientAlias(args: Args, dbPath: string): void {
+  const db = openDatabase(dbPath);
+  try {
+    const label = str(args, "label");
+    if ("remove" in args.flags) {
+      if (!label) throw new UserError(tr`Falta --label <nombre>`);
+      console.log(store.removeClientAlias(db, label)
+        ? tr`"${label}" ya no apunta a ningún cliente.` : tr`"${label}" no tenía alias.`);
+      return;
+    }
+    const clientId = str(args, "client");
+    if (!label && !clientId) {
+      const aliases = store.listClientAliases(db);
+      if (!aliases.length) { console.log(tr`Sin alias. Las etiquetas se comparan con el id y el nombre de cada cliente.`); return; }
+      for (const a of aliases) console.log(`  ${a.label.padEnd(24)} → ${store.getClient(db, a.clientId)?.name ?? a.clientId}`);
+      return;
+    }
+    if (!label || !clientId) throw new UserError(tr`Hacen falta --client <id> y --label <nombre>.`);
+    const client = store.getClient(db, clientId);
+    if (!client) throw new UserError(tr`No existe el cliente "${clientId}".`);
+    if (!store.aliasKey(label)) throw new UserError(tr`La etiqueta necesita al menos una letra o un número.`);
+    store.setClientAlias(db, label, clientId);
+    console.log(tr`La etiqueta "${label}" es ${client.name}.`);
+  } finally { db.close(); }
+}
+
+function withPlanLabel(tracker: WorkItemTracker, label: string | undefined): WorkItemTracker {
+  const { planLabel: _, ...rest } = tracker;
+  return label ? { ...rest, planLabel: label } : rest;
 }
 
 /**
@@ -1972,7 +2151,7 @@ async function cmdExport(args: Args, dbPath: string): Promise<void> {
  * `--month YYYY-MM`, o `--from`/`--to` en fechas locales. Sin ninguno, todo:
  * es lo que hacía `estela export` antes de tener rango.
  */
-function entriesInRange(entries: readonly TimeEntry[], args: Args): TimeEntry[] {
+function periodOf(args: Args): { from: string | undefined; to: string | undefined } {
   const month = str(args, "month");
   if (month && !/^\d{4}-\d{2}$/.test(month)) throw new UserError(tr`--month va como YYYY-MM.`);
   const from = month ? `${month}-01` : str(args, "from");
@@ -1980,6 +2159,11 @@ function entriesInRange(entries: readonly TimeEntry[], args: Args): TimeEntry[] 
   for (const d of [from, to]) {
     if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new UserError(tr`Fecha inválida: ${d}`);
   }
+  return { from, to };
+}
+
+function entriesInRange(entries: readonly TimeEntry[], args: Args): TimeEntry[] {
+  const { from, to } = periodOf(args);
   return entries.filter((e) => {
     const day = localDate(e.startedAt);
     return (!from || day >= from) && (!to || day <= to);
@@ -2034,7 +2218,12 @@ function cmdSubscriptionAdd(args: Args, dbPath: string): void {
 }
 
 /** Reparto de la cuota entre proyectos, mes a mes. */
-function cmdAiCost(dbPath: string): void {
+async function cmdAiCost(args: Args, dbPath: string): Promise<void> {
+  if ("by" in args.flags && "undelivered" in args.flags) {
+    throw new UserError(tr`--by y --undelivered van por separado: son dos informes distintos.`);
+  }
+  if ("by" in args.flags) { cmdAiCostBy(args, dbPath); return; }
+  if ("undelivered" in args.flags) { await cmdAiCostUndelivered(args, dbPath); return; }
   const db = openDatabase(dbPath);
   try {
     const subs = store.listSubscriptions(db);
@@ -2068,6 +2257,896 @@ function cmdAiCost(dbPath: string): void {
       console.log(tr`La primera es la tarifa API equivalente, útil solo como medida de uso.`);
     }
   } finally { db.close(); }
+}
+
+/**
+ * `estela ai-cost --by branch|item` — el coste de IA de cada entrega.
+ *
+ * Lee las imputaciones ya guardadas (ver metrics/spend.ts): no recalcula nada
+ * ni toca días aprobados o facturados.
+ */
+function cmdAiCostBy(args: Args, dbPath: string): void {
+  const raw = args.flags["by"];
+  if (raw !== "branch" && raw !== "item") throw new UserError(tr`--by va como branch o item.`);
+  const by: SpendBy = raw;
+
+  const db = openDatabase(dbPath);
+  try {
+    const projects = selectedProjects(db, args);
+
+    const entries = entriesInRange(projects.flatMap((p) => store.getTimeEntries(db, p.id)), args);
+    const subscriptions = store.listSubscriptions(db);
+    const monthTotals = shareDenominators(db);
+    const reports = spendByUnit({ entries, projects, merges: store.listMerges(db), subscriptions, monthTotals }, by);
+
+    const csvOut = str(args, "csv");
+    if ("csv" in args.flags && !csvOut) throw new UserError(tr`Falta el fichero: --csv <fichero.csv>`);
+    if (csvOut) {
+      writeFileSync(csvOut, spendToCsv(reports, by), "utf8");
+      console.log(tr`CSV guardado en ${csvOut}`);
+      return;
+    }
+    if ("json" in args.flags) {
+      console.log(JSON.stringify(spendJson(reports, by, args), null, 2));
+      return;
+    }
+    printSpend(reports, by, args, subscriptions.length > 0);
+  } finally { db.close(); }
+}
+
+/**
+ * El denominador de la cuota por mes, como en ai-cost: todo el consumo de los
+ * turnos guardados, y nunca menos que lo imputado a todos los proyectos (no
+ * solo a los filtrados).
+ */
+function shareDenominators(db: ReturnType<typeof openDatabase>): Map<string, { microUsd: number }> {
+  const monthTotals = store.totalConsumptionByMonth(db);
+  const assigned = new Map<string, number>();
+  for (const row of store.consumptionByProjectMonth(db)) {
+    assigned.set(row.month, (assigned.get(row.month) ?? 0) + row.consumption.microUsd);
+  }
+  for (const [month, micro] of assigned) {
+    if (micro > (monthTotals.get(month)?.microUsd ?? 0)) monthTotals.set(month, { microUsd: micro });
+  }
+  return monthTotals;
+}
+
+/**
+ * `estela delivery` — planificado frente a entregado en un periodo, con el
+ * coste de IA de cada parte. Ver delivery/report.ts.
+ *
+ * La única llamada fuera de esta máquina de todo Estela sin cuenta: `gh` o
+ * `glab`, y solo en un proyecto con GitHub o GitLab como gestor. Sin ellos, o con
+ * --offline, se usa lo leído la última vez; si nunca se leyó, lo entregado
+ * según git.
+ */
+async function cmdDelivery(args: Args, dbPath: string): Promise<void> {
+  const by = str(args, "by");
+  if ("by" in args.flags && by !== "client") throw new UserError(tr`--by en delivery solo admite client.`);
+  const db = openDatabase(dbPath);
+  try {
+    const projectId = await projectFromArgsOrCwd(args, db);
+    const project = store.getProject(db, projectId)!;
+    const client = store.getClient(db, project.clientId);
+    const { from, to } = deliveryPeriod(args);
+    const title = `${project.name}${client ? ` · ${client.name}` : ""}`;
+    if (by === "client") { await deliveryByClient(db, args, project, title, from, to); return; }
+
+    const label = str(args, "label");
+    const milestone = str(args, "milestone");
+    if (label && milestone) throw new UserError(tr`--label y --milestone van por separado: elige una forma de marcar el plan.`);
+    const configured = project.tracker?.planLabel;
+    const plan: PlanFilter | null = label ? { label } : milestone ? { milestone } : configured ? { label: configured } : null;
+
+    const { items, origin, notes, fromGit } = await loadTrackerItems(db, project, args, { from, to, plan });
+    const report = deliveryReport({
+      items, plan: fromGit ? null : plan, from, to,
+      entries: store.getTimeEntries(db, projectId), merges: store.listMerges(db),
+      subscriptions: store.listSubscriptions(db), monthTotals: shareDenominators(db),
+    });
+    if (!fromGit && !plan) {
+      notes.push(tr`Sin etiqueta ni milestone de plan solo se enseña lo entregado. Indícalo con --label o --milestone,`);
+      notes.push(tr`o déjalo fijo: estela project tracker --project ${projectId} --plan-label <etiqueta>`);
+    }
+
+    if ("json" in args.flags) {
+      console.log(JSON.stringify(deliveryJson(report, { projectId, from, to, plan: fromGit ? null : plan, origin, notes }), null, 2));
+      return;
+    }
+    printDelivery(report, {
+      title, from, to, plan: fromGit ? null : plan, origin, notes, hasSubs: store.listSubscriptions(db).length > 0,
+    });
+  } finally { db.close(); }
+}
+
+/**
+ * Las issues y los PRs de un proyecto: de GitHub con gh o de GitLab con glab si se puede; si no, lo
+ * guardado la última vez; y si nunca se leyó, lo entregado según git.
+ */
+async function loadTrackerItems(
+  db: ReturnType<typeof openDatabase>, project: Project, args: Args, query: FetchQuery,
+): Promise<{ items: TrackerItem[]; origin: string; notes: string[]; fromGit: boolean }> {
+  const notes: string[] = [];
+  let items: TrackerItem[] | null = null;
+  let origin = "";
+  const repo = project.repoPaths.find((p) => existsSync(p));
+  const system = project.tracker?.system;
+  const remote = system === "github" || system === "gitlab" ? system : null;
+  const name = remote === "gitlab" ? "GitLab" : "GitHub";
+  const cli = remote === "gitlab" ? "glab" : "gh";
+
+  if (!remote) {
+    notes.push(tr`Este proyecto no tiene GitHub ni GitLab como gestor, así que no se lee el plan. Para leerlo:`);
+    notes.push(tr`  estela project tracker --project ${project.id} --system github|gitlab --plan-label <etiqueta>`);
+  } else if (!repo) {
+    notes.push(tr`La carpeta del repo de este proyecto ya no existe: ${cli} no tiene dónde mirar.`);
+  } else if ("offline" in args.flags) {
+    notes.push(tr`--offline: no se consulta ${name}.`);
+  } else {
+    const source: PlanSource = remote === "gitlab" ? new GitLabPlanSource(repo) : new GitHubPlanSource(repo);
+    const available = await source.availability();
+    if (available.ok) {
+      items = await source.fetch(query);
+      store.saveTrackerItems(db, project.id, items);
+      origin = tr`${name} (${cli}), leído ahora`;
+    } else {
+      notes.push(unavailableText(available, remote));
+    }
+  }
+
+  if (!items && remote) {
+    const cached = store.listTrackerItems(db, project.id);
+    if (cached.items.length && cached.fetchedAt) {
+      items = cached.items;
+      origin = tr`${name}, lo guardado el ${localDate(cached.fetchedAt)} (sin conexión)`;
+    }
+  }
+  if (items) return { items, origin, notes, fromGit: false };
+  return { items: deliveredFromGit(db, project.repoPaths), notes, fromGit: true,
+           origin: tr`git: los PR de los commits de merge y de los squash con (#N)` };
+}
+
+/**
+ * `estela summary` — el informe para finanzas: gasto, clientes, entregas y lo
+ * que no llegó a entregarse, en Markdown, CSV o JSON. Ver export/finance.ts.
+ *
+ * No llama a nada fuera de la máquina: de GitHub o GitLab usa lo que ya leyó
+ * `estela delivery`, y si no hay nada, lo que dice git.
+ */
+async function cmdSummary(args: Args, dbPath: string): Promise<void> {
+  const out = str(args, "out");
+  const format = str(args, "format") ?? (out?.endsWith(".csv") ? "csv" : out?.endsWith(".json") ? "json" : "md");
+  if (!["md", "csv", "json"].includes(format)) throw new UserError(tr`--format va como md, csv o json.`);
+  const rawDays = str(args, "stale-days");
+  const staleDays = rawDays === undefined ? 14 : Number(rawDays);
+  if (!Number.isInteger(staleDays) || staleDays < 1) throw new UserError(tr`--stale-days va como un número entero de días, 1 o más.`);
+
+  const db = openDatabase(dbPath);
+  try {
+    const { from, to } = summaryPeriod(args);
+    const projects = selectedProjects(db, args);
+    const filtered = "project" in args.flags || "client" in args.flags;
+    const subs = store.listSubscriptions(db);
+    const inPeriod = (d: Date) => { const day = localDate(d); return day >= from && day <= to; };
+    // Aquí los meses son los de tu reloj, no los de UTC: un mes cerrado tiene que
+    // sumar su cuota exacta, y la tarde del día 31 en América ya es el mes
+    // siguiente en UTC. Los denominadores, igual: todo el consumo de cada mes
+    // local, y nunca menos que lo imputado a todos los proyectos.
+    const month = (d: Date) => localDate(d).slice(0, 7);
+    const denominators = new Map<string, { microUsd: number }>();
+    for (const t of store.turnsBetween(db, new Date(0), new Date("9999-12-31T00:00:00Z"))) {
+      const m = month(t.at);
+      denominators.set(m, { microUsd: (denominators.get(m)?.microUsd ?? 0) + (costOfTurn(t.tokens, t.model, t.at)?.microUsd ?? 0) });
+    }
+    const imputed = new Map<string, number>();
+    for (const p of [...store.listProjects(db), ...store.listArchivedProjects(db)]) {
+      for (const e of store.getTimeEntries(db, p.id)) imputed.set(month(e.startedAt), (imputed.get(month(e.startedAt)) ?? 0) + e.aiCost.microUsd);
+    }
+    for (const [m, micro] of imputed) if (micro > (denominators.get(m)?.microUsd ?? 0)) denominators.set(m, { microUsd: micro });
+    const costOf = (entries: readonly TimeEntry[]): Cost => {
+      const byMonth = new Map<string, number>();
+      for (const e of entries) byMonth.set(month(e.startedAt), (byMonth.get(month(e.startedAt)) ?? 0) + e.aiCost.microUsd);
+      const { real, partial } = realFromMonths(byMonth, subs, (m) => denominators.get(m)?.microUsd ?? 0);
+      return { seconds: entries.reduce((n, e) => n + e.seconds, 0),
+               consumption: { microUsd: entries.reduce((n, e) => n + e.aiCost.microUsd, 0) }, real, realPartial: partial };
+    };
+    const zero: Cost = { seconds: 0, consumption: { microUsd: 0 }, real: null, realPartial: false };
+
+    // Por cliente y proyecto.
+    const entriesOf = new Map(projects.map((p) => [p.id, store.getTimeEntries(db, p.id).filter((e) => inPeriod(e.startedAt))]));
+    const clients = new Map<string, { name: string; projects: { id: string; name: string; cost: Cost }[] }>();
+    for (const p of projects) {
+      const entries = entriesOf.get(p.id)!;
+      if (!entries.length) continue;
+      const c = clients.get(p.clientId) ?? { name: p.clientName, projects: [] };
+      c.projects.push({ id: p.id, name: p.name, cost: costOf(entries) });
+      clients.set(p.clientId, c);
+    }
+    const financeClients: FinanceClient[] = [...clients].map(([id, c]) => ({
+      id, name: c.name, projects: c.projects, cost: c.projects.reduce((acc, p) => sum(acc, p.cost), zero),
+    })).sort((a, b) => b.cost.consumption.microUsd - a.cost.consumption.microUsd);
+    const assigned = financeClients.reduce((acc, c) => sum(acc, c.cost), zero);
+
+    // Lo pagado en todo el periodo, con o sin proyecto: la cuota repartida
+    // sobre todo el consumo de los turnos. Con --project o --client, solo eso.
+    let paid = assigned;
+    let unassigned = zero;
+    let unpriced = false;
+    if (!filtered) {
+      const byMonth = new Map<string, number>();
+      let micro = 0;
+      // Un día de margen a cada lado: el filtro de verdad es por fecha local.
+      const desde = new Date(Date.parse(`${from}T00:00:00Z`) - DAY_MS);
+      const hasta = new Date(Date.parse(`${to}T00:00:00Z`) + 2 * DAY_MS);
+      for (const t of store.turnsBetween(db, desde, hasta)) {
+        if (!inPeriod(t.at)) continue;
+        if (t.agent === "copilot") unpriced = true;
+        const c = costOfTurn(t.tokens, t.model, t.at)?.microUsd ?? 0;
+        micro += c;
+        byMonth.set(month(t.at), (byMonth.get(month(t.at)) ?? 0) + c);
+      }
+      const { real, partial } = realFromMonths(byMonth, subs, (m) => denominators.get(m)?.microUsd ?? 0);
+      // Nunca por debajo de lo imputado: las imputaciones de días cerrados conservan su cifra.
+      const machine: Cost = { seconds: assigned.seconds, consumption: { microUsd: Math.max(micro, assigned.consumption.microUsd) },
+        real: real && assigned.real && real.amount < assigned.real.amount ? assigned.real : real ?? assigned.real, realPartial: partial };
+      paid = machine;
+      unassigned = {
+        seconds: 0, consumption: { microUsd: Math.max(0, machine.consumption.microUsd - assigned.consumption.microUsd) },
+        real: machine.real ? { amount: Math.max(0, machine.real.amount - (assigned.real?.amount ?? 0)), currency: machine.real.currency } : null,
+        realPartial: machine.realPartial,
+      };
+    }
+    for (const p of projects) if ((entriesOf.get(p.id) ?? []).some((e) => e.agents.includes("copilot"))) unpriced = true;
+
+    // Entregas y peticiones de clientes: lo guardado de GitHub o GitLab, o lo que dice git.
+    const deliveries: FinanceDeliveries[] = [];
+    const merges = store.listMerges(db);
+    for (const p of projects) {
+      const project = store.getProject(db, p.id)!;
+      const cached = store.listTrackerItems(db, p.id);
+      // Lo guardado es de un gestor u otro según sus claves (github:12, gitlab:12).
+      const fromGitHub = cached.items.length > 0;
+      const tracker = cached.items[0]?.key.startsWith("gitlab:") ? "gitlab" as const : "github" as const;
+      const items = fromGitHub ? cached.items : deliveredFromGit(db, project.repoPaths);
+      const planLabel = fromGitHub ? project.tracker?.planLabel : undefined;
+      const report = deliveryReport({ items, plan: planLabel ? { label: planLabel } : null, from, to,
+        entries: store.getTimeEntries(db, p.id), merges, subscriptions: subs, monthTotals: denominators });
+      const lines = [...(report.planned?.delivered.lines ?? []), ...report.unplanned.lines];
+      let requests: FinanceDeliveries["requests"] = null;
+      let requestsRest: Cost | null = null;
+      if (fromGitHub) {
+        const r = clientRequests({ items, entries: entriesOf.get(p.id) ?? [], merges,
+          prefix: project.tracker?.clientLabel ?? DEFAULT_CLIENT_LABEL,
+          requesterOf: (name) => {
+            const clientId = store.clientForLabel(db, name);
+            return { id: clientId ?? `?${store.aliasKey(name)}`, clientId, name: (clientId && store.getClient(db, clientId)?.name) || name };
+          },
+          subscriptions: subs, monthTotals: denominators });
+        if (r.groups.length) {
+          requests = r.groups.map((g) => ({ name: g.requesters.map((x) => x.name).join(" + "),
+                                            mapped: g.requesters.every((x) => x.clientId !== null), cost: g }));
+          requestsRest = r.rest;
+        }
+      }
+      if (!lines.length && !report.planned) continue;
+      deliveries.push({
+        projectName: p.name, clientName: p.clientName, source: fromGitHub ? tracker : "git",
+        fetchedAt: cached.fetchedAt, delivered: lines.map((l) => ({ label: itemLabel(l.item), cost: l })),
+        plan: report.planned && planLabel ? {
+          label: planLabel, delivered: report.planned.delivered.lines.length,
+          total: report.planned.delivered.lines.length + report.planned.pending.lines.length,
+          pending: report.planned.pending, unplanned: report.unplanned,
+        } : null,
+        requests, requestsRest,
+      });
+    }
+
+    // Lo que no llegó a entregarse.
+    const undelivered: FinanceUndelivered[] = (await collectUndelivered(db, projects, staleDays, from, to))
+      .filter((r) => r.total.consumption.microUsd > 0)
+      .map((r) => {
+        // La proporción sale de las sesiones; el dinero, del gasto del proyecto
+        // en este mismo informe, para que las dos tablas cuadren entre sí.
+        const project = financeClients.flatMap((c) => c.projects).find((p) => p.id === r.projectId)?.cost;
+        const asCost = (x: Spend): Cost => {
+          const ratio = r.total.consumption.microUsd ? x.consumption.microUsd / r.total.consumption.microUsd : 0;
+          const real = project?.real ? { amount: Math.round(project.real.amount * ratio), currency: project.real.currency } : x.real;
+          return { seconds: 0, consumption: x.consumption, real, realPartial: project?.realPartial ?? x.realPartial };
+        };
+        return { projectName: projects.find((p) => p.id === r.projectId)?.name ?? r.projectId,
+                 total: asCost(r.total), undelivered: asCost(r.undelivered), withoutCommit: asCost(r.sessionsWithoutCommit),
+                 unmergedBranches: asCost(r.unmerged), unmergedCount: r.unmerged.branches.length };
+      });
+
+    const summary: FinanceSummary = {
+      from, to, currency: subs[0]?.monthlyFee.currency ?? null, paid, unassigned,
+      clients: financeClients, deliveries, undelivered, staleDays, unpricedAgents: unpriced,
+    };
+    const text = format === "csv" ? financeToCsv(summary)
+      : format === "json" ? JSON.stringify(financeToJson(summary), null, 2) + "\n"
+      : financeToMarkdown(summary);
+    if (out) {
+      writeFileSync(out, text, "utf8");
+      console.log(tr`Informe guardado en ${out}`);
+    } else {
+      process.stdout.write(text);
+    }
+  } finally { db.close(); }
+}
+
+const DAY_MS = 86_400_000;
+
+/** El periodo del informe: --month, --from/--to, o el último mes cerrado. */
+function summaryPeriod(args: Args): { from: string; to: string } {
+  const { from, to } = periodOf(args);
+  if (from && to) return { from, to };
+  if (from) return { from, to: localDate(new Date()) };
+  if (to) throw new UserError(tr`Con --to hace falta --from.`);
+  const now = new Date();
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+  const month = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+  const last = new Date(prev.getFullYear(), prev.getMonth() + 1, 0).getDate();
+  return { from: `${month}-01`, to: `${month}-${String(last).padStart(2, "0")}` };
+}
+
+/** Sin configurar, las etiquetas de cliente son `cliente:<nombre>`. */
+const DEFAULT_CLIENT_LABEL = "cliente:";
+
+/**
+ * `estela delivery --by client` — el gasto de IA del periodo en peticiones de
+ * cada cliente frente al resto. Ver delivery/clients.ts.
+ */
+async function deliveryByClient(
+  db: ReturnType<typeof openDatabase>, args: Args, project: Project, title: string, from: string, to: string,
+): Promise<void> {
+  const prefix = project.tracker?.clientLabel ?? DEFAULT_CLIENT_LABEL;
+  const { items, origin, notes, fromGit } = await loadTrackerItems(db, project, args,
+    { from, to, plan: null, clientLabelPrefix: prefix });
+  if (fromGit) notes.push(tr`Sin GitHub ni GitLab no hay etiquetas: no se sabe qué pidió cada cliente, y todo va al resto.`);
+
+  const requesterOf = (name: string): Requester => {
+    const clientId = store.clientForLabel(db, name);
+    const c = clientId ? store.getClient(db, clientId) : null;
+    return { id: clientId ?? `?${store.aliasKey(name)}`, clientId, name: c?.name ?? name };
+  };
+  const report = clientRequests({
+    items: fromGit ? [] : items,
+    entries: store.getTimeEntries(db, project.id).filter((e) => {
+      const day = localDate(e.startedAt);
+      return day >= from && day <= to;
+    }),
+    merges: store.listMerges(db), prefix, requesterOf,
+    subscriptions: store.listSubscriptions(db), monthTotals: shareDenominators(db),
+  });
+
+  if ("json" in args.flags) {
+    const cost = (c: Cost) => ({ seconds: c.seconds, apiMicroUsd: c.consumption.microUsd,
+      real: c.real ? { amountMinor: c.real.amount, currency: c.real.currency } : null, realPartial: c.realPartial,
+      percentOfSpend: report.total.consumption.microUsd ? (c.consumption.microUsd / report.total.consumption.microUsd) * 100 : null });
+    console.log(JSON.stringify({
+      project: project.id, period: { from, to }, labelPrefix: prefix, source: origin, notes,
+      requests: report.groups.map((g) => ({
+        requesters: g.requesters.map((r) => ({ clientId: r.clientId, name: r.name, mapped: r.clientId !== null })),
+        items: g.items.map((i) => ({ key: i.key, kind: i.kind, number: i.number, title: i.title, state: i.state })),
+        ...cost(g),
+      })),
+      rest: cost(report.rest), total: cost(report.total),
+    }, null, 2));
+    return;
+  }
+
+  console.log(tr`Peticiones de clientes · ${title} · ${from} → ${to}`);
+  console.log(tr`Etiqueta: "${prefix}<nombre>" · Fuente: ${origin}`);
+  console.log(tr`Estela no conoce ingresos ni contratos: esto solo une el gasto de IA con quién pidió el trabajo.`);
+  for (const n of notes) console.log(n);
+
+  const hasSubs = store.listSubscriptions(db).length > 0;
+  const pct = (c: Cost) => report.total.consumption.microUsd === 0 ? "—"
+    : `${((c.consumption.microUsd / report.total.consumption.microUsd) * 100).toFixed(1)} %`;
+  const row = (label: string, c: Cost) =>
+    `  ${label.slice(0, 44).padEnd(46)}${(c.seconds ? formatDuration(c.seconds) : "—").padStart(9)}` +
+    `${formatAiCost(c.consumption).padStart(11)}` +
+    `${(hasSubs ? (c.real ? formatMoney(c.real) : "—") + (c.realPartial ? "†" : "") : "—").padStart(12)}${pct(c).padStart(10)}`;
+  const who = (r: Requester) => (r.clientId ? r.name : tr`"${r.name}" (sin mapear)`);
+
+  console.log(`\n  ${"".padEnd(46)}${tr`Horas`.padStart(9)}${tr`API`.padStart(11)}${tr`Real`.padStart(12)}${tr`% gasto`.padStart(10)}`);
+  for (const g of report.groups) {
+    const label = g.requesters.length === 1 ? who(g.requesters[0]!) : tr`Varios: ${g.requesters.map(who).join(" + ")}`;
+    console.log(row(label, g));
+    const shown = g.items.slice(0, 5).map(itemLabel);
+    console.log(`      ${shown.join(" · ")}${g.items.length > 5 ? tr` · y ${g.items.length - 5} más` : ""}`);
+  }
+  if (report.groups.length === 0) console.log(tr`  (ninguna petición de cliente con horas en el periodo)`);
+  console.log(row(tr`Resto (sin petición de cliente)`, report.rest));
+  console.log(row(tr`Total del periodo`, report.total));
+
+  const unmapped = [...new Set(report.groups.flatMap((g) => g.requesters).filter((r) => !r.clientId).map((r) => r.name))];
+  console.log(tr`\nUna hora cuenta para quien pidió la issue o el PR al que se une (rama del PR, su número en ramas, commits o a mano).`);
+  console.log(tr`Si sirvió a peticiones de varios clientes va a "Varios", sin repartirla. Un PR hereda las etiquetas de las issues que cierra.`);
+  for (const name of unmapped) {
+    console.log(tr`Para unir "${name}" con un cliente de Estela: estela client alias --client <id> --label "${name}"`);
+  }
+}
+
+/** El periodo de delivery: --month, --from/--to, o el mes en curso. */
+function deliveryPeriod(args: Args): { from: string; to: string } {
+  const { from, to } = periodOf(args);
+  const today = localDate(new Date());
+  if (from && to) return { from, to };
+  if (from) return { from, to: today };
+  if (to) throw new UserError(tr`Con --to hace falta --from.`);
+  return { from: `${today.slice(0, 7)}-01`, to: `${today.slice(0, 7)}-31` };
+}
+
+function unavailableText(a: Exclude<Availability, { ok: true }>, system: "github" | "gitlab"): string {
+  if (system === "gitlab") {
+    switch (a.reason) {
+      case "missing": return tr`glab no está instalado: sin él no se puede leer el plan de GitLab. Instálalo desde https://gitlab.com/gitlab-org/cli y ejecuta: glab auth login`;
+      case "auth": return tr`glab no tiene sesión iniciada. Ejecuta: glab auth login`;
+      case "repo": return tr`glab no reconoce un proyecto de GitLab en la carpeta del proyecto (${a.detail}).`;
+    }
+  }
+  switch (a.reason) {
+    case "missing": return tr`gh no está instalado: sin él no se puede leer el plan de GitHub. Instálalo desde https://cli.github.com y ejecuta: gh auth login`;
+    case "auth": return tr`gh no tiene sesión iniciada. Ejecuta: gh auth login`;
+    case "repo": return tr`gh no reconoce un repo de GitHub en la carpeta del proyecto (${a.detail}).`;
+  }
+}
+
+/**
+ * Lo entregado que se sabe sin GitHub ni GitLab: los PR y las MR fusionados
+ * con merge (su mensaje dice el número y la rama) y los squash de GitHub con
+ * "(#N)" al final. No hay plan: eso solo lo sabe el gestor.
+ */
+function deliveredFromGit(db: ReturnType<typeof openDatabase>, repoPaths: readonly string[]): TrackerItem[] {
+  const inProject = (path: string) => repoPaths.some((r) => isSameOrInside(path, r) || isSameOrInside(r, path));
+  const items = new Map<string, TrackerItem>();
+  const pr = (key: string, title: string, at: Date, branch: string | null): TrackerItem => ({
+    key, kind: "pr", number: Number(key.split(":")[1]!.replace("!", "")), title, state: "merged", completed: true,
+    closedAt: at, branch, closes: [], labels: [], milestone: null, url: "",
+  });
+  for (const m of store.listMerges(db)) {
+    // El mensaje del merge solo repite el número: la rama dice más.
+    if (m.ref && /^(github|gitlab):/.test(m.ref) && inProject(m.repoPath)) {
+      items.set(m.ref, pr(m.ref, m.sourceBranch ?? m.subject, m.at, m.sourceBranch));
+    }
+  }
+  const rows = db.prepare("SELECT repo_path, subject, at FROM commits").all() as { repo_path: string; subject: string; at: string }[];
+  for (const r of rows) {
+    const squash = /\(#(\d+)\)\s*$/.exec(r.subject);
+    if (!squash || !inProject(r.repo_path)) continue;
+    const key = `github:${squash[1]}`;
+    if (!items.has(key)) items.set(key, pr(key, r.subject.replace(/\s*\(#\d+\)\s*$/, ""), new Date(r.at), null));
+  }
+  return [...items.values()];
+}
+
+interface DeliveryView {
+  readonly title: string;
+  readonly from: string;
+  readonly to: string;
+  readonly plan: PlanFilter | null;
+  readonly origin: string;
+  readonly notes: readonly string[];
+  readonly hasSubs: boolean;
+}
+
+function planText(plan: PlanFilter | null): string {
+  if (!plan) return tr`sin plan`;
+  return plan.label ? tr`etiqueta "${plan.label}"` : tr`milestone "${plan.milestone}"`;
+}
+
+function itemLabel(i: TrackerItem): string {
+  return `${i.kind === "pr" ? prLabel(i) : `#${i.number}`} ${i.title}`;
+}
+
+/** Una clave de merge: `PR #10` en GitHub, `MR !10` en GitLab. */
+function refLabel(key: string): string {
+  return key.startsWith("gitlab:!") ? tr`MR ${formatWorkItem(key)}` : tr`PR ${formatWorkItem(key)}`;
+}
+
+/** `PR #10` en GitHub, `MR !10` en GitLab. */
+function prLabel(i: TrackerItem): string {
+  return i.key.startsWith("gitlab:") ? tr`MR !${i.number}` : tr`PR #${i.number}`;
+}
+
+function printDelivery(r: DeliveryReport, v: DeliveryView): void {
+  console.log(tr`Planificado frente a entregado · ${v.title} · ${v.from} → ${v.to}`);
+  console.log(tr`Plan: ${planText(v.plan)} · Fuente: ${v.origin}`);
+  for (const n of v.notes) console.log(n);
+
+  const money = (c: { real: Money | null; realPartial: boolean }) =>
+    v.hasSubs ? (c.real ? formatMoney(c.real) : "—") + (c.realPartial ? "†" : "") : "—";
+  const row = (label: string, c: DeliveryBlock | DeliveryLine) =>
+    `  ${label.slice(0, 46).padEnd(48)}${(c.seconds ? formatDuration(c.seconds) : "—").padStart(9)}` +
+    `${formatAiCost(c.consumption).padStart(11)}${money(c).padStart(12)}`;
+  const block = (title: string, b: DeliveryBlock) => {
+    console.log(`\n${title}`);
+    if (b.lines.length === 0) { console.log(tr`  (nada)`); return; }
+    console.log(`  ${"".padEnd(48)}${tr`Horas`.padStart(9)}${tr`API`.padStart(11)}${tr`Real`.padStart(12)}`);
+    for (const l of b.lines) {
+      console.log(row(itemLabel(l.item), l));
+      const detail: string[] = [];
+      const when = l.item.closedAt ? localDate(l.item.closedAt) : null;
+      if (l.item.kind === "pr") {
+        if (l.item.state === "merged" && when) detail.push(tr`fusionado ${when}`);
+        else detail.push(l.item.state === "open" ? tr`abierto` : tr`cerrado sin fusionar`);
+      } else if (l.deliveredBy.length) {
+        detail.push(tr`entregada por ${l.deliveredBy.map(prLabel).join(", ")}`);
+      } else if (l.item.completed && when) {
+        detail.push(tr`cerrada ${when}`);
+      } else {
+        detail.push(l.item.state === "open" ? tr`abierta` : tr`cerrada sin hacer`);
+      }
+      detail.push(l.basis.length
+        ? tr`coste según: ${l.basis.map((x) => (x === "branch" ? tr`rama del PR` : tr`número en rama o commit`)).join(", ")}`
+        : tr`sin horas unidas`);
+      console.log(`      ${detail.join(" · ")}`);
+    }
+    if (b.lines.length > 1) console.log(row(tr`Total del bloque`, b));
+  };
+
+  if (r.planned) {
+    const total = r.planned.delivered.lines.length + r.planned.pending.lines.length;
+    block(tr`Planificado y entregado (${r.planned.delivered.lines.length} de ${total})`, r.planned.delivered);
+    block(tr`Planificado sin entregar (${r.planned.pending.lines.length})`, r.planned.pending);
+  }
+  block(r.planned ? tr`Entregado sin planificar (${r.unplanned.lines.length})` : tr`Entregado (${r.unplanned.lines.length})`, r.unplanned);
+
+  console.log(tr`\nEl coste de cada línea es el de las horas unidas a ella: la rama del PR y su número en ramas, commits o a mano.`);
+  console.log(tr`Incluye lo trabajado antes del periodo para esa entrega. Si una hora se une a dos líneas, el total del bloque la cuenta una vez.`);
+  console.log(tr`API es lo que costaría a precio de API: mide el uso, no es dinero pagado. Real es tu cuota repartida por consumo.`);
+}
+
+function deliveryJson(r: DeliveryReport, meta: { projectId: string; from: string; to: string; plan: PlanFilter | null;
+                                                  origin: string; notes: readonly string[] }) {
+  const cost = (c: DeliveryBlock | DeliveryLine) => ({
+    seconds: c.seconds, apiMicroUsd: c.consumption.microUsd,
+    real: c.real ? { amountMinor: c.real.amount, currency: c.real.currency } : null, realPartial: c.realPartial,
+  });
+  const block = (b: DeliveryBlock) => ({
+    ...cost(b),
+    items: b.lines.map((l) => ({
+      key: l.item.key, kind: l.item.kind, number: l.item.number, title: l.item.title, state: l.item.state,
+      completed: l.item.completed, closedAt: l.item.closedAt?.toISOString() ?? null, url: l.item.url || null,
+      deliveredBy: l.deliveredBy.map((p) => p.key), basis: l.basis, ...cost(l),
+    })),
+  });
+  return {
+    project: meta.projectId, period: { from: meta.from, to: meta.to }, plan: meta.plan, source: meta.origin, notes: meta.notes,
+    planned: r.planned ? { delivered: block(r.planned.delivered), pending: block(r.planned.pending) } : null,
+    unplanned: block(r.unplanned),
+  };
+}
+
+/** Los proyectos de --project y --client; sin ellos, todos. */
+function selectedProjects(db: ReturnType<typeof openDatabase>, args: Args): SpendProject[] {
+  const projectId = str(args, "project");
+  const clientId = str(args, "client");
+  if (projectId && !store.getProject(db, projectId)) throw new UserError(tr`No existe el proyecto "${projectId}".`);
+  if (clientId && !store.getClient(db, clientId)) throw new UserError(tr`No existe el cliente "${clientId}".`);
+
+  // También los archivados: su gasto ocurrió, y `ai-cost` tampoco los quita.
+  return [...store.listProjects(db), ...store.listArchivedProjects(db)]
+    .filter((p) => (!projectId || p.id === projectId) && (!clientId || p.clientId === clientId))
+    .map((p) => ({
+      id: p.id, name: p.name, clientId: p.clientId,
+      clientName: store.getClient(db, p.clientId)?.name ?? p.clientId,
+      repoPaths: p.repoPaths, tracker: p.tracker ?? null,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * `estela ai-cost --undelivered` — el gasto que no ha llegado a la rama
+ * principal: sesiones sin commit y ramas sin fusionar. Ver metrics/undelivered.ts.
+ */
+async function cmdAiCostUndelivered(args: Args, dbPath: string): Promise<void> {
+  const rawDays = str(args, "stale-days");
+  const staleDays = rawDays === undefined ? 14 : Number(rawDays);
+  if ("stale-days" in args.flags && (!Number.isInteger(staleDays) || staleDays < 1)) {
+    throw new UserError(tr`--stale-days va como un número entero de días, 1 o más.`);
+  }
+
+  const db = openDatabase(dbPath);
+  try {
+    const projects = selectedProjects(db, args);
+    const wanted = new Set(projects.map((p) => p.id));
+    const { from, to } = periodOf(args);
+
+    const reports = await collectUndelivered(db, projects, staleDays, from, to);
+    const names = new Map(projects.map((p) => [p.id, p]));
+
+    const csvOut = str(args, "csv");
+    if ("csv" in args.flags && !csvOut) throw new UserError(tr`Falta el fichero: --csv <fichero.csv>`);
+    if (csvOut) {
+      writeFileSync(csvOut, undeliveredToCsv(reports, names), "utf8");
+      console.log(tr`CSV guardado en ${csvOut}`);
+      return;
+    }
+    if ("json" in args.flags) {
+      console.log(JSON.stringify(undeliveredJson(reports, names, staleDays, args), null, 2));
+      return;
+    }
+    printUndelivered(reports, names, staleDays, args);
+  } finally { db.close(); }
+}
+
+/**
+ * Los datos del gasto sin entrega de esos proyectos: sus turnos, tus commits y
+ * el estado de cada rama en git. Lo usan --undelivered y el informe para
+ * finanzas. Solo lee git en local: nada sale de la máquina.
+ */
+async function collectUndelivered(
+  db: ReturnType<typeof openDatabase>, projects: readonly SpendProject[], staleDays: number,
+  from: string | undefined, to: string | undefined,
+): Promise<UndeliveredReport[]> {
+  const wanted = new Set(projects.map((p) => p.id));
+  // El proyecto de cada turno, por el mismo camino que el import: la carpeta
+  // tal cual y, si no, su raíz git (worktrees y subcarpetas). Con los
+  // archivados: su gasto ocurrió aunque ya no capten horas.
+  const roots = new Map<string, string>();
+  const rootOf = (path: string) => {
+    let root = roots.get(path);
+    if (root === undefined) {
+      root = gitRoot(path) ?? normalizePath(path);
+      // La ruta tal como está en el disco: en macOS y Windows "MiApp" y
+      // "miapp" son la misma carpeta, y los turnos y los commits pueden
+      // traer cada uno una.
+      try { root = normalizePath(realpathSync.native(root)); } catch { /* ya no existe: tal cual */ }
+      roots.set(path, root);
+    }
+    return root;
+  };
+  const owners = new Map<string, string | null>();
+  const projectOf = (path: string) => {
+    if (!owners.has(path)) owners.set(path, store.ownerOfRepo(db, path) ?? store.ownerOfRepo(db, rootOf(path)));
+    return owners.get(path)!;
+  };
+  const turns: UndeliveredTurn[] = [];
+  for (const t of store.turnsBetween(db, new Date(0), new Date("9999-12-31T00:00:00Z"))) {
+    const projectId = t.repoPath ? projectOf(t.repoPath) : null;
+    if (!projectId || !wanted.has(projectId)) continue;
+    turns.push({ projectId, sessionId: t.sessionId, at: t.at, root: rootOf(t.repoPath!),
+      branch: t.branch, microUsd: costOfTurn(t.tokens, t.model, t.at)?.microUsd ?? 0, agent: t.agent });
+  }
+  const projectRoots = new Set(turns.map((t) => t.root));
+
+  // Solo tus commits, como en el import: los de un compañero no entregan tu trabajo.
+  const candidates = (await allCommits(db)).filter((c) => projectRoots.has(rootOf(c.repoPath)));
+  const mine = onlyMine(candidates, await myEmailsByRepo(db, new Set(candidates.map((c) => c.repoPath))));
+  const commits = mine.map((c) => ({ root: rootOf(c.repoPath), at: c.at, branch: c.branch }));
+
+  // Qué ramas están integradas y cuáles existen hoy, repo a repo.
+  const merges = store.listMerges(db);
+  const facts = new Map<string, { merged: Set<string>; exists: Set<string> | null }>();
+  for (const root of projectRoots) {
+    const merged = new Set<string>(await mergedBranches(root));
+    const base = await integrationBranch(root);
+    if (base) merged.add(base);
+    for (const m of merges) if (m.sourceBranch && rootOf(m.repoPath) === root) merged.add(m.sourceBranch);
+    facts.set(root, { merged, exists: await branchNames(root) });
+  }
+  // Lo leído de GitHub o GitLab con estela delivery: la rama de un PR fusionado está
+  // entregada, aunque fuera con squash y git no lo sepa.
+  for (const p of projects) {
+    const prRoots = new Set(turns.filter((t) => t.projectId === p.id).map((t) => t.root));
+    for (const item of store.listTrackerItems(db, p.id).items) {
+      if (item.kind !== "pr" || !item.completed || !item.branch) continue;
+      for (const root of prRoots) facts.get(root)?.merged.add(item.branch);
+    }
+  }
+
+  return undeliveredSpend({
+    turns, commits, staleDays, now: new Date(), ...(from ? { from } : {}), ...(to ? { to } : {}),
+    subscriptions: store.listSubscriptions(db), monthTotals: store.totalConsumptionByMonth(db),
+    branchFacts: (root, branch) => {
+      const f = facts.get(root);
+      return { merged: f?.merged.has(branch) ?? false, exists: f?.exists ? f.exists.has(branch) : null };
+    },
+  });
+}
+
+function moneyCell(s: Spend): string {
+  return (s.real ? formatMoney(s.real) : "—") + (s.realPartial ? "†" : "");
+}
+
+function pctCell(part: Spend, total: Spend): string {
+  const pct = shareOf(part, total);
+  return pct === null ? "—" : `${pct.toFixed(1)} %`;
+}
+
+function printUndelivered(
+  reports: readonly UndeliveredReport[], projects: ReadonlyMap<string, SpendProject>, staleDays: number, args: Args,
+): void {
+  console.log(tr`Gasto de IA sin entrega · ${periodLabel(args)} · ramas sin fusionar tras ${staleDays} días`);
+  console.log(tr`Es una señal para revisar, no un juicio: explorar, probar y descartar también es trabajo.`);
+  if (reports.length === 0) { console.log(tr`\nNo hay gasto de IA en ese periodo.`); return; }
+
+  const row = (label: string, s: Spend, pct: string) =>
+    `  ${label.slice(0, 46).padEnd(48)}${formatAiCost(s.consumption).padStart(11)}` +
+    `${moneyCell(s).padStart(13)}${pct.padStart(10)}`;
+  let unpriced = false;
+  let partial = false;
+  let unknown = false;
+  let unverifiable = false;
+  for (const r of reports) {
+    const p = projects.get(r.projectId);
+    console.log(`\n${p?.name ?? r.projectId} · ${p?.clientName ?? ""}`);
+    console.log(`  ${"".padEnd(48)}${tr`API`.padStart(11)}${tr`Real`.padStart(13)}${tr`% gasto`.padStart(10)}`);
+    console.log(row(tr`Gasto del periodo`, r.total, "100 %"));
+
+    const s = r.sessionsWithoutCommit;
+    console.log(row(tr`Sesiones sin commit (${s.count})`, s, pctCell(s, r.total)));
+    if (s.count > 0) {
+      const sinNada = s.count - s.laterCommitted.count;
+      console.log(tr`      ${s.laterCommitted.count} con commit después en su rama (${formatAiCost(s.laterCommitted.consumption)}) · ${sinNada} sin commit después`);
+    }
+
+    if (r.unverifiable.count > 0) {
+      unverifiable = true;
+      console.log(tr`      No cuentan otras ${r.unverifiable.count} (${formatAiCost(r.unverifiable.consumption)}): son de antes de tu primer commit reconocido en el repo.`);
+    }
+
+    const u = r.unmerged;
+    console.log(row(tr`Ramas sin fusionar tras ${staleDays} días (${u.branches.length})`, u, pctCell(u, r.total)));
+    for (const b of u.branches.slice(0, 8)) {
+      console.log(tr`      ${b.branch} · sin actividad hace ${b.idleDays} días · ${formatAiCost(b.consumption)}`);
+    }
+    if (u.branches.length > 8) console.log(tr`      … y ${u.branches.length - 8} más (--json para verlas todas)`);
+
+    console.log(row(tr`Sin entrega en total`, r.undelivered, pctCell(r.undelivered, r.total)));
+
+    const notCounted = (state: BranchLine["state"]) => r.notCounted.filter((b) => b.state === state);
+    const open = notCounted("open");
+    const dudosas = notCounted("unknown");
+    if (open.length) {
+      console.log(tr`  No cuenta: ${open.length} ramas abiertas hace menos de ${staleDays} días (${formatAiCost(sumSpend(open))}).`);
+    }
+    if (dudosas.length) {
+      unknown = true;
+      console.log(tr`  No cuenta: ${dudosas.length} ramas borradas sin merge registrado (${formatAiCost(sumSpend(dudosas))}): ${dudosas.slice(0, 4).map((b) => b.branch).join(", ")}${dudosas.length > 4 ? ", …" : ""}`);
+    }
+    unpriced ||= r.unpricedAgents;
+    partial ||= r.total.realPartial;
+  }
+
+  console.log(tr`\nSesión sin commit: un rato de un chat (sin pausas de más de 30 min) sin ningún commit tuyo en ese repo durante él ni en los 30 min siguientes.`);
+  console.log(tr`Rama sin fusionar: existe, no está integrada y lleva ${staleDays} días sin turnos ni commits. Cambia el plazo con --stale-days.`);
+  console.log(tr`Una sesión sin commit no se cuenta otra vez en su rama. Las ramas principales (main, develop…) ya son entrega.`);
+  console.log(tr`API es lo que costaría a precio de API: mide el uso, no es dinero pagado. Real es tu cuota repartida por consumo.`);
+  if (unverifiable) {
+    console.log(tr`Antes de tu primer commit reconocido no se sabe si commiteabas con otro correo: esas sesiones no cuentan. Revisa tus correos con estela author.`);
+  }
+  if (unknown) console.log(tr`Una rama borrada sin merge pudo fusionarse con squash, que no deja rastro en git: por eso no cuenta.`);
+  console.log(tr`Un squash también hace que una rama que sigue existiendo parezca sin fusionar: revisa la lista antes de sacar conclusiones.`);
+  if (unpriced) console.log(tr`Incluye trabajo con Copilot: no guarda tokens, así que su coste no se conoce y no está sumado.`);
+  if (partial) console.log(tr`† Algún mes no tenía suscripción registrada: el dinero real solo cuenta los meses con cuota.`);
+}
+
+function sumSpend(lines: readonly Spend[]): { microUsd: number } {
+  return { microUsd: lines.reduce((s, l) => s + l.consumption.microUsd, 0) };
+}
+
+function undeliveredJson(
+  reports: readonly UndeliveredReport[], projects: ReadonlyMap<string, SpendProject>, staleDays: number, args: Args,
+) {
+  const spend = (s: Spend) => ({
+    apiMicroUsd: s.consumption.microUsd,
+    real: s.real ? { amountMinor: s.real.amount, currency: s.real.currency } : null,
+    realPartial: s.realPartial,
+  });
+  const line = (b: BranchLine) => ({ branch: b.branch, state: b.state, idleDays: b.idleDays, ...spend(b) });
+  return {
+    staleDays,
+    period: { month: str(args, "month") ?? null, from: str(args, "from") ?? null, to: str(args, "to") ?? null },
+    projects: reports.map((r) => ({
+      id: r.projectId, name: projects.get(r.projectId)?.name ?? r.projectId,
+      clientName: projects.get(r.projectId)?.clientName ?? null,
+      total: spend(r.total),
+      unverifiableSessions: { count: r.unverifiable.count, ...spend(r.unverifiable) },
+      sessionsWithoutCommit: { count: r.sessionsWithoutCommit.count, ...spend(r.sessionsWithoutCommit),
+        laterCommitted: { count: r.sessionsWithoutCommit.laterCommitted.count, ...spend(r.sessionsWithoutCommit.laterCommitted) } },
+      unmergedBranches: { ...spend(r.unmerged), branches: r.unmerged.branches.map(line) },
+      undelivered: { ...spend(r.undelivered), percentOfSpend: shareOf(r.undelivered, r.total) },
+      notCounted: r.notCounted.map(line),
+      unpricedAgents: r.unpricedAgents,
+    })),
+  };
+}
+
+function periodLabel(args: Args): string {
+  const month = str(args, "month");
+  if (month) return month;
+  const from = str(args, "from");
+  const to = str(args, "to");
+  if (!from && !to) return tr`todo el historial`;
+  return `${from ?? "…"} → ${to ?? tr`hoy`}`;
+}
+
+function basisLabel(b: Basis): string {
+  switch (b) {
+    case "agent-branch": return tr`rama anotada por el agente`;
+    case "commit-branch": return tr`rama del commit, aproximada`;
+    case "branch-name": return tr`número en el nombre de la rama`;
+    case "commit-message": return tr`referencia en un commit`;
+    case "manual": return tr`puesto a mano`;
+    case "merge": return tr`commit de merge del PR`;
+  }
+}
+
+function unitLabel(u: SpendUnit, by: SpendBy): string {
+  if (u.key === null) return by === "branch" ? tr`Sin atribuir (sin rama)` : tr`Sin atribuir (sin ticket ni PR)`;
+  if (by === "branch") return u.key;
+  const fromMerge = u.basis.length === 1 && u.basis[0] === "merge";
+  return u.items.map((i) => (fromMerge ? refLabel(i) : formatWorkItem(i))).join(", ");
+}
+
+function printSpend(reports: readonly SpendProjectReport[], by: SpendBy, args: Args, hasSubs: boolean): void {
+  const title = by === "branch" ? tr`Coste de IA por rama` : tr`Coste de IA por ticket o PR`;
+  console.log(`${title} · ${periodLabel(args)}`);
+  if (reports.length === 0) { console.log(tr`\nNo hay horas en ese periodo.`); return; }
+
+  const real = (u: { real: Money | null; realPartial: boolean }) =>
+    hasSubs ? (u.real ? formatMoney(u.real) : "—") + (u.realPartial ? "†" : "") : "—";
+  const row = (label: string, u: SpendProjectReport["total"]) =>
+    `  ${label.slice(0, 44).padEnd(46)}${formatDuration(u.seconds).padStart(9)}` +
+    `${(formatAiCost(u.consumption) + (u.unpricedAgents ? "*" : "")).padStart(12)}${real(u).padStart(13)}`;
+
+  let unpriced = false;
+  let partial = false;
+  let noTracker = false;
+  for (const r of reports) {
+    console.log(`\n${r.project.name} · ${r.project.clientName}`);
+    console.log(`  ${"".padEnd(46)}${tr`Horas`.padStart(9)}${tr`API`.padStart(12)}${tr`Real`.padStart(13)}`);
+    for (const u of r.units) {
+      console.log(row(unitLabel(u, by), u));
+      const detail: string[] = [];
+      if (by === "branch") {
+        if (u.items.length) detail.push(u.items.map(formatWorkItem).join(", "));
+        if (u.prs.length) detail.push(u.prs.map(refLabel).join(", "));
+      } else if (u.branches.length) {
+        detail.push(tr`ramas: ${u.branches.join(", ")}`);
+      }
+      if (u.basis.length) detail.push(tr`según: ${u.basis.map(basisLabel).join(", ")}`);
+      if (detail.length) console.log(`      ${detail.join(" · ")}`);
+    }
+    console.log(row(tr`Total`, r.total));
+    unpriced ||= r.total.unpricedAgents;
+    partial ||= r.total.realPartial;
+    if (by === "item" && !r.project.tracker) noTracker = true;
+  }
+
+  console.log(tr`\nAPI es lo que costaría a precio de API: mide el uso, no es dinero pagado.`);
+  if (hasSubs) console.log(tr`Real es tu cuota repartida por consumo: esto sí es dinero pagado.`);
+  else console.log(tr`Sin suscripciones registradas no hay dinero real. Si pagas cuota fija: estela subscription add`);
+  console.log(tr`Lo que no se puede atribuir va a "Sin atribuir" y no se reparte entre lo demás.`);
+  if (unpriced) console.log(tr`* Incluye trabajo con Copilot: sus horas cuentan, pero su coste no se conoce y no está sumado.`);
+  if (partial) console.log(tr`† Algún mes no tenía suscripción registrada: el dinero real solo cuenta los meses con cuota.`);
+  if (noTracker) {
+    console.log(tr`Sin gestor configurado solo se reconocen tickets inequívocos (AB#12, PROJ-12) y los PR de los merges.`);
+    console.log(tr`Para leer #12 y feat/12-login: estela project tracker --project <id> --system github`);
+  }
+}
+
+function spendJson(reports: readonly SpendProjectReport[], by: SpendBy, args: Args) {
+  const realJson = (m: Money | null) => (m ? { amountMinor: m.amount, currency: m.currency } : null);
+  return {
+    by,
+    period: { month: str(args, "month") ?? null, from: str(args, "from") ?? null, to: str(args, "to") ?? null },
+    projects: reports.map((r) => ({
+      id: r.project.id, name: r.project.name, clientId: r.project.clientId, clientName: r.project.clientName,
+      units: r.units.map((u) => ({
+        key: u.key, attributed: u.key !== null, branches: u.branches, items: u.items, prs: u.prs,
+        basis: u.basis, seconds: u.seconds, apiMicroUsd: u.consumption.microUsd,
+        real: realJson(u.real), realPartial: u.realPartial, unpricedAgents: u.unpricedAgents,
+      })),
+      total: {
+        seconds: r.total.seconds, apiMicroUsd: r.total.consumption.microUsd, real: realJson(r.total.real),
+        realPartial: r.total.realPartial, unpricedAgents: r.total.unpricedAgents,
+      },
+    })),
+  };
 }
 
 /**
@@ -2527,6 +3606,7 @@ async function main(): Promise<void> {
     case "demo":              await cmdDemo(args, dbPath); break;
     case "import":            await cmdImport(args, dbPath); break;
     case "client add":        cmdClientAdd(args, dbPath); break;
+    case "client alias":      cmdClientAlias(args, dbPath); break;
     case "project add":       cmdProjectAdd(args, dbPath); break;
     case "project close":     cmdProjectClose(args, dbPath); break;
     case "project reopen":    cmdProjectReopen(args, dbPath); break;
@@ -2535,7 +3615,7 @@ async function main(): Promise<void> {
     case "rate set":          cmdRateSet(args, dbPath); break;
     case "budget":            cmdBudget(args, dbPath); break;
     case "subscription add":  cmdSubscriptionAdd(args, dbPath); break;
-    case "ai-cost":           cmdAiCost(dbPath); break;
+    case "ai-cost":           await cmdAiCost(args, dbPath); break;
     case "quota":             await cmdQuota(args, dbPath); break;
     case "statusline install":   cmdStatuslineInstall(args); break;
     case "statusline uninstall": cmdStatuslineUninstall(); break;
@@ -2549,6 +3629,8 @@ async function main(): Promise<void> {
     case "share":             cmdShare(args, dbPath); break;
     case "publish":           await cmdPublish(args, dbPath); break;
     case "unpublish":         await cmdUnpublish(args, dbPath); break;
+    case "delivery":          await cmdDelivery(args, dbPath); break;
+    case "summary":           await cmdSummary(args, dbPath); break;
     case "plan":              cmdPlan(args, dbPath); break;
     case "plan set":          cmdPlanSet(args, dbPath); break;
     case "export":            await cmdExport(args, dbPath); break;

@@ -22,7 +22,7 @@ import { cloudGet, cloudPost } from "./cloud/client.js";
 import { isOffline } from "./offline.js";
 import { teamView } from "./metrics/team.js";
 import { allTurns, scanAgents } from "./watchers/agents.js";
-import { gitUserEmail, mergedBranches, readCommits, repoAuthors, repoRoot } from "./watchers/git.js";
+import { gitUserEmail, mergedBranches, readCommits, readMerges, repoAuthors, repoRoot } from "./watchers/git.js";
 import { myEmailsByRepo, onlyMine } from "./watchers/identity.js";
 import { documentLang, tr, withLang } from "./i18n/index.js";
 import { baseName } from "./paths.js";
@@ -109,6 +109,7 @@ async function importOnce(dbPath: string): Promise<number> {
       const root = await repoRoot(repo);
       if (!root) continue;
       store.saveCommits(db, await readCommits(root, {}));
+      store.saveMerges(db, await readMerges(root, {}));
     }
     // Todo lo conocido, no solo lo leído ahora (ver knownTurns), y los correos
     // de todos esos repos: sin ellos, un día antiguo perdería sus commits.
@@ -794,14 +795,25 @@ function buildSummary(db: Db, from: string, to: string) {
            SUM(approved)     AS approved,
            MIN(local_date)   AS first_day,
            MAX(local_date)   AS last_day,
-           COUNT(DISTINCT local_date) AS days
+           COUNT(DISTINCT local_date) AS days,
+           SUM(CASE WHEN invoice_id IS NOT NULL THEN seconds ELSE 0 END) AS invoiced,
+           SUM(CASE WHEN invoice_id IS NULL AND billable = 1 THEN seconds ELSE 0 END) AS unbilled,
+           SUM(CASE WHEN invoice_id IS NULL AND billable = 0 THEN seconds ELSE 0 END) AS not_billable
     FROM time_entries
     WHERE local_date >= ? AND local_date <= ? AND ${VISIBLE}
     GROUP BY project_id
   `).all(from, to) as {
     project_id: string; seconds: number; micro: number; blocks: number;
     approved: number; first_day: string; last_day: string; days: number;
+    invoiced: number; unbilled: number; not_billable: number;
   }[];
+  // En qué facturas está lo ya facturado del periodo, para nombrarlas.
+  const invoiceNumbers = db.prepare(`
+    SELECT DISTINCT t.project_id, i.number
+    FROM time_entries t JOIN invoices i ON i.id = t.invoice_id
+    WHERE t.local_date >= ? AND t.local_date <= ? AND ${VISIBLE.replace("project_id", "t.project_id")}
+    ORDER BY i.number
+  `).all(from, to) as { project_id: string; number: string }[];
 
   const projects = new Map(store.listProjects(db).map((p) => [p.id, p]));
   const clients = new Map(store.listClients(db).map((c) => [c.id, c]));
@@ -826,6 +838,15 @@ function buildSummary(db: Db, from: string, to: string) {
       aiMicroUsd: r.micro,
       amountMinor: rate ? Math.round((rate.amount * r.seconds) / 3600) : null,
       hourlyMinor: rate?.amount ?? null,
+      // Lo trabajado en el periodo, por dónde está: ya en una factura, pendiente
+      // de facturar (lo mismo que cuenta Informes, con su misma cuenta) o
+      // marcado como no facturable. Sin esto, el total del Resumen y lo
+      // pendiente de Informes parecen no cuadrar.
+      invoicedSeconds: r.invoiced,
+      invoices: invoiceNumbers.filter((i) => i.project_id === r.project_id).map((i) => i.number),
+      unbilledSeconds: r.unbilled,
+      unbilledMinor: rate ? Math.round((rate.amount * r.unbilled) / 3600) : null,
+      notBillableSeconds: r.not_billable,
     };
   }).sort((a, b) => b.seconds - a.seconds);
 

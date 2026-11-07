@@ -241,6 +241,113 @@ estela ai-cost
 La caché se cuenta aparte porque suele ser la mayor parte de la factura —
 ignorarla subestimaba el gasto cinco veces.
 
+### Qué se entregó con ese gasto
+
+`--by` abre el coste por entrega: por rama, o por ticket y PR.
+
+```sh
+estela ai-cost --by branch --month 2026-10            # por rama
+estela ai-cost --by item --client acme --json         # por ticket o PR, de un cliente
+estela ai-cost --by branch --from 2026-10-01 --csv coste.csv
+```
+
+Cada fila lleva sus horas y dos cifras: el coste a precio de API, que mide el
+uso, y tu cuota repartida, que es el dinero pagado. También dice en qué se basa
+la atribución: la rama que anotó el agente, el número en la rama
+(`feat/12-login`), un `#12` en un commit, lo puesto a mano con `estela entry
+link`, o el commit de merge del PR ("Merge pull request #31 from …"). Lo que no
+tiene base va entero a "Sin atribuir": no se reparte a ojo.
+
+Un PR fusionado con squash no deja merge en git, así que su rama no se une al PR.
+Copilot no guarda tokens, así que sus horas cuentan pero su coste no se conoce
+(sale marcado con `*`). El informe solo lee lo imputado: no recalcula días
+aprobados ni facturados.
+
+### Planificado frente a entregado
+
+```sh
+estela project tracker --project tienda --system github --plan-label planificado
+estela delivery --project tienda --month 2026-10
+estela delivery --project tienda --milestone "Sprint 4" --json
+```
+
+Tres bloques, cada uno con sus horas y su coste de IA: lo del plan que se
+entregó en el periodo (issue cerrada como hecha, o cerrada por un PR fusionado),
+lo del plan que no, y lo entregado que no estaba en el plan. Lo planificado es lo
+que lleva una etiqueta o un milestone de GitHub o GitLab. El coste de cada línea es el de
+las horas unidas a ella: la rama del PR (también si se fusionó con squash) y su
+número en ramas, commits o puesto a mano.
+
+Lee GitHub con `gh`, la CLI oficial, si está instalada y con sesión. Es la única
+llamada fuera de tu máquina, solo en proyectos con `--system github`, y
+`--offline` la evita. Lo leído se guarda para repetir el informe sin conexión y
+para que `--undelivered` sepa qué ramas se fusionaron con squash. Sin `gh` el
+comando lo explica y enseña lo entregado según git.
+
+GitLab funciona igual, con `glab`, la CLI oficial de GitLab (también en un
+servidor propio: `glab` lo deduce del remoto del repo):
+`estela project tracker --project tienda --system gitlab --plan-label planificado`.
+Las merge requests se enseñan como `!45`, aparte de la issue `#45`. Dos
+diferencias en las cifras: GitLab no dice si una issue se cerró hecha o sin
+hacer, así que cerrada cuenta como entregada (salvo que se moviera a otro
+proyecto); y qué issues cierra una MR se lee de su descripción (`Closes #12`,
+`Fixes`, `Resolves`, `Implements`), con las mismas palabras con las que GitLab
+las cierra.
+
+### Lo que pidió cada cliente
+
+```sh
+estela delivery --project tienda --by client --month 2026-10
+estela client alias --client acme --label "acme-retail"
+```
+
+Una issue o un PR con la etiqueta `cliente:<nombre>` es una petición de ese
+cliente, y un PR hereda las etiquetas de las issues que cierra. El informe da el
+gasto de IA del periodo en las peticiones de cada cliente, frente al resto. Una
+hora que sirvió a peticiones de dos clientes va a "Varios", sin repartirla. El
+nombre de la etiqueta se compara con el id y el nombre de tus clientes; si no
+coincide, sale "sin mapear" hasta que le pongas un alias. El prefijo se cambia
+con `estela project tracker --client-label`.
+
+Estela no conoce ingresos ni contratos, y no los estima: solo une el gasto con
+quién pidió el trabajo.
+
+### El informe para finanzas
+
+```sh
+estela summary                                   # el último mes cerrado, en Markdown
+estela summary --month 2026-10 --out octubre.csv # en CSV, para una hoja de cálculo
+estela summary --client acme --format json
+```
+
+Para quien no programa: lo pagado en IA, por cliente y proyecto, lo entregado
+(y el plan, si `estela delivery` lo leyó), lo que pidió cada cliente y lo que no
+llegó a entregarse. Los titulares hablan de dinero y entregas; los tokens, las
+sesiones y el precio de lista van al final, en cómo se calcula. Un mes cerrado
+suma exactamente la cuota de ese mes, y los clientes más lo que queda fuera de
+proyectos dan el total. No llama a nada fuera de tu máquina.
+
+### El gasto que no llegó a entregarse
+
+```sh
+estela ai-cost --undelivered                    # todo el historial, ramas paradas 14 días
+estela ai-cost --undelivered --month 2026-10 --stale-days 30 --json
+```
+
+Por proyecto, en cifra y en porcentaje del gasto, dos bloques que no se pisan:
+
+- **Sesiones sin commit:** un rato de un chat sin ningún commit tuyo en ese repo
+  durante él ni en la media hora siguiente. Se separan las que luego sí tuvieron
+  commit en su rama: iterar antes de dar algo por bueno también es trabajo.
+- **Ramas sin fusionar:** existen, no están integradas y llevan N días sin
+  actividad. Solo su coste que no esté ya en una sesión sin commit.
+
+Es una señal para revisar, no un juicio. Lo que no se puede saber no cuenta y se
+enseña aparte: una rama borrada sin merge registrado pudo fusionarse con squash,
+y antes de tu primer commit reconocido en un repo puede que commitearas con otro
+correo (revísalo con `estela author`). Un squash también hace que una rama que
+sigue existiendo parezca sin fusionar.
+
 ## Qué proyecto se come tu cuota
 
 Con Claude Max/Pro o Codex con suscripción, la cuota se acaba antes de lo que

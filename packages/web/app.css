@@ -433,6 +433,11 @@ main.wide { max-width: 1180px; }
   font-size: .83rem; color: var(--ink-3); margin-top: 3px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* Lo facturado y lo pendiente del periodo: debajo, en pequeño, porque es la
+   explicación del total y no otro total. */
+.prow-split {
+  font-size: .8rem; color: var(--ink-3); margin-top: 4px; font-variant-numeric: tabular-nums;
+}
 .prow-figs { text-align: right; flex: none; }
 .prow-hours {
   font-size: 1.05rem; font-weight: 580; font-variant-numeric: tabular-nums;

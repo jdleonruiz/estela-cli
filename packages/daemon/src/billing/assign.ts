@@ -162,6 +162,70 @@ function findDuplicates(
   return { stale, protectedDuplicates };
 }
 
+/**
+ * Vuelve a juntar los bloques que `sessionize` partió por un cambio de rama, si
+ * caen en un día ya cerrado de su proyecto: aprobado, facturado o ajustado.
+ *
+ * Partir reparte el mismo rato entre las ramas en que de verdad se trabajó, y
+ * el total no cambia. Pero un día cerrado ya tiene su cifra en la rama en que
+ * quedó (la última del bloque), y una imputación nueva al lado la contaría dos
+ * veces. Así que ahí todo sigue como estaba.
+ */
+export function rejoinLockedDays(
+  db: DatabaseSync, blocks: readonly WorkBlock[], projectOf: (repo: string | null) => string | null,
+): WorkBlock[] {
+  if (!blocks.some((b) => b.continuesPrevious)) return [...blocks];
+
+  const closed = db.prepare(`
+    SELECT 1 FROM time_entries WHERE project_id = ? AND local_date = ?
+      AND (approved = 1 OR invoice_id IS NOT NULL OR adjust_reason IS NOT NULL) LIMIT 1`);
+  const isClosed = (b: WorkBlock) => {
+    const p = projectOf(b.repoPath);
+    return p !== null && closed.get(p, localDate(b.startedAt)) !== undefined;
+  };
+
+  // Cadenas: un bloque que continúa al anterior del mismo repo va con él.
+  const chains: WorkBlock[][] = [];
+  const lastChain = new Map<string, WorkBlock[]>();
+  for (const b of [...blocks].sort((x, y) => x.startedAt.getTime() - y.startedAt.getTime())) {
+    const key = b.repoPath ?? "";
+    const previous = lastChain.get(key);
+    const tail = previous?.[previous.length - 1];
+    if (b.continuesPrevious && previous && tail && tail.endedAt.getTime() === b.startedAt.getTime()) {
+      previous.push(b);
+      continue;
+    }
+    const chain = [b];
+    chains.push(chain);
+    lastChain.set(key, chain);
+  }
+
+  return chains.flatMap((chain) =>
+    chain.length > 1 && chain.some(isClosed) ? [joinChain(chain)] : chain);
+}
+
+function joinChain(chain: readonly WorkBlock[]): WorkBlock {
+  const first = chain[0]!;
+  const last = chain[chain.length - 1]!;
+  const union = <T>(pick: (b: WorkBlock) => readonly T[] | undefined) =>
+    [...new Set(chain.flatMap((b) => pick(b) ?? []))];
+  return {
+    startedAt: first.startedAt,
+    endedAt: last.endedAt,
+    seconds: Math.round((last.endedAt.getTime() - first.startedAt.getTime()) / 1000),
+    repoPath: first.repoPath,
+    // La de antes de partir: la última del bloque.
+    branch: last.branch ?? first.branch,
+    turnCount: chain.reduce((n, b) => n + b.turnCount, 0),
+    aiCost: { microUsd: chain.reduce((n, b) => n + b.aiCost.microUsd, 0) },
+    models: union((b) => b.models).sort(),
+    sessionIds: union((b) => b.sessionIds),
+    commits: chain.flatMap((b) => b.commits),
+    unpricedModels: union((b) => b.unpricedModels).sort(),
+    agents: union((b) => b.agents).sort(),
+  };
+}
+
 /** Cuánto de [from, to] cae dentro de los bloques, sin contar dos veces un solape. */
 function coveredMs(blocks: readonly WorkBlock[], from: number, to: number): number {
   const intervals = blocks
@@ -177,7 +241,7 @@ function coveredMs(blocks: readonly WorkBlock[], from: number, to: number): numb
   return ms;
 }
 
-export function planEntries(db: DatabaseSync, raw: readonly WorkBlock[]): AssignmentPlan {
+export function planEntries(db: DatabaseSync, input: readonly WorkBlock[]): AssignmentPlan {
   const ownerOf = ownerResolver(db);
   const direct = (repo: string | null) => (repo ? store.projectForRepo(db, repo) : null);
   const viaRoot = (repo: string | null) => {
@@ -185,6 +249,7 @@ export function planEntries(db: DatabaseSync, raw: readonly WorkBlock[]): Assign
     const o = ownerOf(repo);
     return o.kind === "project" ? o.projectId : null;
   };
+  const raw = rejoinLockedDays(db, input, (repo) => direct(repo) ?? viaRoot(repo));
 
   // La carpeta tal cual. Se agrupa por PROYECTO, no por ruta: `repo/` y
   // `repo/src/UI` son el mismo proyecto, y agrupar por ruta daba dos bloques que

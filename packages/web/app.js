@@ -11,7 +11,11 @@ const state = {
   date: localToday(),
   day: null,
   summary: null,
+  // Cada pantalla con su periodo: compartirlo hacía que "Todo lo pendiente"
+  // de Informes cambiara en silencio el Resumen a 3 meses, con "Este mes"
+  // todavía marcado.
   period: "month",
+  reportsPeriod: "month",
   open: new Set(),
 };
 
@@ -427,7 +431,7 @@ function haceCuanto(days) {
 // ── Resumen: todos los proyectos a la vez ──────────────────────────────
 
 async function loadSummary() {
-  const { from, to } = periodRange(state.period === "all" ? "quarter" : state.period);
+  const { from, to } = periodRange(state.period);
   // La cuota es siempre de esta semana, sea cual sea el periodo elegido: si
   // fallara, el resumen se pinta igual y la tarjeta simplemente no sale.
   const [summary, quota] = await Promise.all([
@@ -441,7 +445,10 @@ async function loadSummary() {
 
 function renderSummary() {
   const s = state.summary;
+  // Las fechas, siempre: un total sin su periodo al lado se compara con otro
+  // que tiene uno distinto y parece que no cuadra.
   $("#summary-range").textContent =
+    `${tr("summary.range", { from: s.from, to: s.to })} · ` +
     `${tr("summary.projects", { n: s.activeProjects })} · ${tr("summary.days", { n: s.activeDays })}`;
 
   // Con varias monedas se enseñan todas: un guion parecería que falta un dato.
@@ -490,7 +497,7 @@ function renderSummary() {
   $("#summary-body").innerHTML = parts.join("");
 
   $("#approve-all")?.addEventListener("click", async () => {
-    const { from, to } = periodRange(state.period === "all" ? "quarter" : state.period);
+    const { from, to } = periodRange(state.period);
     try {
       const r = await api("/api/approve-range", {
         method: "POST", body: JSON.stringify({ from, to }),
@@ -646,12 +653,36 @@ function renderProjectRow(p) {
     <div class="prow-name">${esc(p.projectName)} ${flag}${notBillable}</div>
     <div class="prow-meta">${esc(p.clientName)}${rate ? ` · ${rate}/h` : ""} ·
       ${tr("project.days", { n: p.days })} · ${tr("project.lastSeen", { date: esc(p.lastDay) })}</div>
+    ${billingSplit(p)}
   </div>
   <div class="prow-figs">
     <div class="prow-hours">${fmtDuration(p.seconds)}</div>
     <div class="prow-amount">${amount || "—"}</div>
   </div>
 </div>`;
+}
+
+/* De lo trabajado en el periodo, qué ya está en una factura y qué falta por
+   facturar. Lo pendiente es la misma cifra que da Informes para esas fechas:
+   sin esta línea, el total del Resumen (que incluye lo facturado) y lo
+   pendiente de Informes parecen dos cuentas que no cuadran. Solo sale cuando
+   hay mezcla; si todo está pendiente, el total ya lo dice. */
+function billingSplit(p) {
+  if (p.kind !== "client") return "";
+  if (!p.invoicedSeconds && !p.notBillableSeconds) return "";
+  const parts = [];
+  if (p.invoicedSeconds) {
+    parts.push(tr("project.split.invoiced", { duration: fmtDuration(p.invoicedSeconds),
+      invoices: p.invoices?.length ? ` (${p.invoices.join(", ")})` : "" }));
+  }
+  if (p.unbilledSeconds) {
+    const money = p.unbilledMinor === null ? "" : ` · ${fmtMoney(p.unbilledMinor, p.currency)}`;
+    parts.push(tr("project.split.pending", { duration: fmtDuration(p.unbilledSeconds), amount: money }));
+  } else {
+    parts.push(tr("project.split.nothingPending"));
+  }
+  if (p.notBillableSeconds) parts.push(tr("project.split.notBillable", { duration: fmtDuration(p.notBillableSeconds) }));
+  return `<div class="prow-split">${esc(parts.join(" · "))}</div>`;
 }
 
 function renderActivity(c) {
@@ -1409,7 +1440,7 @@ state.reportsOpen = new Set();
 async function loadReports() {
   // Mismo periodo que Resumen: si las dos pantallas contestan a la misma
   // pregunta, tienen que dar el mismo número.
-  const { from, to } = periodRange(state.period);
+  const { from, to } = periodRange(state.reportsPeriod);
   const [overview, facturado] = await Promise.all([
     api(`/api/overview?from=${from}&to=${to}`),
     // Lo emitido no depende del periodo elegido: una factura de agosto sigue
@@ -1426,10 +1457,10 @@ function renderReports() {
   const parts = [];
 
   parts.push(`<div class="filters" id="rep-periods">
-    <button type="button" class="period${state.period === "week" ? " is-on" : ""}" data-period="week">${tr("period.week")}</button>
-    <button type="button" class="period${state.period === "month" ? " is-on" : ""}" data-period="month">${tr("period.month")}</button>
-    <button type="button" class="period${state.period === "quarter" ? " is-on" : ""}" data-period="quarter">${tr("period.quarter")}</button>
-    <button type="button" class="period${state.period === "all" ? " is-on" : ""}" data-period="all">${tr("period.all")}</button>
+    <button type="button" class="period${state.reportsPeriod === "week" ? " is-on" : ""}" data-period="week">${tr("period.week")}</button>
+    <button type="button" class="period${state.reportsPeriod === "month" ? " is-on" : ""}" data-period="month">${tr("period.month")}</button>
+    <button type="button" class="period${state.reportsPeriod === "quarter" ? " is-on" : ""}" data-period="quarter">${tr("period.quarter")}</button>
+    <button type="button" class="period${state.reportsPeriod === "all" ? " is-on" : ""}" data-period="all">${tr("period.all")}</button>
   </div>`);
 
   const fuera = overview.outsideRange;
@@ -1550,7 +1581,7 @@ function renderReports() {
 
   document.querySelectorAll("#rep-periods .period").forEach((btn) => {
     btn.addEventListener("click", () => {
-      state.period = btn.dataset.period; state.reportsAll = false; loadReports();
+      state.reportsPeriod = btn.dataset.period; state.reportsAll = false; loadReports();
     });
   });
 
@@ -1710,10 +1741,11 @@ function showView(name) {
   if (name === "projects") loadProjects();
 }
 
-document.querySelectorAll(".period").forEach((btn) => {
+// Solo los del Resumen: los de Equipo e Informes llevan su propio periodo.
+document.querySelectorAll("#periods .period").forEach((btn) => {
   btn.addEventListener("click", () => {
     state.period = btn.dataset.period;
-    document.querySelectorAll(".period").forEach((b) => b.classList.toggle("is-on", b === btn));
+    document.querySelectorAll("#periods .period").forEach((b) => b.classList.toggle("is-on", b === btn));
     loadSummary();
   });
 });

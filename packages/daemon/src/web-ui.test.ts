@@ -502,3 +502,20 @@ test("idiomas: fechas e importes siguen al idioma", () => {
     mod.setLocale("es");
   }
 });
+
+test("Resumen e Informes no comparten periodo: 'Todo lo pendiente' no cambia el Resumen", () => {
+  // Compartido, elegir "Todo lo pendiente" en Informes dejaba el Resumen en 3
+  // meses con "Este mes" todavía marcado, y sus cifras parecían no cuadrar.
+  const reports = appJs.slice(appJs.indexOf("async function loadReports"), appJs.indexOf("function renderReports"));
+  assert.match(reports, /periodRange\(state\.reportsPeriod\)/);
+  assert.match(appJs, /state\.reportsPeriod = btn\.dataset\.period/);
+  assert.doesNotMatch(appJs, /state\.period === "all"/, "el Resumen no tiene 'todo': no puede caer en otro periodo a escondidas");
+  assert.match(appJs, /document\.querySelectorAll\("#periods \.period"\)\.forEach\(\(btn\) => \{\n  btn\.addEventListener/,
+    "los botones del Resumen solo son los suyos, no los de Equipo o Informes");
+});
+
+test("cada proyecto del Resumen dice qué ya está facturado y qué falta, y la cabecera lleva las fechas", () => {
+  assert.match(appJs, /\$\{billingSplit\(p\)\}/);
+  assert.match(appJs, /tr\("summary\.range", \{ from: s\.from, to: s\.to \}\)/);
+  assert.match(css, /\.prow-split\s*\{/);
+});

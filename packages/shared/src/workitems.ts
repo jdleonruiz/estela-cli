@@ -24,6 +24,16 @@ export interface WorkItemTracker {
    * nada que no empiece así se confunde con un ticket.
    */
   readonly prefixes: readonly string[];
+  /**
+   * La etiqueta que marca lo planificado (`estela delivery`). Sin ella, el
+   * informe solo enseña lo entregado.
+   */
+  readonly planLabel?: string;
+  /**
+   * Prefijo de las etiquetas que dicen qué cliente pidió algo (`cliente:acme`).
+   * Sin configurar se usa `cliente:`.
+   */
+  readonly clientLabel?: string;
 }
 
 // Parecen claves de Jira y no lo son: codificaciones, algoritmos, normas.
@@ -111,10 +121,11 @@ function branchNumber(branch: string): string | null {
   return m[1]!.replace(/^0+/, "") || null;
 }
 
-/** Cómo se enseña una clave: `PROJ-12`, `AB#1234`, `#12`. */
+/** Cómo se enseña una clave: `PROJ-12`, `AB#1234`, `#12`, `!45` (merge request de GitLab). */
 export function formatWorkItem(key: string): string {
   const [system, id] = splitWorkItem(key);
   if (system === "azure") return `AB#${id}`;
+  if (system === "gitlab" && id.startsWith("!")) return id;
   if (system === "github" || system === "gitlab") return `#${id}`;
   return id;
 }
@@ -125,7 +136,8 @@ export function splitWorkItem(key: string): [TrackerSystem, string] {
 }
 
 /**
- * Lo que escribe alguien a mano (`PROJ-12`, `AB#1234`, `#12`, `1234`) a clave
+ * Lo que escribe alguien a mano (`PROJ-12`, `AB#1234`, `#12`, `1234`, y `!45`
+ * para una merge request de GitLab) a clave
  * normalizada, con el gestor del proyecto para lo ambiguo. `null` si no se
  * puede saber de qué gestor es.
  */
@@ -135,6 +147,8 @@ export function parseWorkItem(text: string, tracker?: WorkItemTracker | null): s
   if (m) return `azure:${m[1]}`;
   m = /^([A-Za-z][A-Za-z0-9]+)-(\d+)$/.exec(t);
   if (m) return `jira:${m[1]!.toUpperCase()}-${m[2]}`;
+  m = /^!(\d+)$/.exec(t);
+  if (m) return tracker?.system === "gitlab" ? `gitlab:!${m[1]}` : null;
   m = /^#?(\d+)$/.exec(t);
   if (m && tracker && tracker.system !== "jira") return `${tracker.system}:${m[1]}`;
   return null;

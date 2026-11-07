@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { baseName } from "../paths.js";
-import { readCommits, repoRoot } from "./git.js";
+import { parseMergeMessage, readCommits, readMerges, repoRoot } from "./git.js";
 
 /** Repo de verdad: lo que falla aquí falla contra git real, no contra un mock. */
 function makeRepo(): string {
@@ -82,4 +82,37 @@ test("repoRoot funciona donde la comprobación de un .git como directorio fallar
   assert.ok(root);
   // baseName y no split("/"): en Windows la ruta del test va con \\ y la de git con /.
   assert.equal(baseName(root), baseName(dir));
+});
+
+test("mensajes de merge: GitHub, GitLab y git, y nada que adivinar en el resto", () => {
+  assert.deepEqual(parseMergeMessage("Merge pull request #12 from ana/feat/12-login"),
+    { sourceBranch: "feat/12-login", ref: "github:12" });
+  assert.deepEqual(parseMergeMessage("Merge branch 'feat/buscador' into 'main'", "Buscador\n\nSee merge request acme/web!45"),
+    { sourceBranch: "feat/buscador", ref: "gitlab:!45" }, "una MR no es la issue #45: GitLab las numera aparte");
+  assert.deepEqual(parseMergeMessage("Merge branch 'fix/pagos'"), { sourceBranch: "fix/pagos", ref: null });
+  assert.deepEqual(parseMergeMessage("Merge remote-tracking branch 'origin/develop'"),
+    { sourceBranch: "develop", ref: null });
+  // Un squash no es un merge: "(#9)" no dice qué rama fue.
+  assert.deepEqual(parseMergeMessage("Login con Google (#9)"), { sourceBranch: null, ref: null });
+  assert.deepEqual(parseMergeMessage("Merged PR 77: algo"), { sourceBranch: null, ref: null });
+});
+
+test("lee los merges aunque la rama ya se haya borrado, y readCommits sigue sin ellos", async () => {
+  const dir = makeRepo();
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+  const base = String(git("rev-parse", "--abbrev-ref", "HEAD")).trim();
+  git("checkout", "-q", "-b", "feat/12-login");
+  writeFileSync(join(dir, "login.txt"), "login\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "feat: login");
+  git("checkout", "-q", base);
+  git("merge", "-q", "--no-ff", "feat/12-login", "-m", "Merge pull request #12 from ana/feat/12-login");
+  git("branch", "-q", "-D", "feat/12-login");
+
+  const merges = await readMerges(dir);
+  assert.equal(merges.length, 1);
+  assert.equal(merges[0]!.sourceBranch, "feat/12-login");
+  assert.equal(merges[0]!.ref, "github:12");
+  assert.equal(merges[0]!.repoPath, await repoRoot(dir));
+  assert.ok((await readCommits(dir)).every((c) => !c.subject.startsWith("Merge pull request")));
 });

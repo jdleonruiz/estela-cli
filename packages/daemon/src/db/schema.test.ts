@@ -832,3 +832,33 @@ test("la migración 16 deja iguales las rutas de Windows ya guardadas, sin dupli
     assert.deepEqual(col("SELECT repo_path AS p FROM agent_turns"), ["C:/Users/ana/web/src"]);
   } finally { migrada.close(); }
 });
+
+test("la migración 21 separa las MR de GitLab de las issues, sin tocar nada más", () => {
+  const path = tempDb();
+  const db = openDatabase(path);
+  // Como los dejaba la 0.4.0: la MR !45 guardada como si fuera la issue #45.
+  db.exec(`
+    INSERT INTO merges (repo_path, hash, at, source_branch, ref, subject) VALUES
+      ('/r', 'a', '2026-10-01T10:00:00Z', 'feat/x', 'gitlab:45', 'Merge branch ''feat/x'' into ''main'''),
+      ('/r', 'b', '2026-10-02T10:00:00Z', 'feat/y', 'github:12', 'Merge pull request #12 from ana/feat/y'),
+      ('/r', 'c', '2026-10-03T10:00:00Z', 'feat/z', NULL, 'Merge branch ''feat/z''');
+    UPDATE schema_version SET version = 20;
+  `);
+  db.close();
+
+  const migrada = openDatabase(path);
+  try {
+    const filas = migrada.prepare("SELECT hash, ref, source_branch AS b FROM merges ORDER BY hash").all();
+    assert.deepEqual(filas.map((r) => ({ ...r })), [
+      { hash: "a", ref: "gitlab:!45", b: "feat/x" },
+      { hash: "b", ref: "github:12", b: "feat/y" },
+      { hash: "c", ref: null, b: "feat/z" },
+    ]);
+    assert.equal(versionOf(migrada), versionDeUnaBaseNueva());
+  } finally { migrada.close(); }
+  // Abrirla otra vez no añade otro "!".
+  const otra = openDatabase(path);
+  try {
+    assert.equal((otra.prepare("SELECT ref FROM merges WHERE hash = 'a'").get() as { ref: string }).ref, "gitlab:!45");
+  } finally { otra.close(); }
+});

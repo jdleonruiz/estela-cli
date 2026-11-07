@@ -577,3 +577,42 @@ test("un proyecto con facturas o publicado no se elimina, pero se archiva", asyn
     assert.equal((await fetch(`${base}/api/invoices/INF-1/pdf`)).status, 200);
   });
 });
+
+test("el Resumen separa lo ya facturado de lo pendiente, y lo pendiente es lo mismo que da Informes", async () => {
+  await conServidor((dbPath) => {
+    sembrar(dbPath);
+    const db = openDatabase(dbPath);
+    try {
+      const base = { description: "x", aiCost: { microUsd: 0 }, agentSeconds: 0, commitHashes: [], agents: ["claude-code" as const],
+                     source: "agent" as const, kind: "development" as const, branch: "main", invoiceId: null };
+      store.saveTimeEntry(db, { ...base, id: "te_web_oct", projectId: "web", billable: true, seconds: 5400,
+        startedAt: new Date("2026-10-01T10:00:00Z"), endedAt: new Date("2026-10-01T11:30:00Z") });
+      store.saveTimeEntry(db, { ...base, id: "te_web_gratis", projectId: "web", billable: false, seconds: 1800,
+        startedAt: new Date("2026-10-02T10:00:00Z"), endedAt: new Date("2026-10-02T10:30:00Z") });
+    } finally { db.close(); }
+  }, async (base) => {
+    // Se factura septiembre: las 2h del día 10.
+    const corte = await fetch(`${base}/api/invoice`, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "web", cutoff: "2026-09-30", author: "" }) });
+    assert.equal(corte.status, 200);
+    const { invoices } = await (await fetch(`${base}/api/invoices`)).json() as { invoices: { number: string }[] };
+
+    type P = { projectId: string; seconds: number; amountMinor: number; invoicedSeconds: number; invoices: string[];
+               unbilledSeconds: number; unbilledMinor: number; notBillableSeconds: number };
+    const s = await (await fetch(`${base}/api/summary?from=2026-09-01&to=2026-10-31`)).json() as { projects: P[] };
+    const web = s.projects.find((p) => p.projectId === "web")!;
+    assert.equal(web.seconds, 7200 + 5400 + 1800, "el total sigue siendo todo lo trabajado");
+    assert.equal(web.invoicedSeconds, 7200);
+    assert.deepEqual(web.invoices, [invoices[0]!.number]);
+    assert.equal(web.unbilledSeconds, 5400);
+    assert.equal(web.notBillableSeconds, 1800);
+    assert.equal(web.invoicedSeconds + web.unbilledSeconds + web.notBillableSeconds, web.seconds, "las tres partes suman el total");
+
+    const o = await (await fetch(`${base}/api/overview?from=2026-09-01&to=2026-10-31`)).json() as
+      { unbilled: { projectId: string; seconds: number; amountMinor: number }[] };
+    const pendiente = o.unbilled.find((p) => p.projectId === "web")!;
+    assert.equal(web.unbilledSeconds, pendiente.seconds, "misma cifra que Informes");
+    assert.equal(web.unbilledMinor, pendiente.amountMinor);
+    assert.equal(web.unbilledMinor, 6750, "1h 30m a 45 €/h");
+  });
+});
