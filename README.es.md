@@ -166,6 +166,9 @@ estela report --project acme-web --cutoff 2026-08-31 --pdf agosto.pdf
 estela report --project acme-web --cutoff 2026-09-30 --pdf septiembre.pdf
 ```
 
+Todos los `--project` piden el id del proyecto. `estela project list` los
+enseña, con el cliente, el gestor de tareas y los repos de cada uno.
+
 Cuando de verdad termines un proyecto, ciérralo — no borra nada, y si vuelve
 a captar trabajo (un compañero, o tú sin acordarte), `estela doctor` avisa
 en vez de perderlo en silencio:
@@ -498,7 +501,7 @@ día, por si hay versión nueva. Dos variables de entorno:
 | Variable | Efecto |
 |---|---|
 | `ESTELA_NO_UPDATE_CHECK=1` | No consulta la versión (tampoco se hace con `CI` definida). |
-| `ESTELA_OFFLINE=1` | Ninguna conexión de red: ni versión, ni banner, ni cuenta. |
+| `ESTELA_OFFLINE=1` | Ninguna conexión de red: ni versión, ni banner, ni cuenta, ni `gh` o `glab` en `estela delivery`. |
 
 Con cuenta, solo sube lo que activas: un panel, sync, Teams. Qué manda cada
 función, una por una: [getestela.dev/privacy](https://getestela.dev/privacy).

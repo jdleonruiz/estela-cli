@@ -166,11 +166,19 @@ export function formatMoneyWhole(m: Money): string {
   return symbol ? `${symbol}${value}` : `${value} ${m.currency}`;
 }
 
-/** El coste de IA se muestra con 2 decimales, o 4 cuando es menor de un céntimo. */
-export function formatAiCost(cost: AiCost): string {
+/** El locale de los importes que está en uso, para quien formatea dólares a su manera. */
+export function moneyLocale(): string { return defaultMoneyLocale; }
+
+/**
+ * El coste de IA se muestra con 2 decimales, o 4 cuando es menor de un céntimo,
+ * y con los separadores del idioma: "$12,86" en español, "$12.86" en inglés.
+ * Antes iba siempre con punto, y en español una misma tabla salía con "$12.86"
+ * en la columna API y "$71,67" en la de la cuota.
+ */
+export function formatAiCost(cost: AiCost, locale = defaultMoneyLocale): string {
   const usd = cost.microUsd / 1_000_000;
-  if (usd !== 0 && Math.abs(usd) < 0.01) return `$${usd.toFixed(4)}`;
-  return `$${usd.toFixed(2)}`;
+  const digits = usd !== 0 && Math.abs(usd) < 0.01 ? 4 : 2;
+  return `$${usd.toLocaleString(locale, { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
 }
 
 /**

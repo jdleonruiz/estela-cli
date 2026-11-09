@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { closingIssues, GitLabPlanSource, type GlabRunner } from "./gitlab.js";
+import { closingIssues, GitLabPlanSource, hostOf, type GlabRunner } from "./gitlab.js";
 
 /**
  * La fuente de GitLab con un `glab` falso: nunca se llama al de verdad. El JSON
@@ -42,6 +42,29 @@ test("disponibilidad: sin glab, sin sesión, sin proyecto de GitLab, o lista", a
   assert.equal(((await sinRepo.availability()) as { reason: string }).reason, "repo");
 
   assert.deepEqual(await new GitLabPlanSource("/r", falso(() => "{}").glab).availability(), { ok: true });
+});
+
+test("GitLab propio sin sesión: dice en qué servidor, con el mensaje de glab limpio", async () => {
+  // Así lo escribe glab 1.x: cabecera "ERROR" suelta, con colores, y el texto partido.
+  const stderr = "\x1b[31m   ERROR  \x1b[0m\n          \n  unable to expand placeholder in path: none of the git remotes configured for this repository point to a known GitLab\n  host. Please use `glab auth login` to authenticate and configure a new host for glab.\n";
+  const glab = falso((a) => (a[0] === "api" ? Object.assign(new Error("exit 1"), { stderr }) : "")).glab;
+  const remotes = async () => "origin\thttps://gitlab.acme.test/fabrica/web.git (fetch)\norigin\thttps://gitlab.acme.test/fabrica/web.git (push)\n";
+  const a = await new GitLabPlanSource("/r", glab, remotes).availability();
+  assert.deepEqual(a, {
+    ok: false, reason: "auth", host: "gitlab.acme.test",
+    detail: "unable to expand placeholder in path: none of the git remotes configured for this repository point to a known GitLab host. Please use `glab auth login` to authenticate and configure a new host for glab.",
+  });
+
+  const sinRemoto = await new GitLabPlanSource("/r", glab, async () => { throw new Error("no git"); }).availability();
+  assert.equal((sinRemoto as { host?: string }).host, undefined, "sin remoto no se inventa un servidor");
+});
+
+test("hostOf: https, ssh con puerto y la forma corta de git", () => {
+  assert.equal(hostOf("https://gitlab.acme.test/fabrica/web.git"), "gitlab.acme.test");
+  assert.equal(hostOf("https://usuario@GitLab.Acme.test/fabrica/web.git"), "gitlab.acme.test");
+  assert.equal(hostOf("ssh://git@gitlab.acme.test:2222/fabrica/web.git"), "gitlab.acme.test");
+  assert.equal(hostOf("git@gitlab.acme.test:fabrica/web.git"), "gitlab.acme.test");
+  assert.equal(hostOf("/ruta/local/repo"), null);
 });
 
 test("una MR y una issue con el mismo número son dos cosas, y la MR cierra lo que dice su descripción", async () => {

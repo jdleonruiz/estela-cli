@@ -32,6 +32,14 @@ export const runGlab: GlabRunner = async (args, cwd) => {
   return stdout;
 };
 
+/** Las URL de los remotos de git de esa carpeta, una por línea. Inyectable en los tests. */
+export type RemotesReader = (cwd: string) => Promise<string>;
+
+const readRemotes: RemotesReader = async (cwd) => {
+  const { stdout } = await run("git", ["remote", "-v"], { cwd, timeout: 10_000 });
+  return stdout;
+};
+
 const PER_PAGE = 100;
 /** Tope de páginas por lista: 10.000 elementos. Más es otro tipo de proyecto. */
 const MAX_PAGES = 100;
@@ -39,7 +47,11 @@ const MAX_PAGES = 100;
 export class GitLabPlanSource implements PlanSource {
   readonly system = "gitlab" as const;
 
-  constructor(private readonly cwd: string, private readonly glab: GlabRunner = runGlab) {}
+  constructor(
+    private readonly cwd: string,
+    private readonly glab: GlabRunner = runGlab,
+    private readonly remotes: RemotesReader = readRemotes,
+  ) {}
 
   async availability(): Promise<Availability> {
     try {
@@ -55,9 +67,28 @@ export class GitLabPlanSource implements PlanSource {
     try {
       await this.glab(["api", "projects/:fullpath"], this.cwd);
     } catch (error) {
-      return { ok: false, reason: "repo", detail: errorText(error) };
+      const detail = errorText(error);
+      // Con sesión en gitlab.com y el repo en un GitLab propio, glab no conoce
+      // el servidor del remoto. Eso es falta de sesión en ESE servidor, y se
+      // dice cuál para que el comando que se propone funcione tal cual.
+      if (/known GitLab\s+host/i.test(detail)) {
+        const host = await this.remoteHost();
+        return { ok: false, reason: "auth", detail, ...(host ? { host } : {}) };
+      }
+      return { ok: false, reason: "repo", detail };
     }
     return { ok: true };
+  }
+
+  /** El servidor del primer remoto que no es GitHub, o null si no se sabe. */
+  private async remoteHost(): Promise<string | null> {
+    let out: string;
+    try { out = await this.remotes(this.cwd); } catch { return null; }
+    for (const line of out.split("\n")) {
+      const host = hostOf(line.split(/\s+/)[1] ?? "");
+      if (host && host !== "github.com") return host;
+    }
+    return null;
   }
 
   async fetch(query: FetchQuery): Promise<TrackerItem[]> {
@@ -172,8 +203,21 @@ export function closingIssues(description: string): number[] {
   return [...out];
 }
 
-function errorText(error: unknown): string {
+/** `https://host/grupo/repo.git`, `ssh://git@host:2222/...` o `git@host:grupo/repo.git` → host. */
+export function hostOf(url: string): string | null {
+  const m = /^[a-z+]+:\/\/(?:[^@/]+@)?([^:/]+)/i.exec(url) ?? /^[^@/\s]+@([^:/]+):/.exec(url);
+  return m ? m[1]!.toLowerCase() : null;
+}
+
+/**
+ * Lo que dijo glab, en una línea. glab escribe una cabecera "ERROR" suelta, con
+ * colores, y parte el mensaje en varias líneas: quedarse con la primera dejaba
+ * un "(ERROR  )" que no dice nada.
+ */
+export function errorText(error: unknown): string {
   const e = error as { code?: string; stderr?: string; message?: string };
   if (e.code === "ENOENT") return "glab no está instalado";
-  return (e.stderr || e.message || String(error)).trim().split("\n")[0] ?? "";
+  const text = (e.stderr || e.message || String(error)).replace(/\x1b\[[0-9;]*m/g, "");
+  return text.split("\n").map((l) => l.trim()).filter((l) => l && !/^error:?$/i.test(l)).join(" ")
+    .replace(/\s+/g, " ").trim();
 }

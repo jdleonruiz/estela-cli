@@ -21,9 +21,9 @@ const BIN = join(__dirname, "bin.js");
 const DAY = 86_400_000;
 const isWindows = process.platform === "win32";
 
-/** Un PATH con git y node, y sin ningún gh. */
+/** Un PATH con git y node, y sin ningún gh ni glab de verdad: los tests ponen los suyos. */
 const BASE_PATH = [dirname(process.execPath), "/usr/bin", "/bin", "/usr/local/bin", "/opt/homebrew/bin"]
-  .filter((d) => !existsSync(join(d, "gh"))).join(delimiter);
+  .filter((d) => !existsSync(join(d, "gh")) && !existsSync(join(d, "glab"))).join(delimiter);
 
 const issue = (number: number, title: string, state: "OPEN" | "CLOSED", labels: string[], closedAt: string | null = null) =>
   ({ number, title, state, stateReason: state === "CLOSED" ? "COMPLETED" : null, closedAt,
@@ -141,10 +141,10 @@ test("con gh: los tres bloques con su coste, y lo leído se guarda para --offlin
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /^Planificado frente a entregado · Tienda · Acme · 2026-10-01 → 2026-10-31\n/);
   assert.match(r.out, /Plan: etiqueta "planificado" · Fuente: GitHub \(gh\), leído ahora/);
-  assert.match(r.out, /Planificado y entregado \(1 de 2\)\n[\s\S]*#2 Login con Google\s+2h 20m\s+\$14\.00/);
+  assert.match(r.out, /Planificado y entregado \(1 de 2\)\n[\s\S]*#2 Login con Google\s+2h 20m\s+\$14,00/);
   assert.match(r.out, /entregada por PR #10 · coste según: rama del PR, número en rama o commit/);
-  assert.match(r.out, /Planificado sin entregar \(1\)\n[\s\S]*#3 Exportar pedidos a PDF\s+15m\s+\$1\.00/);
-  assert.match(r.out, /Entregado sin planificar \(1\)\n[\s\S]*PR #11 Arregla stock negativo\s+30m\s+\$3\.00/);
+  assert.match(r.out, /Planificado sin entregar \(1\)\n[\s\S]*#3 Exportar pedidos a PDF\s+15m\s+\$1,00/);
+  assert.match(r.out, /Entregado sin planificar \(1\)\n[\s\S]*PR #11 Arregla stock negativo\s+30m\s+\$3,00/);
   assert.match(readFileSync(gh.log, "utf8"), /pr list --state merged --limit 1000 --search merged:2026-10-01\.\.2026-10-31/);
 
   // Sin conexión, lo mismo de lo guardado, y gh ni se llama.
@@ -154,6 +154,15 @@ test("con gh: los tres bloques con su coste, y lo leído se guarda para --offlin
   assert.match(off.out, /Fuente: GitHub, lo guardado el \d{4}-\d{2}-\d{2} \(sin conexión\)/);
   assert.match(off.out, /PR #11 Arregla stock negativo/);
   assert.equal(readFileSync(gh.log, "utf8"), antes);
+
+  // ESTELA_OFFLINE=1 promete ninguna conexión: tampoco gh, aunque no se pase --offline.
+  const env = spawnSync(process.execPath, [BIN, "delivery", "--project", "tienda", "--month", "2026-10", "--db", db], {
+    encoding: "utf8", input: "", cwd: home,
+    env: { ...process.env, PATH: path, HOME: home, USERPROFILE: home, ESTELA_LANG: "es", NO_COLOR: "1", ESTELA_OFFLINE: "1" },
+  });
+  assert.match(env.stdout + env.stderr, /ESTELA_OFFLINE=1: no se consulta GitHub\./);
+  assert.match(env.stdout, /Fuente: GitHub, lo guardado el/);
+  assert.equal(readFileSync(gh.log, "utf8"), antes, "con ESTELA_OFFLINE=1 gh no se llama");
 
   const j = JSON.parse(estela(home, path, "delivery", "--project", "tienda", "--month", "2026-10", "--json", "--db", db).out) as {
     planned: { delivered: { apiMicroUsd: number; items: { key: string; deliveredBy: string[] }[] } }; unplanned: { items: { key: string }[] } };
@@ -201,8 +210,8 @@ test("sin gh lo explica y enseña lo entregado según git", { skip: isWindows },
   assert.match(r.out, /gh no está instalado: sin él no se puede leer el plan de GitHub/);
   assert.match(r.out, /Plan: sin plan · Fuente: git: los PR de los commits de merge y de los squash con \(#N\)/);
   assert.match(r.out, /Entregado \(2\)/);
-  assert.match(r.out, /PR #11 fix\/stock\s+30m\s+\$3\.00/);
-  assert.match(r.out, /PR #10 Login con Google\s+—\s+\$0\.00/, "un squash no dice su rama: sin horas unidas");
+  assert.match(r.out, /PR #11 fix\/stock\s+30m\s+\$3,00/);
+  assert.match(r.out, /PR #10 Login con Google\s+—\s+\$0,00/, "un squash no dice su rama: sin horas unidas");
 });
 
 test("un proyecto sin GitHub como gestor no llama a gh, y --plan-label necesita gestor", { skip: isWindows }, async () => {
@@ -246,11 +255,11 @@ test("--by client: lo pedido por cada cliente frente al resto, y los alias", { s
   assert.match(r.out, /Etiqueta: "cliente:<nombre>" · Fuente: GitHub \(gh\), leído ahora/);
   assert.match(r.out, /Estela no conoce ingresos ni contratos/);
   // "Acme" es el nombre del cliente acme; "beta-corp" coincide con "Beta Corp" sin alias.
-  assert.match(r.out, /  Acme\s+2h\s+\$12\.00\s+—\s+54\.5 %\n      #2 Login con Google/);
-  assert.match(r.out, /  Beta Corp\s+40m\s+\$4\.00\s+—\s+18\.2 %/);
-  assert.match(r.out, /  Varios: Acme \+ Beta Corp\s+20m\s+\$2\.00\s+—\s+9\.1 %/);
-  assert.match(r.out, /  Resto \(sin petición de cliente\)\s+45m\s+\$4\.00\s+—\s+18\.2 %/);
-  assert.match(r.out, /  Total del periodo\s+3h 45m\s+\$22\.00/);
+  assert.match(r.out, /  Acme\s+2h\s+\$12,00\s+—\s+54\.5 %\n      #2 Login con Google/);
+  assert.match(r.out, /  Beta Corp\s+40m\s+\$4,00\s+—\s+18\.2 %/);
+  assert.match(r.out, /  Varios: Acme \+ Beta Corp\s+20m\s+\$2,00\s+—\s+9\.1 %/);
+  assert.match(r.out, /  Resto \(sin petición de cliente\)\s+45m\s+\$4,00\s+—\s+18\.2 %/);
+  assert.match(r.out, /  Total del periodo\s+3h 45m\s+\$22,00/);
   assert.match(readFileSync(gh.log, "utf8"), /issue list --state all --limit 1000 --label cliente:beta-corp/);
 
   // Un nombre que no se parece a ningún cliente sale sin mapear, hasta que se le pone alias.
@@ -279,7 +288,7 @@ test("--by client sin GitHub: lo dice y todo va al resto; y el prefijo se puede 
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /Sin GitHub ni GitLab no hay etiquetas: no se sabe qué pidió cada cliente, y todo va al resto\./);
   assert.match(r.out, /\(ninguna petición de cliente con horas en el periodo\)/);
-  assert.match(r.out, /  Resto \(sin petición de cliente\)\s+3h 45m\s+\$22\.00\s+—\s+100\.0 %/);
+  assert.match(r.out, /  Resto \(sin petición de cliente\)\s+3h 45m\s+\$22,00\s+—\s+100\.0 %/);
 
   const cambio = estela(home, BASE_PATH, "project", "tracker", "--project", "tienda", "--client-label", "customer/", "--db", db);
   assert.match(cambio.out, /Las peticiones de clientes de "Tienda" llevan la etiqueta "customer\/<nombre>"\./);
@@ -348,10 +357,10 @@ test("con glab: GitLab da el plan, la MR !2 entrega la issue #2 y no se confunde
   const r = estela(home, path, "delivery", "--project", "tienda", "--month", "2026-10", "--db", db);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /Fuente: GitLab \(glab\), leído ahora/);
-  assert.match(r.out, /Planificado y entregado \(1 de 2\)\n[\s\S]*#2 Login con Google\s+2h\s+\$12\.00/);
+  assert.match(r.out, /Planificado y entregado \(1 de 2\)\n[\s\S]*#2 Login con Google\s+2h\s+\$12,00/);
   assert.match(r.out, /entregada por MR !2 · coste según: rama del PR/);
   assert.match(r.out, /Planificado sin entregar \(1\)\n[\s\S]*#3 Exportar pedidos a PDF/);
-  assert.match(r.out, /Entregado sin planificar \(1\)\n[\s\S]*MR !11 Arregla stock negativo\s+30m\s+\$3\.00/);
+  assert.match(r.out, /Entregado sin planificar \(1\)\n[\s\S]*MR !11 Arregla stock negativo\s+30m\s+\$3,00/);
   assert.ok(readFileSync(glab.log, "utf8").split("\n").filter(Boolean).every((l) => !l.startsWith("api") || l.startsWith("api projects/:fullpath")));
 
   const j = JSON.parse(estela(home, path, "delivery", "--project", "tienda", "--month", "2026-10", "--json", "--db", db).out) as {
@@ -367,6 +376,17 @@ test("con glab: GitLab da el plan, la MR !2 entrega la issue #2 y no se confunde
   assert.match(summary.out, /MR !11 Arregla stock negativo/);
 });
 
+test("--month acaba el último día de verdad del mes, no un 31 que no existe", { skip: isWindows }, async () => {
+  const { home, db } = await entorno();
+  const cabecera = (month: string) =>
+    estela(home, BASE_PATH, "delivery", "--project", "tienda", "--month", month, "--offline", "--db", db).out.split("\n")[0];
+  assert.match(cabecera("2026-11")!, /2026-11-01 → 2026-11-30$/);
+  assert.match(cabecera("2028-02")!, /2028-02-01 → 2028-02-29$/, "bisiesto");
+  assert.match(cabecera("2026-12")!, /2026-12-01 → 2026-12-31$/);
+  assert.match(estela(home, BASE_PATH, "delivery", "--project", "tienda", "--month", "2026-13", "--db", db).out,
+    /--month va como YYYY-MM\./);
+});
+
 test("sin glab lo explica, y git ya reconoce los merges de GitLab como MR", { skip: isWindows }, async () => {
   const { home, db, repo } = await entorno();
   const c = openDatabase(db);
@@ -377,7 +397,7 @@ test("sin glab lo explica, y git ya reconoce los merges de GitLab como MR", { sk
   const r = estela(home, BASE_PATH, "delivery", "--project", "tienda", "--month", "2026-10", "--db", db);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /glab no está instalado: sin él no se puede leer el plan de GitLab/);
-  assert.match(r.out, /MR !11 fix\/stock\s+30m\s+\$3\.00/);
+  assert.match(r.out, /MR !11 fix\/stock\s+30m\s+\$3,00/);
   assert.match(estela(home, BASE_PATH, "delivery", "--project", "tienda", "--offline", "--db", db).out,
     /--offline: no se consulta GitLab\./);
 });

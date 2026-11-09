@@ -51,6 +51,7 @@ import {
   listPublishedPanels, NoAccountError, preparePanel, unpublishAll, unpublishPanel, uploadPanel,
   type PanelSummary, type PublishResult,
 } from "./publish.js";
+import { isOffline } from "./offline.js";
 import { NotSyncedError, syncProject } from "./sync.js";
 import { syncTeamProject } from "./sync/team.js";
 import { acceptTeamInvite, inviteTeamMember, listTeamMembers, revokeTeamMember } from "./team.js";
@@ -105,6 +106,9 @@ estela — registro de horas para desarrollo asistido por IA
         Un "--lang en" suelto en cualquier comando manda sobre todo.
   estela project add --id <id> --client <id> --name <nombre> --repo <ruta>
                      [--rounding <min>] [--ai-cost absorbed|passthrough]
+  estela project list
+        Tus proyectos con su id (lo que va en --project), su cliente, su
+        gestor de tareas y sus repos.
   estela project close --project <id>
         Dice que un proyecto terminó. No borra nada ni deja de capturar si
         vuelve a haber actividad ahí — "estela doctor" avisa en ese caso, en
@@ -331,10 +335,11 @@ Opciones globales:  --db <ruta>   (por defecto ${DEFAULT_DB_PATH})
                     --version     Solo imprime la versión instalada.
 
 Red:  Sin cuenta, Estela solo consulta npm una vez al día por si hay
-      versión nueva.
+      versión nueva, y GitHub o GitLab (con tu gh o tu glab) cuando
+      pides "estela delivery" en un proyecto que los usa.
       ESTELA_NO_UPDATE_CHECK=1  no la consulta (tampoco con CI definida).
       ESTELA_OFFLINE=1          ninguna conexión de red: ni versión, ni
-                                banner, ni nada de la cuenta.
+                                banner, ni nada de la cuenta, ni gh ni glab.
 `;
 
 const HELP_EN = `
@@ -366,6 +371,9 @@ estela — time tracking for AI-assisted development
         "auto" removes it on purpose. A bare "--lang en" on any command wins.
   estela project add --id <id> --client <id> --name <name> --repo <path>
                      [--rounding <min>] [--ai-cost absorbed|passthrough]
+  estela project list
+        Your projects with their id (what goes in --project), client, task
+        tracker and repos.
   estela project close --project <id>
         Marks a project as done. Doesn't delete anything or stop capturing if
         there's activity there again — "estela doctor" flags that instead of
@@ -595,10 +603,12 @@ Global options:  --db <path>   (default ${DEFAULT_DB_PATH})
                  --version     Only prints the installed version.
 
 Network:  Without an account, Estela only checks npm once a day for a new
-          version.
+          version, and GitHub or GitLab (through your gh or glab) when you
+          run "estela delivery" on a project that uses them.
           ESTELA_NO_UPDATE_CHECK=1  skips that check (so does having CI set).
           ESTELA_OFFLINE=1          no network connections at all: no
-                                    version check, no banner, no account.
+                                    version check, no banner, no account,
+                                    no gh or glab.
 `;
 
 function helpText(): string {
@@ -1098,6 +1108,39 @@ function cmdProjectAdd(args: Args, dbPath: string): void {
 }
 
 /**
+ * `estela project list` — los proyectos con su id, que es lo que piden todos
+ * los `--project`. Los archivados van aparte: siguen aceptando `--project`.
+ */
+function cmdProjectList(dbPath: string): void {
+  const db = openDatabase(dbPath);
+  try {
+    const active = store.listProjects(db);
+    const archived = store.listArchivedProjects(db);
+    if (active.length + archived.length === 0) {
+      console.log(tr`Todavía no hay proyectos. Para crearlos:  estela setup`);
+      return;
+    }
+    const clients = new Map(store.listClients(db).map((c) => [c.id, c.name]));
+    const width = Math.max(...[...active, ...archived].map((p) => p.id.length));
+    const show = (p: Project) => {
+      const parts = [p.name, clients.get(p.clientId) ?? p.clientId];
+      if (p.tracker) parts.push(p.tracker.system);
+      if (p.closedAt) parts.push(tr`cerrado`);
+      console.log(`  ${p.id.padEnd(width)}  ${parts.join(" · ")}`);
+      for (const repo of p.repoPaths) console.log(`  ${" ".repeat(width)}  ${repo}`);
+    };
+    console.log(tr`Proyectos (el id es lo que va en --project):`);
+    console.log("");
+    active.forEach(show);
+    if (archived.length) {
+      console.log("");
+      console.log(tr`Archivados:`);
+      archived.forEach(show);
+    }
+  } finally { db.close(); }
+}
+
+/**
  * `estela project close` — dice que un proyecto terminó, sin borrar nada.
  *
  * A propósito NO bloquea `estela import`: si vuelve a haber actividad ahí
@@ -1324,7 +1367,7 @@ function cmdBudget(args: Args, dbPath: string): void {
       ).get(projectId) as { b: number | null };
       console.log(current.b === null
         ? tr`"${project.name}" no tiene presupuesto de IA.`
-        : tr`"${project.name}": $${(current.b / 1e6).toFixed(2)} al mes.`);
+        : tr`"${project.name}": ${formatAiCost({ microUsd: current.b })} al mes.`);
       return;
     }
 
@@ -1340,7 +1383,7 @@ function cmdBudget(args: Args, dbPath: string): void {
     }
     db.prepare("UPDATE projects SET ai_budget_micro_usd = ? WHERE id = ?")
       .run(Math.round(dollars * 1e6), projectId);
-    console.log(tr`Presupuesto de IA de "${project.name}": $${dollars.toFixed(2)} al mes.`);
+    console.log(tr`Presupuesto de IA de "${project.name}": ${formatAiCost({ microUsd: Math.round(dollars * 1e6) })} al mes.`);
   } finally { db.close(); }
 }
 
@@ -2153,13 +2196,19 @@ async function cmdExport(args: Args, dbPath: string): Promise<void> {
  */
 function periodOf(args: Args): { from: string | undefined; to: string | undefined } {
   const month = str(args, "month");
-  if (month && !/^\d{4}-\d{2}$/.test(month)) throw new UserError(tr`--month va como YYYY-MM.`);
+  if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new UserError(tr`--month va como YYYY-MM.`);
   const from = month ? `${month}-01` : str(args, "from");
-  const to = month ? `${month}-31` : str(args, "to");
+  const to = month ? lastDayOf(month) : str(args, "to");
   for (const d of [from, to]) {
     if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw new UserError(tr`Fecha inválida: ${d}`);
   }
   return { from, to };
+}
+
+/** El último día de un mes `YYYY-MM`: el 30 de noviembre, no un 31 que no existe. */
+function lastDayOf(month: string): string {
+  const [y, m] = month.split("-").map(Number) as [number, number];
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
 }
 
 function entriesInRange(entries: readonly TimeEntry[], args: Args): TimeEntry[] {
@@ -2382,6 +2431,10 @@ async function loadTrackerItems(
     notes.push(tr`La carpeta del repo de este proyecto ya no existe: ${cli} no tiene dónde mirar.`);
   } else if ("offline" in args.flags) {
     notes.push(tr`--offline: no se consulta ${name}.`);
+  } else if (isOffline()) {
+    // El interruptor general promete "ninguna conexión de red": gh y glab
+    // también salen a la red, así que tampoco se llaman.
+    notes.push(tr`ESTELA_OFFLINE=1: no se consulta ${name}.`);
   } else {
     const source: PlanSource = remote === "gitlab" ? new GitLabPlanSource(repo) : new GitHubPlanSource(repo);
     const available = await source.availability();
@@ -2675,14 +2728,16 @@ function deliveryPeriod(args: Args): { from: string; to: string } {
   if (from && to) return { from, to };
   if (from) return { from, to: today };
   if (to) throw new UserError(tr`Con --to hace falta --from.`);
-  return { from: `${today.slice(0, 7)}-01`, to: `${today.slice(0, 7)}-31` };
+  return { from: `${today.slice(0, 7)}-01`, to: lastDayOf(today.slice(0, 7)) };
 }
 
 function unavailableText(a: Exclude<Availability, { ok: true }>, system: "github" | "gitlab"): string {
   if (system === "gitlab") {
     switch (a.reason) {
       case "missing": return tr`glab no está instalado: sin él no se puede leer el plan de GitLab. Instálalo desde https://gitlab.com/gitlab-org/cli y ejecuta: glab auth login`;
-      case "auth": return tr`glab no tiene sesión iniciada. Ejecuta: glab auth login`;
+      case "auth": return a.host
+        ? tr`glab no tiene sesión en ${a.host}, el GitLab de este repo. Ejecuta: glab auth login --hostname ${a.host}`
+        : tr`glab no tiene sesión iniciada. Ejecuta: glab auth login`;
       case "repo": return tr`glab no reconoce un proyecto de GitLab en la carpeta del proyecto (${a.detail}).`;
     }
   }
@@ -3608,6 +3663,7 @@ async function main(): Promise<void> {
     case "client add":        cmdClientAdd(args, dbPath); break;
     case "client alias":      cmdClientAlias(args, dbPath); break;
     case "project add":       cmdProjectAdd(args, dbPath); break;
+    case "project list":      cmdProjectList(dbPath); break;
     case "project close":     cmdProjectClose(args, dbPath); break;
     case "project reopen":    cmdProjectReopen(args, dbPath); break;
     case "project tracker":   cmdProjectTracker(args, dbPath); break;

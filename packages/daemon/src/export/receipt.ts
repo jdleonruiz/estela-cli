@@ -1,5 +1,5 @@
 import type { AiCost, TimeEntry } from "@estela/shared";
-import { formatDuration } from "@estela/shared";
+import { formatDuration, moneyLocale } from "@estela/shared";
 
 import { getLang, tr } from "../i18n/index.js";
 import { resolvePrice } from "../pricing/catalog.js";
@@ -131,9 +131,12 @@ function fecha(d: Date): string {
     .replace(".", "").toUpperCase();
 }
 
-/** Dólares con dos decimales y separador de miles: "$42,999.71" se lee; "$42999.71" no. */
+/**
+ * Dólares con dos decimales y separador de miles, en el formato del idioma:
+ * "$42,999.71" en inglés, "$42.999,71" en español. Se lee; "$42999.71" no.
+ */
 function dolares(cost: AiCost): string {
-  return "$" + (cost.microUsd / 1_000_000).toLocaleString("en-US",
+  return "$" + (cost.microUsd / 1_000_000).toLocaleString(moneyLocale(),
     { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 

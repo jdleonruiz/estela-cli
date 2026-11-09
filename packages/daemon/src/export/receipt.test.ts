@@ -118,12 +118,12 @@ test("por defecto el recibo no lleva nombres de proyectos ni de ramas: suelen se
   });
   const sin = receiptText(d, { week: false }).join("\n");
   assert.doesNotMatch(sin, /ACME|pagos-acme/);
-  assert.match(sin, /PROYECTO MÁS CARO \$30\.00/);
-  assert.match(sin, /RAMA MÁS CARA \$30\.00/);
+  assert.match(sin, /PROYECTO MÁS CARO \$30,00/);
+  assert.match(sin, /RAMA MÁS CARA \$30,00/);
 
   const con = receiptText(d, { week: false, names: true }).join("\n");
-  assert.match(con, /ACME Banca \$30\.00/);
-  assert.match(con, /feat\/pagos-acme \$30\.00/);
+  assert.match(con, /ACME Banca \$30,00/);
+  assert.match(con, /feat\/pagos-acme \$30,00/);
 });
 
 test("sin consumo de IA no hay proyecto ni rama más caros que enseñar", () => {

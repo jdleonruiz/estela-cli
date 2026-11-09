@@ -55,7 +55,9 @@ export interface FetchQuery {
 
 export type Availability =
   | { readonly ok: true }
-  | { readonly ok: false; readonly reason: "missing" | "auth" | "repo"; readonly detail: string };
+  | { readonly ok: false; readonly reason: "missing" | "auth" | "repo"; readonly detail: string;
+      /** Con sesión en otro servidor, pero no en el del repo (un GitLab propio). */
+      readonly host?: string };
 
 export interface PlanSource {
   readonly system: TrackerSystem;

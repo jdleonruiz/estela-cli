@@ -15,6 +15,23 @@ export const EN: Record<string, string> = {
   "No hay permiso para usar el puerto {0}. Prueba con --port {1}.":
     "No permission to use port {0}. Try --port {1}.",
 
+  "ESTELA_OFFLINE=1: no se consulta {0}.":
+    "ESTELA_OFFLINE=1: {0} isn't queried.",
+
+  // ── cli.ts (delivery con un GitLab propio) ──
+  "glab no tiene sesión en {0}, el GitLab de este repo. Ejecuta: glab auth login --hostname {1}":
+    "glab isn't logged in to {0}, this repo's GitLab. Run: glab auth login --hostname {1}",
+
+  // ── cli.ts (estela project list) ──
+  "Todavía no hay proyectos. Para crearlos:  estela setup":
+    "No projects yet. To create them:  estela setup",
+  "cerrado":
+    "closed",
+  "Proyectos (el id es lo que va en --project):":
+    "Projects (the id is what goes in --project):",
+  "Archivados:":
+    "Archived:",
+
   // ── watchers/agents.ts, watchers/codex.ts, cli.ts (escaneo por agente) ──
   "    {0} archivos · {1} registros":
     "    {0} files · {1} records",
@@ -225,14 +242,14 @@ export const EN: Record<string, string> = {
     "\"{0}\" reopened.",
   "\"{0}\" no tiene presupuesto de IA.":
     "\"{0}\" has no AI budget.",
-  "\"{0}\": ${1} al mes.":
-    "\"{0}\": ${1} a month.",
+  "\"{0}\": {1} al mes.":
+    "\"{0}\": {1} a month.",
   "Presupuesto de \"{0}\" retirado.":
     "Budget for \"{0}\" removed.",
   "Importe inválido: {0}":
     "Invalid amount: {0}",
-  "Presupuesto de IA de \"{0}\": ${1} al mes.":
-    "AI budget for \"{0}\": ${1} a month.",
+  "Presupuesto de IA de \"{0}\": {1} al mes.":
+    "AI budget for \"{0}\": {1} a month.",
   "Tarifa de \"{0}\": {1}/hora":
     "Rate for \"{0}\": {1}/hour",
   " desde {0}.":

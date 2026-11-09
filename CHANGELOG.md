@@ -4,6 +4,34 @@ Cambios visibles de cada versión del paquete `estela`. Las anteriores a la
 0.2.0 están en el historial de git, con una etiqueta por versión en
 [github.com/jdleonruiz/estela-cli](https://github.com/jdleonruiz/estela-cli/tags).
 
+## 0.4.2 — 2026-11-09
+
+### Nuevo
+- **`estela project list`.** Tus proyectos con su id, que es lo que piden todos
+  los `--project`, junto a su cliente, su gestor de tareas y sus repos. Los
+  archivados salen aparte. Hasta ahora el id solo se veía al crear el proyecto.
+
+### Cambiado
+- **Los dólares de la IA, con los separadores de tu idioma.** En español el
+  coste a precio de API salía con punto ("$12.86") y la cuota con coma
+  ("$71,67"), a veces en la misma tabla. Ahora todo sale con coma en español y
+  con punto en inglés, igual que en el panel. También el presupuesto de IA y el
+  recibo compartible. El CSV no cambia: lleva números sin formato.
+
+### Corregido
+- **`ESTELA_OFFLINE=1` también apaga `gh` y `glab`.** Prometía "ninguna
+  conexión de red", pero `estela delivery` solo hacía caso a `--offline` y
+  seguía consultando GitHub o GitLab. Ahora no los llama y usa lo guardado. La
+  ayuda, los README y la página de privacidad cuentan esa conexión, que faltaba
+  en la lista desde la 0.4.0.
+- **`--month` acaba el último día real del mes.** Noviembre salía como
+  "2026-11-01 → 2026-11-31". Las cifras eran las mismas, pero la fecha se veía
+  en pantalla y en el informe, y se mandaba así a la búsqueda de GitHub.
+- **GitLab propio sin sesión: ahora se dice en qué servidor.** Con sesión de
+  `glab` en gitlab.com y el repo en un GitLab de empresa, `estela delivery`
+  decía "(ERROR  )". Ahora dice "glab no tiene sesión en gitlab.tuempresa.com"
+  y da el comando exacto: `glab auth login --hostname gitlab.tuempresa.com`.
+
 ## 0.4.1 — 2026-11-07
 
 ### Nuevo

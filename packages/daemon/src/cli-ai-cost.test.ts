@@ -69,7 +69,7 @@ test("sin --by, ai-cost sale como siempre", () => {
   const { home, path } = entorno();
   const r = estela(home, "ai-cost", "--db", path);
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /^\n2026-09   \(consumo total: \$10\.00 equiv\. API\)\n  WEB\s+\$10\.00 100\.0%/m);
+  assert.match(r.out, /^\n2026-09   \(consumo total: \$10,00 equiv\. API\)\n  WEB\s+\$10,00 100\.0%/m);
   assert.match(r.out, /La última columna es dinero real: tu cuota repartida por consumo\./);
   assert.doesNotMatch(r.out, /Sin atribuir|por rama/);
 });
@@ -80,10 +80,10 @@ test("--by branch: por proyecto, con su base, y sin rama a sin atribuir", () => 
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /^Coste de IA por rama · 2026-10\n/);
   assert.match(r.out, /\nWEB · Acme\n/);
-  assert.match(r.out, /  feat\/12-login\s+1h 30m\s+\$6\.00\s+/);
+  assert.match(r.out, /  feat\/12-login\s+1h 30m\s+\$6,00\s+/);
   assert.match(r.out, /      #12 · según: rama anotada por el agente/);
   assert.match(r.out, /      PR #31 · según: rama anotada por el agente/);
-  assert.match(r.out, /  Sin atribuir \(sin rama\)\s+30m\s+\$1\.00/);
+  assert.match(r.out, /  Sin atribuir \(sin rama\)\s+30m\s+\$1,00/);
   assert.match(r.out, /\nAPP · Beta\n/);
   assert.doesNotMatch(r.out, /feat\/viejo/, "septiembre queda fuera del periodo");
   assert.match(r.out, /Real es tu cuota repartida por consumo/);
@@ -93,8 +93,8 @@ test("--by item --client: solo ese cliente, y el PR del merge cuando no hay tick
   const { home, path } = entorno();
   const r = estela(home, "ai-cost", "--by", "item", "--client", "acme", "--from", "2026-10-01", "--to", "2026-10-31", "--db", path);
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /  #12\s+1h 30m\s+\$6\.00/);
-  assert.match(r.out, /  PR #31\s+1h\s+\$3\.00/);
+  assert.match(r.out, /  #12\s+1h 30m\s+\$6,00/);
+  assert.match(r.out, /  PR #31\s+1h\s+\$3,00/);
   assert.match(r.out, /      ramas: feat\/buscador · según: commit de merge del PR/);
   assert.match(r.out, /  Sin atribuir \(sin ticket ni PR\)\s+30m/);
   assert.doesNotMatch(r.out, /APP/);

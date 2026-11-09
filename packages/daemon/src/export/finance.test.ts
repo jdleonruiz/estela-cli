@@ -63,7 +63,7 @@ test("sin cuota registrada lo dice: es una estimación a precio de lista, no lo 
   setLang("es");
   const sinCuota = resumen({ currency: null, paid: cost(14, 110, null) });
   const texto = financeToMarkdown(sinCuota);
-  assert.match(texto, /- \*\*Gasto en IA:\*\* \$110\.00 a precio de lista\. No hay cuota registrada/);
+  assert.match(texto, /- \*\*Gasto en IA:\*\* \$110,00 a precio de lista\. No hay cuota registrada/);
   assert.match(texto, /regístrala con estela subscription add/);
 });
 

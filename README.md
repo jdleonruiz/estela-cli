@@ -167,6 +167,9 @@ estela report --project acme-web --cutoff 2026-08-31 --pdf august.pdf
 estela report --project acme-web --cutoff 2026-09-30 --pdf september.pdf
 ```
 
+Every `--project` takes a project id. `estela project list` shows them, along
+with each project's client, task tracker and repos.
+
 When a project is genuinely done, close it — nothing gets deleted, and if
 it captures work again (a teammate, or you without remembering), `estela
 doctor` flags it instead of silently losing it:
@@ -508,7 +511,7 @@ once a day, for a new version. Two environment variables:
 | Variable | Effect |
 |---|---|
 | `ESTELA_NO_UPDATE_CHECK=1` | Skips the version check (it's also skipped when `CI` is set). |
-| `ESTELA_OFFLINE=1` | No network connections at all: no version check, no banner, no account. |
+| `ESTELA_OFFLINE=1` | No network connections at all: no version check, no banner, no account, no `gh` or `glab` in `estela delivery`. |
 
 With an account, only what you turn on is uploaded — a dashboard, sync, Teams.
 What each feature sends, one by one: [getestela.dev/en/privacy](https://getestela.dev/en/privacy).

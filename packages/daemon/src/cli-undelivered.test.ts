@@ -106,12 +106,12 @@ test("cada caso a su sitio: sin commit, rama vieja, squash desconocido y PR fusi
   assert.match(r.out, /^Gasto de IA sin entrega · todo el historial · ramas sin fusionar tras 14 días\n/);
   assert.match(r.out, /Es una señal para revisar, no un juicio/);
   assert.match(r.out, /\nTienda · Acme\n/);
-  assert.match(r.out, /  Sesiones sin commit \(1\)\s+\$2\.25\s+—\s+25\.0 %/);
+  assert.match(r.out, /  Sesiones sin commit \(1\)\s+\$2,25\s+—\s+25\.0 %/);
   assert.match(r.out, /  Ramas sin fusionar tras 14 días \(1\)/);
   assert.match(r.out, /      feat\/vieja · sin actividad hace 29 días/);
   assert.match(r.out, /No cuenta: 1 ramas borradas sin merge registrado .*: feat\/squash/);
   assert.doesNotMatch(r.out, /feat\/fusionada/, "fusionada con su merge, aunque la rama ya no exista");
-  assert.match(r.out, /Sin entrega en total\s+\$4\.50\s+—\s+50\.0 %/);
+  assert.match(r.out, /Sin entrega en total\s+\$4,50\s+—\s+50\.0 %/);
 });
 
 test("--json: las cifras y los estados, y --stale-days cambia el plazo", async () => {
